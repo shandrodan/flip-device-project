@@ -1,0 +1,7 @@
+{
+  "name": "flip-device",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --filter device --filter server dev"
+  }
+}
