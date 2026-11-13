@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import type { Activity, Agent, ApprovalRequest, Focus, Limits, Note, PermissionMode, Hosting, Task } from "@app/protocol";
+import type { Activity, Agent, ApprovalRequest, Focus, Limits, Note, PermissionMode, Hosting, Project, Task } from "@app/protocol";
 import { config } from "./config.js";
 
 export interface MachineConfig {
@@ -13,6 +13,7 @@ export interface MachineConfig {
 export interface State {
   notes: Note[];
   tasks: Task[];
+  projects: Project[];
   agents: Agent[];
   activity: Activity[];
   approvals: ApprovalRequest[];
@@ -35,6 +36,17 @@ const SECRETS_FILE = path.join(config.dataDir, "secrets.json");
 
 export const id = (prefix: string) => prefix + "_" + crypto.randomBytes(5).toString("hex");
 export const now = () => new Date().toISOString();
+/** A local calendar day as "YYYY-MM-DD", `offset` days from today. Task due dates use these (ADR 0012). */
+export function localDay(offset = 0, from = new Date()) {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + offset);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export const DEFAULT_PROJECTS: Project[] = [
+  { id: "p_demo", name: "Unfair Weekend demo", color: "#e5484d" },
+  { id: "p_pitch", name: "Pitch deck", color: "#8e4ec6" },
+  { id: "p_home", name: "Home", color: "#e5780b" },
+];
 
 export const BUILTIN_AGENTS: Agent[] = [
   { id: "main", name: "Main agent", purpose: "main", shape: "circle", color: "#f2f2f2", builtin: true, seed: 3, role: "Talks to you, runs your other agents, and makes new ones." },
@@ -65,9 +77,13 @@ export function defaults(): State {
   return {
     notes: [],
     tasks: [
-      { id: id("t"), title: "Record backup demo video", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t },
-      { id: id("t"), title: "Run the demo flow 20 times", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t },
+      { id: id("t"), title: "Pick a product name (3 options max)", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t, due: localDay(-1), projectId: "p_pitch" },
+      { id: id("t"), title: "Record backup demo video", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t, due: localDay(0), projectId: "p_demo" },
+      { id: id("t"), title: "Write the one-line pitch for slide 1", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t, due: localDay(0) + "T16:00", projectId: "p_pitch" },
+      { id: id("t"), title: "Run the demo flow 20 times", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t, due: localDay(1), projectId: "p_demo" },
+      { id: id("t"), title: "Buy a USB-C cable for the dock", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t, due: null, projectId: null },
     ],
+    projects: DEFAULT_PROJECTS.map(p => ({ ...p })),
     agents: BUILTIN_AGENTS.map(a => ({ ...a })),
     activity: [{ at: t, agentId: "main", text: "Ready when you are" }],
     approvals: [],

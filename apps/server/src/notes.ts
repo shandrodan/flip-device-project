@@ -1,6 +1,8 @@
 // Dumps become notes instantly (ADR 0005), then get a better transcript and suggestions.
-import type { Note, VoiceTarget } from "@app/protocol";
+import type { Note, Task, VoiceTarget } from "@app/protocol";
 import { state, id, now, noteById, log, save } from "./store.js";
+import { routeTask } from "./tasks.js";
+import { startTask } from "./agents/runner.js";
 import { bus } from "./bus.js";
 import { transcribe } from "./voice.js";
 import { suggestTasks } from "./suggest.js";
@@ -44,6 +46,11 @@ export async function voiceEnd(streamId: string, durationMs: number, hint?: stri
     return routeAuto(stt?.text || quick, s.target.openNoteId, durationMs, stt?.by || "local", streamId);
   }
 
+  if (s.target.kind === "task") {
+    const stt = await transcribe(audio, s.mime);
+    return routeTaskDump(stt?.text || quick, s.target.listId, durationMs, stt?.by || "local", streamId);
+  }
+
   if (s.target.kind === "append") {
     const stt = await transcribe(audio, s.mime);
     const text = stt?.text || quick;
@@ -76,6 +83,7 @@ export async function voiceEnd(streamId: string, durationMs: number, hint?: stri
 export async function voiceScripted(text: string, cloudText: string | undefined, durationMs: number, target: VoiceTarget) {
   if (target.kind === "append") return appendToNote(target.noteId, cloudText || text);
   if (target.kind === "auto") return routeAuto(cloudText || text, target.openNoteId, durationMs, cloudText ? "cloud" : "local");
+  if (target.kind === "task") return routeTaskDump(cloudText || text, target.listId, durationMs, cloudText ? "cloud" : "local");
   const note = createNote(text, "local", durationMs);
   bus.emit({ type: "note.saved", note });
   await new Promise(r => setTimeout(r, 350));
@@ -135,6 +143,29 @@ async function routeAuto(raw: string, openNoteId: string | null, durationMs: num
   bus.emit({ type: "note.saved", note, streamId });
   bus.emit({ type: "note.routed", noteId: note.id, action: "new", added: r.text, why: r.why, streamId });
   await runSuggestions(note);
+}
+
+/** Dumps in To-Do (ADR 0012): kept as a note, then made one task. No suggestions: the task is the answer. */
+async function routeTaskDump(raw: string, listId: string | null, durationMs: number, by: "cloud" | "local", streamId?: string) {
+  const text = raw.trim();
+  if (!text) {
+    bus.notice("Didn't catch that.", "warn");
+    bus.emit({ type: "state", state: "idle" });
+    return;
+  }
+  const r = await routeTask(text, listId);
+  const note = createNote(/[.!?]$/.test(text) ? text : text + ".", by, durationMs);
+  const t = now();
+  const task: Task = { id: id("t"), noteId: note.id, title: r.title, target: r.agentId ? "agent" : "todo", agentId: r.agentId, status: "todo", steps: [], createdAt: t, updatedAt: t, due: r.due, projectId: r.projectId };
+  state.tasks.unshift(task);
+  note.taskIds.push(task.id);
+  note.suggestionState = "accepted"; // createNote already logged it; a second entry in the same ms would share its key
+  save();
+  bus.changed();
+  bus.emit({ type: "note.saved", note, streamId });
+  bus.emit({ type: "task.routed", taskId: task.id, noteId: note.id, label: r.label, why: r.why, streamId });
+  bus.emit({ type: "state", state: "idle" });
+  if (task.agentId) startTask(task);
 }
 
 function appendToNote(noteId: string, text: string, o: { sep?: string; quiet?: boolean } = {}) {

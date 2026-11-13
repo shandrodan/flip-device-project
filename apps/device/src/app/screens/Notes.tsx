@@ -331,7 +331,8 @@ function Sheet({ note, cls, hl, innerRef }: { note: Note; cls: string; hl: strin
   </div>;
 }
 
-function PadStatus() {
+/** The status bar for light apps (Notes, To-Do) that draw it inside their own header. */
+export function PadStatus() {
   const n = useNet();
   useTick(10000);
   return <div className="np-status">

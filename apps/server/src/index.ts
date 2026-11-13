@@ -51,6 +51,7 @@ function snapshot(): Snapshot {
     serverTime: now(),
     notes: state.notes.slice(0, 80),
     tasks: state.tasks.slice(0, 120),
+    projects: state.projects,
     agents: state.agents,
     activity: state.activity.slice(0, 20),
     approvals: state.approvals,
@@ -188,6 +189,11 @@ async function handle(c: Client, m: DeviceMessage) {
       if (!t) return;
       if (t.status === "held" && resumeHeld(t.id)) return;
       if (["paused", "failed"].includes(t.status) && t.agentId) startTask(t);
+      break;
+    }
+    case "task.reschedule": {
+      const t = taskById(m.taskId);
+      if (t && (m.due === null || /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(m.due))) patchTask(t, { due: m.due });
       break;
     }
     case "task.cancel": {

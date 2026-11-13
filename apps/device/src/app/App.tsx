@@ -121,8 +121,8 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   else screen = <Dock />;
 
   const fullBleed = fn === "dock" && !route;
-  // Notes is a light app with its own status bar inside its yellow header (ADR 0011).
-  const light = fn === "notes" && !route;
+  // Notes and To-Do are light apps with their own status bar inside their header (ADR 0011, 0012).
+  const light = (fn === "notes" || fn === "todo") && !route;
   const focusLeft = snap.focus.running && snap.focus.endsAt ? Math.max(0, Date.parse(snap.focus.endsAt) - Date.now()) : 0;
   return <Ctx.Provider value={ctx}>
     <div className="fill" style={{ ["--ink" as string]: fire ? "#000" : "#fff" }}>

@@ -76,6 +76,17 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  /** When it's due, in local time: "YYYY-MM-DD", or "YYYY-MM-DDTHH:mm" with a time. None: no date. */
+  due?: string | null;
+  /** The project it belongs to. None: it sits in Inbox. */
+  projectId?: string | null;
+}
+
+/** A list of tasks in the To-Do app (ADR 0012). */
+export interface Project {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export type AgentShape = "circle" | "squircle" | "capsule" | "pebble" | "cloud" | "drop" | "hexagon" | "triangle" | "flower";
@@ -164,6 +175,7 @@ export interface Snapshot {
   serverTime: string;
   notes: Note[];
   tasks: Task[];
+  projects: Project[];
   agents: Agent[];
   activity: Activity[];
   approvals: ApprovalRequest[];
@@ -182,7 +194,16 @@ export interface Snapshot {
  * Same topic, or "add to this note …": appended there. Clearly another note: appended there.
  * Otherwise, or "new note …": a new note. The answer comes back as note.routed.
  */
-export type VoiceTarget = { kind: "note" } | { kind: "append"; noteId: string } | { kind: "auto"; openNoteId: string | null };
+/**
+ * "task" (the To-Do app, ADR 0012): saved as a note first, then the main agent makes it one task with a date,
+ * a project and maybe an agent. listId is the open list ("today", "inbox", "scheduled", "completed" or a
+ * project id). The answer comes back as task.routed.
+ */
+export type VoiceTarget =
+  | { kind: "note" }
+  | { kind: "append"; noteId: string }
+  | { kind: "auto"; openNoteId: string | null }
+  | { kind: "task"; listId: string | null };
 
 export type DeviceMessage =
   | { type: "hello"; deviceId: string; mode: DeviceMode; client: ClientKind; protocol: number }
@@ -205,6 +226,7 @@ export type DeviceMessage =
   | { type: "task.assign"; taskId: string; agentId: string }
   | { type: "task.resume"; taskId: string }
   | { type: "task.cancel"; taskId: string }
+  | { type: "task.reschedule"; taskId: string; due: string | null }
   | { type: "approval.press"; requestId: string; approved: boolean; via: "push-bar" | "a-button" | "b-button" }
   | { type: "focus.start"; minutes: number; kind: "focus" | "break" }
   | { type: "focus.stop" }
@@ -229,6 +251,8 @@ export type ServerMessage =
   /** Where an "auto" dump went: `added` is the text that was saved, `why` one short line the Device shows. */
   | { type: "note.routed"; noteId: string; action: "new" | "append"; added: string; why: string; streamId?: string }
   | { type: "task.progress"; taskId: string; step: string }
+  /** Where a To-Do dump went: `label` is the headline ("Added to Pitch deck"), `why` one short line. */
+  | { type: "task.routed"; taskId: string; noteId: string; label: string; why: string; streamId?: string }
   | { type: "approval.request"; request: ApprovalRequest }
   | { type: "approval.resolved"; requestId: string; approved: boolean }
   | { type: "agent.created"; agentId: string }

@@ -76,12 +76,15 @@ The behavior of each control depends on the currently selected mode. Locations a
 
 ## 4. To-Do Mode
 
-**Purpose:** Navigate through tasks and manage their completion.
+**Purpose:** Navigate through tasks and manage their completion. Lists on the left (Today, Inbox, Scheduled, Completed, projects), tasks on the right. See `docs/adr/0012-todo-lists-and-spotlight.md`.
 
 - **System Wheel:** Rotate to switch to another function.
-- **Push Bar:** Press to mark the currently selected task as completed.
-- **In-App Wheel:** Rotate to browse and select tasks.
-- **Task Completion:** Once a task is marked as completed, it automatically disappears from the displayed task list.
+- **Push Bar:** Press to mark the currently selected task as completed. In Completed, it restores the task.
+- **In-App Wheel:** Rotate to browse and select tasks (or lists, when the sidebar has focus).
+- **D-pad:** Left and right move between the lists and the tasks, and between days on the Scheduled board.
+- **A / B / C / D:** A opens the task, B goes back to the lists, C moves the task to Today (on Overdue: all of it), D hands it to an agent.
+- **Microphone:** Hold to say a task. It is saved as a note, then filed as a task with its day, project or agent.
+- **Task Completion:** Once a task is marked as completed, it leaves the list and waits in Completed.
 
 ## 5. Microphone Button
 **Location:** Red button with a microphone icon on the lower edge of the screen housing, above the action buttons.
