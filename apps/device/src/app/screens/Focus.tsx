@@ -18,7 +18,12 @@ export function Focus() {
   useControls(e => {
     if (!f.running && (e.c === "appWheel" || e.c === "up" || e.c === "down")) {
       const d = e.c === "appWheel" ? e.dir || 0 : e.c === "up" ? 1 : -1;
-      setMins(m => Math.max(5, Math.min(90, m + d * 5)));
+      // The wheel cycles 5 → 90 → 5; the D-pad stops at the ends.
+      setMins(m => {
+        const n = m + d * 5;
+        if (e.c === "appWheel") return n > 90 ? 5 : n < 5 ? 90 : n;
+        return Math.max(5, Math.min(90, n));
+      });
       return true;
     }
     if (e.c === "pushBar") {
@@ -26,9 +31,9 @@ export function Focus() {
       net.send(f.running ? { type: "focus.stop" } : { type: "focus.start", minutes: mins, kind: "focus" });
       return true;
     }
-    if (e.c === "y" && !f.running) { net.send({ type: "focus.start", minutes: 5, kind: "break" }); return true; }
+    if (e.c === "c" && !f.running) { net.send({ type: "focus.start", minutes: 5, kind: "break" }); return true; }
     return false;
-  }, { push: f.running ? "End session" : "Start", wheel: f.running ? undefined : "Length", y: f.running ? undefined : "Break 5" });
+  }, { push: f.running ? "End session" : "Start", wheel: f.running ? undefined : "Length", c: f.running ? undefined : "Break 5" });
 
   return <div className="scr">
     <svg width="290" height="290" style={{ position: "absolute", left: "50%", top: 40, marginLeft: -145, transform: "rotate(-90deg)" }}>

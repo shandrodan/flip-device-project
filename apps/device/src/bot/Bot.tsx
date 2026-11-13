@@ -171,6 +171,8 @@ function ringDot(t: number) {
 }
 
 type Refs = Record<string, SVGElement | null>;
+/** Eye scale on top of the poses: 50% bigger overall, and 50% wider again on top of that. */
+const EYE_SIZE = 1.5, EYE_WIDTH = 1.5;
 const set = (el: SVGElement | null, k: string, v: string | number) => el && el.setAttribute(k, String(v));
 function draw(r: Refs, p: Pose) {
   const R = 100, cr = Math.cos(p.rot), sr = Math.sin(p.rot);
@@ -178,17 +180,19 @@ function draw(r: Refs, p: Pose) {
   set(r.body, "d", closedPath(pts));
   const e = p.eyes;
   for (const S of ["L", "R"] as const) {
-    let x = S === "L" ? e.lx : e.rx, y = S === "L" ? e.ly : e.ry;
-    const rs = radiusAt(p.radii, Math.atan2(y, x)) * Math.min(p.sx, p.sy), d = Math.hypot(x, y), lim = Math.max(0, rs - 0.22);
+    // Spread the eyes by the same factor so bigger eyes keep the same gap between them.
+    let x = (S === "L" ? e.lx : e.rx) * EYE_SIZE, y = S === "L" ? e.ly : e.ry;
+    const rs = radiusAt(p.radii, Math.atan2(y, x)) * Math.min(p.sx, p.sy), d = Math.hypot(x, y), lim = Math.max(0, rs - 0.22 * EYE_SIZE);
     if (d > lim && d > 0) { x *= lim / d; y *= lim / d; }
-    const X = ((x * p.sx + p.cx) * R).toFixed(1), Y = ((y * p.sy + p.cy) * R).toFixed(1), w = e.w * R, h = e.h * R;
+    const X = ((x * p.sx + p.cx) * R).toFixed(1), Y = ((y * p.sy + p.cy) * R).toFixed(1), w = e.w * R * EYE_SIZE * EYE_WIDTH, h = e.h * R * EYE_SIZE;
     const c = e[`c${S}`], lid = e[`lid${S}`], tilt = e[`t${S}`];
     set(r["p" + S], "d", pill(w, h));
     set(r["p" + S], "transform", `translate(${X} ${Y}) rotate(${tilt.toFixed(1)}) scale(1 ${Math.max(0.03, lid * (1 - c)).toFixed(3)})`);
-    const aw = w * 2.3, rise = w * 1.1;
+    // The happy arc keeps its old proportions at the bigger size; only its stroke gets heavier.
+    const bw = e.w * R * EYE_SIZE, aw = bw * 2.3, rise = bw * 1.1;
     set(r["a" + S], "d", `M${(-aw / 2).toFixed(1)} ${(rise * 0.5).toFixed(1)}Q0 ${(-rise).toFixed(1)} ${(aw / 2).toFixed(1)} ${(rise * 0.5).toFixed(1)}`);
     set(r["a" + S], "transform", `translate(${X} ${Y})`);
-    set(r["a" + S], "stroke-width", (w * 0.72).toFixed(1));
+    set(r["a" + S], "stroke-width", (bw * 0.72 * EYE_WIDTH).toFixed(1));
     set(r["a" + S], "opacity", c.toFixed(2));
   }
   const ro = p.ring.toFixed(2);

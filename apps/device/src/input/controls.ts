@@ -9,7 +9,7 @@ export type Control =
   | "appWheelPress" // reserved, apps may use it
   | "pushBar" // press only: the approval press, start/stop focus, complete a todo
   | "mic" // hold to record
-  | "a" | "b" | "x" | "y"
+  | "a" | "b" | "c" | "d"
   | "up" | "down" | "left" | "right";
 
 export interface ControlEvent {
@@ -23,8 +23,8 @@ export interface ControlEvent {
 export interface Hints {
   a?: string;
   b?: string;
-  x?: string;
-  y?: string;
+  c?: string;
+  d?: string;
   push?: string;
   mic?: string;
   wheel?: string;
@@ -88,7 +88,7 @@ export function onPress(fn: (e: ControlEvent) => void) {
 
 /**
  * Register a control handler (topmost mounted wins). Return true when handled.
- * `hints` tell the hint bar what A/B/X/Y and the push bar do right now (device-controls.md).
+ * `hints` tell the hint bar what A/B/C/D and the push bar do right now (device-controls.md).
  */
 export function useControls(handler: Handler, hints: Hints | null = null, active = true, layer: number = LAYER.screen) {
   const h = useRef(handler);
@@ -130,11 +130,11 @@ export function useActiveHints(): Hints {
 }
 
 /* ------------------------------ Keyboard ------------------------------ */
-// Space hold = mic · Enter = push bar · K/L/J/I = A/B/X/Y · arrows = D-pad
+// Space hold = mic · Enter = push bar · K/L/I/J = A/B/C/D · arrows = D-pad
 // Q/E = system wheel · W/S = in-app wheel · D = in-app wheel press · Esc/Backspace = B
 export const KEYMAP: Record<string, ControlEvent> = {
   Enter: { c: "pushBar" },
-  KeyK: { c: "a" }, KeyL: { c: "b" }, KeyJ: { c: "x" }, KeyI: { c: "y" },
+  KeyK: { c: "a" }, KeyL: { c: "b" }, KeyI: { c: "c" }, KeyJ: { c: "d" },
   Escape: { c: "b" }, Backspace: { c: "b" },
   ArrowUp: { c: "up" }, ArrowDown: { c: "down" }, ArrowLeft: { c: "left" }, ArrowRight: { c: "right" },
   KeyQ: { c: "systemWheel", dir: -1 }, KeyE: { c: "systemWheel", dir: 1 },
@@ -173,7 +173,7 @@ export function installInputs() {
 // Standard mapping (Xbox layout, same as the Device): A B X Y, D-pad, LB/RB = system wheel,
 // LT/RT = in-app wheel, right stick click = wheel press, Start = push bar, hold View = mic.
 const PAD: Record<number, ControlEvent> = {
-  0: { c: "a" }, 1: { c: "b" }, 2: { c: "x" }, 3: { c: "y" },
+  0: { c: "a" }, 1: { c: "b" }, 2: { c: "d" }, 3: { c: "c" },
   4: { c: "systemWheel", dir: -1 }, 5: { c: "systemWheel", dir: 1 },
   6: { c: "appWheel", dir: -1 }, 7: { c: "appWheel", dir: 1 },
   11: { c: "appWheelPress" }, 9: { c: "pushBar" },
@@ -206,9 +206,14 @@ function installGamepad() {
 }
 
 /* ------------------------------ List navigation ------------------------------ */
-/** Move an index with the D-pad (up/down) and/or the in-app wheel. */
+/**
+ * Move an index with the D-pad (up/down) and/or the in-app wheel.
+ * The in-app wheel always cycles: past the last option it comes back to the first, and the
+ * other way round, so it never hits an end. The D-pad stops at the edges unless `wrap` is set.
+ */
 export function step(i: number, e: ControlEvent, count: number, opts: { wheel?: boolean; dpad?: "vertical" | "horizontal" | "grid"; cols?: number; wrap?: boolean } = {}) {
-  const { wheel = true, dpad = "vertical", cols = 1, wrap = false } = opts;
+  const { wheel = true, dpad = "vertical", cols = 1 } = opts;
+  const wrap = opts.wrap || e.c === "appWheel";
   if (count <= 0) return null;
   let d = 0;
   if (wheel && e.c === "appWheel") d = e.dir || 0;

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Command Center</title>
+<style>
+/* Temporary: the command center (C button) from the paper sketch. A shade drops from the top:
+   a flywheel of switches the in-app wheel spins, notifications under it, a handle at the bottom.
+   Same screen, tokens and hint bar as apps/device/src/styles.css. Not wired into the app.
+   The four earlier directions are in directions.html. */
+:root {
+  --page-bg: #f5f5f7; --page-fg: #1d1d1f; --page-muted: #6e6e73; --page-line: rgba(0,0,0,0.08); --page-chip: rgba(0,0,0,0.06);
+  --sys: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --sys-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --rounded: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ring: 0 0 0 2px #000, 0 0 0 4px #fff;
+  --btn-a: #34c759; --btn-b: #ff453a; --btn-c: #ffd60a; --btn-d: #0a84ff; --push: #ff6a00;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --page-bg: #000; --page-fg: #f5f5f7; --page-muted: #86868b; --page-line: rgba(255,255,255,0.1); --page-chip: rgba(255,255,255,0.09); }
+}
+:root[data-theme="dark"] { --page-bg: #000; --page-fg: #f5f5f7; --page-muted: #86868b; --page-line: rgba(255,255,255,0.1); --page-chip: rgba(255,255,255,0.09); }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page-bg); color: var(--page-fg); font: 15px/1.47 var(--sys); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--page-line); background: var(--page-chip); }
+a { color: inherit; }
+
+.page { max-width: 1000px; margin: 0 auto; padding: 40px 16px 96px; }
+.page-head h1 { font: 700 34px/1.1 var(--sys-display); letter-spacing: -0.022em; margin: 0 0 8px; }
+.page-head p { margin: 0; color: var(--page-muted); font-size: 17px; letter-spacing: -0.01em; max-width: 720px; text-wrap: pretty; }
+.keys { margin-top: 12px; color: var(--page-muted); font-size: 13px; line-height: 2.1; }
+.frame { position: relative; width: 100%; aspect-ratio: 784 / 504; border-radius: 18px; overflow: hidden; background: #000; outline: none;
+  box-shadow: 0 0 0 8px #000, 0 0 0 9px var(--page-line); margin: 36px 0 9px; }
+.pad { margin-top: 22px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pad button { border: 0; min-width: 38px; height: 38px; padding: 0 10px; border-radius: 999px; background: var(--page-chip); font: 700 13px/1 var(--rounded); display: grid; place-items: center; transition: transform 90ms ease-out; }
+.pad button:active { transform: scale(0.92); }
+.pad .pc { background: var(--btn-c); color: #4d3d00; } .pad .pa { background: var(--btn-a); color: #fff; } .pad .pb { background: var(--btn-b); color: #fff; }
+.pad .lbl { font: 500 12px var(--sys); color: var(--page-muted); margin: 0 4px 0 10px; }
+.notes { margin-top: 28px; color: var(--page-muted); font-size: 14px; max-width: 720px; }
+.notes li { margin: 4px 0; }
+
+/* ================= Screen (784 x 504, scaled to the frame) ================= */
+.screen { position: absolute; left: 0; top: 0; width: 784px; height: 504px; transform-origin: 0 0; transform: scale(var(--s, 1));
+  overflow: hidden; background: #000; color: #f5f5f7; font-family: var(--sys); user-select: none; isolation: isolate; }
+.mute { color: rgba(235,235,245,0.58); }
+.say { font: 600 22px/1.18 var(--sys-display); letter-spacing: -0.022em; margin: 0; text-wrap: balance; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--sys); padding: 5px 9px; border-radius: 999px; background: rgba(255,255,255,0.08); color: rgba(235,235,245,0.75); white-space: nowrap; }
+.chip.warn { background: rgba(255,106,0,0.16); color: #ff9a4d; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+.status { position: absolute; top: 0; left: 0; right: 0; height: 34px; padding: 0 20px 0 24px; display: flex; align-items: center; justify-content: space-between;
+  font: 600 13px/1 var(--sys); z-index: 30; pointer-events: none; }
+.status span { display: inline-flex; align-items: center; gap: 8px; }
+.status svg { width: 15px; height: 15px; display: block; transition: opacity 200ms ease, width 260ms var(--ease); }
+.status .off { opacity: 0; width: 0; }
+.batt { width: 22px; height: 11px; border: 1px solid currentColor; border-radius: 3.5px; padding: 1px; opacity: 0.85; }
+.batt i { display: block; height: 100%; width: 82%; background: currentColor; border-radius: 2px; transition: background-color 200ms ease; }
+.batt.saver i { background: var(--btn-c); }
+
+.hints { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; padding: 0 18px; display: flex; align-items: center; gap: 14px; z-index: 40;
+  font: 500 12px/1 var(--sys); color: rgba(235,235,245,0.6); background: linear-gradient(to top, #000 55%, transparent); pointer-events: none; }
+.hint { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.hints .grow { flex: 1; }
+.g { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; font: 700 10px/1 var(--rounded); color: #000; flex: none; }
+.g.a { background: var(--btn-a); } .g.b { background: var(--btn-b); color: #fff; } .g.y { background: var(--btn-c); }
+.g.g-wheel, .g.g-dpad { background: rgba(255,255,255,0.18); color: #fff; font-size: 11px; } .g.g-dpad { border-radius: 4px; }
+.g.g-mic { background: #ff453a; color: #fff; }
+
+.bot { position: relative; width: var(--b, 150px); height: var(--b, 150px); border-radius: 50%; background: #fff; flex: none; }
+.bot i { position: absolute; top: 38%; width: 10%; height: 22%; border-radius: 999px; background: #000; transition: transform 320ms var(--ease); animation: blink 5s infinite; }
+.bot i:first-child { left: 33%; } .bot i:last-child { right: 33%; }
+.bot.sad i { transform: translateY(30%) scaleY(0.35); animation: none; }
+@keyframes blink { 0%, 96%, 100% { transform: none; } 98% { transform: scaleY(0.1); } }
+
+/* Home (what the shade covers). */
+.home { position: absolute; inset: 0; transition: filter 300ms ease; }
+.home-main { position: absolute; left: 24px; top: 44px; width: 232px; display: flex; flex-direction: column; gap: 12px; }
+.home-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.comb { position: absolute; left: 276px; top: 40px; width: 496px; height: 428px; }
+.orb { position: absolute; width: 84px; height: 84px; border-radius: 50%; background: #2c2c2e; display: grid; place-items: center; color: rgba(235,235,245,0.7); }
+.orb svg { width: 32px; height: 32px; }
+.orb.sel { box-shadow: var(--ring); background: #3a3a3c; color: #fff; }
+.home-cap { position: absolute; left: 24px; bottom: 44px; width: 232px; display: flex; flex-direction: column; gap: 3px; }
+.home-cap b { font: 600 17px/1.2 var(--sys-display); letter-spacing: -0.015em; }
+.home-cap .mute { font-size: 13px; }
+.scrim { position: absolute; inset: 0; z-index: 10; background: rgba(0,0,0,0.6); opacity: 0; transition: opacity 280ms ease; pointer-events: none; }
+.open .scrim { opacity: 1; }
+.open .home { filter: blur(3px); }
+
+/* ---------- The shade ---------- */
+.shade { position: absolute; left: 0; right: 0; top: 0; height: 414px; z-index: 20; background: #111113; border-radius: 0 0 30px 30px; overflow: hidden;
+  box-shadow: 0 24px 50px -12px rgba(0,0,0,0.9); transform: translateY(-104%); transition: transform 520ms var(--ease); }
+.open .shade { transform: none; }
+
+/* Flywheel: a ring seen from the front. The front item is the one A acts on. */
+.fly { position: absolute; left: 0; right: 0; top: 0; height: 232px; }
+.fly svg.track { position: absolute; inset: 0; }
+.fly .track path { fill: none; stroke: rgba(255,255,255,0.09); stroke-width: 1.5; }
+.it { position: absolute; left: 0; top: 0; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+  background: #2c2c2e; color: rgba(235,235,245,0.6); transition: background-color 220ms ease, color 220ms ease, box-shadow 160ms ease; will-change: transform, opacity; }
+.it svg { width: 28px; height: 28px; display: block; }
+.it.on { background: #fff; color: #000; }
+.it.on.k-saver { background: var(--btn-c); }
+.it.front { box-shadow: var(--ring); }
+.fly-cap { position: absolute; left: 0; right: 0; top: 172px; display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; }
+.fly-cap b { font: 600 17px/1.2 var(--sys-display); letter-spacing: -0.015em; }
+.fly-cap span { font-size: 13px; color: rgba(235,235,245,0.58); }
+.fly-cap span.warn { color: #ff9a4d; }
+.fly-cap.swap { animation: capIn 260ms var(--ease) both; }
+@keyframes capIn { from { opacity: 0; transform: translateY(4px); } }
+.fly.dim { filter: brightness(0.5); }
+.fly.dim .it.front { box-shadow: none; }
+
+.rule { position: absolute; left: 24px; right: 24px; height: 0.5px; background: rgba(255,255,255,0.14); }
+
+/* Notifications */
+.nlist { position: absolute; left: 16px; right: 16px; top: 234px; display: flex; flex-direction: column; gap: 4px; }
+.nlist .head { display: flex; justify-content: space-between; padding: 0 10px 4px; font: 600 12px/1.2 var(--sys); color: rgba(235,235,245,0.58); }
+.n { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 14px; transition: background-color 150ms ease, opacity 200ms ease; }
+.n.sel { background: rgba(255,255,255,0.1); }
+.n .av { width: 30px; height: 30px; border-radius: 50%; background: #2c2c2e; display: grid; place-items: center; flex: none; color: rgba(235,235,245,0.8); }
+.n .av svg { width: 16px; height: 16px; }
+.n .av .bot { --b: 30px; }
+.n .t { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: baseline; white-space: nowrap; }
+.n .t b { font-weight: 600; font-size: 14px; }
+.n .t span { font-size: 13.5px; color: rgba(235,235,245,0.68); overflow: hidden; text-overflow: ellipsis; }
+.n time { font-size: 12px; color: rgba(235,235,245,0.45); flex: none; }
+.n .unread { width: 9px; height: 9px; border-radius: 50%; background: #0a84ff; flex: none; transition: opacity 200ms; }
+.n.read .unread { opacity: 0; }
+.nlist .empty { padding: 18px 10px; font-size: 14px; color: rgba(235,235,245,0.45); }
+.handle { position: absolute; left: 50%; bottom: 9px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: rgba(255,255,255,0.28); }
+
+.toast { position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 45; background: #2c2c2e; color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; white-space: nowrap; animation: toastIn 420ms var(--ease) both; }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="page-head">
+    <h1>Command center</h1>
+    <p>Press C and the shade drops from the top. Spin the in-app wheel and the switches turn on a flywheel, round behind the screen. A flips the one in the centre. Notifications sit under the wheel. C again closes it.</p>
+    <div class="keys"><kbd>I</kbd> or <kbd>C</kbd> = C · <kbd>W</kbd> <kbd>S</kbd> or scroll on the screen = in-app wheel · arrows = D-pad · <kbd>K</kbd> or <kbd>Enter</kbd> = A · <kbd>L</kbd> or <kbd>Esc</kbd> = B · <a href="directions.html">Earlier four directions</a></div>
+  </header>
+
+  <div class="frame" id="frame" tabindex="0" aria-label="Command center preview"><div class="screen" id="screen"></div></div>
+
+  <div class="pad">
+    <button class="pc" data-c="c" aria-label="C button">C</button>
+    <span class="lbl">Wheel</span><button data-c="wheel-" aria-label="Wheel back">⟲</button><button data-c="wheel+" aria-label="Wheel forward">⟳</button>
+    <span class="lbl">D-pad</span><button data-c="left" aria-label="Left">←</button><button data-c="up" aria-label="Up">↑</button><button data-c="down" aria-label="Down">↓</button><button data-c="right" aria-label="Right">→</button>
+    <span class="lbl"></span><button class="pb" data-c="b" aria-label="B button">B</button><button class="pa" data-c="a" aria-label="A button">A</button>
+  </div>
+
+  <ul class="notes">
+    <li>Wheel forward and D-pad right both bring the right-hand switch to the centre; the one on the left slides up behind the screen and comes back round on the right. It never ends (in-app wheel rule).</li>
+    <li>D-pad left/right also spins it. D-pad down goes into the notifications, up comes back to the wheel. A on a notification opens it.</li>
+    <li>Turning Tailscale or Wi-Fi off makes the bot sad and tells you why. Battery saver turns the battery yellow.</li>
+  </ul>
+</main>
+
+<script>
+const svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+const I = {
+  wifi: svg('<path d="M2 8.5a15 15 0 0 1 20 0"/><path d="M5.5 12.2a10 10 0 0 1 13 0"/><path d="M9 15.8a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r="1.2" fill="currentColor" stroke="none"/>'),
+  bt: svg('<path d="m7 7 10 10-5 5V2l5 5L7 17"/>'),
+  ts: svg('<circle cx="5" cy="6" r="2.4"/><circle cx="19" cy="6" r="2.4"/><circle cx="12" cy="18" r="2.4"/><path d="M7.4 6h9.2M6.3 8.1l4.5 7.8M17.7 8.1l-4.5 7.8"/>'),
+  moon: svg('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>'),
+  saver: svg('<rect x="2" y="7" width="17" height="10" rx="2.5"/><path d="M22 10.5v3"/><path d="m11.5 8.5-2.5 4h3l-2.5 4"/>'),
+  laptop: svg('<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>'),
+  mail: svg('<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/>'),
+  notes: svg('<rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
+  tasks: svg('<path d="m5 7 2 2 4-4M5 16l2 2 4-4M14 7h5M14 16h5"/>'),
+  focus: svg('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M10 2h4"/>'),
+  agents: svg('<circle cx="8" cy="10" r="4"/><circle cx="17" cy="14" r="3.5"/>'),
+  set: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>'),
+};
+
+const ITEMS = [
+  { k: "wifi", name: "Wi-Fi", icon: I.wifi },
+  { k: "bt", name: "Bluetooth", icon: I.bt },
+  { k: "ts", name: "Tailscale", icon: I.ts },
+  { k: "saver", name: "Battery saver", icon: I.saver },
+  { k: "dnd", name: "Do Not Disturb", icon: I.moon },
+];
+const NOTES = [
+  { who: "Claude", av: `<div class="bot"><i></i><i></i></div>`, text: "Your limit resets in 42 min", at: "now", read: false },
+  { who: "PC agent", av: I.laptop, text: "Build finished on your laptop", at: "4m", read: false },
+  { who: "Inbox agent", av: I.mail, text: "Reply to Ana is ready, needs an approval press", at: "12m", read: true },
+];
+
+const st = { open: true, zone: "wheel", rot: 0, pos: 0, n: 0, on: { wifi: true, bt: true, ts: true, saver: false, dnd: false }, notes: NOTES.map(n => ({ ...n })) };
+const mod = (a, n) => ((a % n) + n) % n;
+// The item resting in the centre slot: slotOf(n - rot) = 0, so n = rot.
+const front = () => mod(st.rot, ITEMS.length);
+
+function sub(k) {
+  const on = st.on;
+  if (k === "wifi") return on.wifi ? "On · Studio 5G" : "Off";
+  if (k === "bt") return on.bt ? "On · AirPods Pro" : "Off";
+  if (k === "dnd") return on.dnd ? "On · notifications stay quiet" : "Off";
+  if (k === "saver") return on.saver ? "On · dimmer screen, slower sync" : "Off · 82%";
+  if (!on.ts) return "Off · agents can’t reach your machines";
+  return on.wifi ? "On · laptop and VM reachable" : "On · waiting for Wi-Fi";
+}
+
+/* ------------------------------ Build ------------------------------ */
+const screen = document.getElementById("screen"), frame = document.getElementById("frame");
+const orbs = [I.notes, I.tasks, I.agents, I.focus, I.set, null, null];
+const opos = [[70, 130], [162, 130], [254, 130], [116, 210], [208, 210], [300, 210], [346, 130]];
+// Ring geometry (screen px): the front of the ring is low and centred, the sides sit up in the
+// top corners, the back is above the screen edge, hidden.
+// Five slots on the front arc at -60, -30, 0, 30 and 60 degrees; the centre one is selected.
+// Between slots a switch rides past 75 degrees, behind the screen edge, and comes round the other side.
+const N = ITEMS.length, HALF = N / 2;
+const CX = 392, YC = -6, RX = 383, RY = 124, STEP = 30 * Math.PI / 180;
+const SEL_SLOT = 0;
+const slotOf = rel => (((rel + HALF) % N) + N) % N - HALF; // -2, -1, 0, 1, 2 at rest
+const at = slot => ({ x: CX + RX * Math.sin(slot * STEP), y: YC + RY * Math.cos(slot * STEP) });
+const selPt = at(SEL_SLOT), endL = at(-HALF), endR = at(HALF);
+screen.innerHTML = `
+  <div class="status"><span class="tnum">14:32</span><span><span data-stat="ts">${I.ts}</span><span data-stat="bt">${I.bt}</span><span data-stat="wifi">${I.wifi}</span><i class="batt" data-batt><i></i></i></span></div>
+  <div class="home">
+    <div class="home-main"><div class="bot" data-bot><i></i><i></i></div><p class="say" data-line></p>
+      <div class="home-chips"><span class="chip">4 tasks today</span><span class="chip warn" data-offchip hidden><i class="dot"></i>Offline · notes still work</span></div></div>
+    <div class="comb">${orbs.map((o, n) => `<div class="orb${n === 1 ? " sel" : ""}" style="left:${opos[n][0]}px;top:${opos[n][1]}px">${o ?? `<div class="bot" style="--b:52px"><i></i><i></i></div>`}</div>`).join("")}</div>
+    <div class="home-cap"><b>To-do</b><span class="mute">Today’s tasks</span></div>
+  </div>
+  <div class="scrim"></div>
+  <div class="shade">
+    <div class="fly" data-fly>
+      <svg class="track" viewBox="0 0 784 232"><path d="M${endL.x} ${endL.y} A ${RX} ${RY} 0 0 0 ${endR.x} ${endR.y}"/></svg>
+      ${ITEMS.map(it => `<div class="it k-${it.k}" data-item="${it.k}">${it.icon}</div>`).join("")}
+      <div class="fly-cap" data-cap style="left:${selPt.x - 150}px;width:300px;top:${selPt.y + 40}px"><b></b><span></span></div>
+    </div>
+    <div class="rule" style="top:224px"></div>
+    <div class="nlist" data-nlist></div>
+    <div class="handle"></div>
+  </div>
+  <div class="hints"><span class="hint"><i class="g g-mic">●</i>Hold to talk</span><span class="hint" data-hw><i class="g g-wheel">⟳</i><span></span></span>
+    <span class="grow"></span><span class="hint"><i class="g c">C</i><span data-hc></span></span><span class="hint" data-hb><i class="g b">B</i>Close</span><span class="hint" data-ha><i class="g a">A</i><span></span></span></div>`;
+new ResizeObserver(() => screen.style.setProperty("--s", frame.clientWidth / 784)).observe(frame);
+
+const q = s => screen.querySelector(s);
+
+/* ------------------------------ Flywheel motion ------------------------------ */
+function placeRing() {
+  ITEMS.forEach((it, n) => {
+    const slot = slotOf(n - st.pos);
+    const { x, y } = at(slot), c = Math.cos(slot * STEP);
+    const scale = 0.7 + 0.3 * c; // lower = nearer = bigger
+    const el = q(`[data-item="${it.k}"]`);
+    el.style.transform = `translate(${x - 32}px, ${y - 32}px) scale(${scale})`;
+    // Full at rest (|slot| <= 2), gone at the edge (|slot| = 2.5) where it wraps round.
+    el.style.opacity = Math.max(0, Math.min(1, (HALF - Math.abs(slot)) / 0.5)).toFixed(3);
+    el.style.zIndex = Math.round(c * 10);
+  });
+}
+let anim = null;
+function spin(dir) {
+  // dir +1 slides every item one slot right (the next one comes from the left). Wheel forward and
+  // D-pad right call it with -1, so the right-hand neighbour comes to the centre.
+  st.rot -= dir;
+  const from = st.pos, to = st.rot, t0 = performance.now(), dur = 420;
+  cancelAnimationFrame(anim);
+  const tick = now => {
+    const t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 4);
+    st.pos = from + (to - from) * e;
+    placeRing();
+    if (t < 1) anim = requestAnimationFrame(tick);
+  };
+  anim = requestAnimationFrame(tick);
+}
+
+/* ------------------------------ Render ------------------------------ */
+let lastCap = "";
+function update() {
+  screen.classList.toggle("open", st.open);
+  const f = ITEMS[front()];
+  ITEMS.forEach(it => {
+    const el = q(`[data-item="${it.k}"]`);
+    el.classList.toggle("on", st.on[it.k]);
+    el.classList.toggle("front", it === f);
+  });
+  ["wifi", "bt", "ts"].forEach(k => q(`[data-stat="${k}"] svg`).classList.toggle("off", !st.on[k] || (k === "ts" && !st.on.wifi)));
+  q("[data-batt]").classList.toggle("saver", st.on.saver);
+
+  const cap = q("[data-cap]"), key = f.k + sub(f.k);
+  cap.querySelector("b").textContent = f.name;
+  cap.querySelector("span").textContent = sub(f.k);
+  cap.querySelector("span").classList.toggle("warn", f.k === "ts" && (!st.on.ts || !st.on.wifi));
+  if (key.split("·")[0] !== lastCap.split("·")[0]) { cap.classList.remove("swap"); void cap.offsetWidth; cap.classList.add("swap"); }
+  lastCap = key;
+  q("[data-fly]").classList.toggle("dim", st.zone === "list");
+
+  const unread = st.notes.filter(n => !n.read).length;
+  q("[data-nlist]").innerHTML = `<div class="head"><span>Notifications</span><span>${st.on.dnd ? "Silenced" : unread ? unread + " new" : ""}</span></div>` +
+    (st.notes.length ? st.notes.map((n, i) => `<div class="n${n.read ? " read" : ""}${st.zone === "list" && i === st.n ? " sel" : ""}">
+      <div class="av">${n.av}</div><div class="t"><b>${n.who}</b><span>${n.text}</span></div><time>${n.at}</time><i class="unread"></i></div>`).join("")
+      : `<div class="empty">You’re all caught up.</div>`);
+
+  const sad = !st.on.wifi || !st.on.ts;
+  screen.querySelectorAll("[data-bot]").forEach(b => b.classList.toggle("sad", sad));
+  q("[data-line]").textContent = !st.on.wifi ? "Offline. Your dumps still save as notes."
+    : !st.on.ts ? "Tailscale is off. I can’t reach your laptop." : "Hold the mic and just say it.";
+  q("[data-offchip]").hidden = st.on.wifi;
+
+  q("[data-hc]").textContent = st.open ? "Close" : "Command center";
+  q("[data-hb]").style.display = "none";
+  q("[data-hw] span").textContent = st.open ? "Spin" : "Browse";
+  q("[data-ha] span").textContent = !st.open ? "Open" : st.zone === "list" ? "Open" : st.on[f.k] ? "Turn off" : "Turn on";
+  q("[data-ha]").style.display = st.open && st.zone === "list" && !st.notes.length ? "none" : "";
+}
+
+function toast(text) {
+  q(".toast")?.remove();
+  const t = document.createElement("div");
+  t.className = "toast"; t.textContent = text;
+  screen.appendChild(t);
+  setTimeout(() => t.remove(), 1800);
+}
+
+function press(c) {
+  if (c === "c") { st.open = !st.open; if (st.open) st.zone = "wheel"; return update(); }
+  if (!st.open) return;
+  if (c === "b") { st.open = false; return update(); }
+  if (c === "wheel+" || c === "wheel-") { st.zone = "wheel"; spin(c === "wheel+" ? -1 : 1); return update(); }
+  if (st.zone === "wheel") {
+    // D-pad picks the neighbour on that side: right brings the right-hand switch to the centre.
+    if (c === "right" || c === "left") { spin(c === "right" ? -1 : 1); return update(); }
+    if (c === "down" && st.notes.length) { st.zone = "list"; st.n = 0; return update(); }
+    if (c === "a") {
+      const k = ITEMS[front()].k;
+      st.on[k] = !st.on[k];
+      try { navigator.vibrate?.(6); } catch {}
+      return update();
+    }
+  } else {
+    if (c === "up") { if (st.n === 0) st.zone = "wheel"; else st.n--; return update(); }
+    if (c === "down") { st.n = Math.min(st.notes.length - 1, st.n + 1); return update(); }
+    if (c === "a" && st.notes[st.n]) {
+      const n = st.notes[st.n];
+      n.read = true; st.open = false; update();
+      return toast(`Opening ${n.who}`);
+    }
+  }
+}
+
+document.querySelectorAll("[data-c]").forEach(b => b.addEventListener("click", () => press(b.dataset.c)));
+let acc = 0;
+frame.addEventListener("wheel", e => {
+  if (!st.open) return;
+  e.preventDefault(); acc += e.deltaY;
+  if (Math.abs(acc) > 40) { press(acc > 0 ? "wheel+" : "wheel-"); acc = 0; }
+}, { passive: false });
+const KEYS = { KeyI: "c", KeyC: "c", KeyW: "wheel-", KeyS: "wheel+", ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+  KeyK: "a", Enter: "a", KeyL: "b", Escape: "b", Backspace: "b" };
+window.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const c = KEYS[e.code];
+  if (!c) return;
+  if (e.code === "Enter" && document.activeElement?.tagName === "BUTTON") return;
+  e.preventDefault();
+  press(c);
+});
+
+placeRing();
+update();
+</script>
+</body>
+</html>

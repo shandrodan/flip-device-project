@@ -1,6 +1,6 @@
 # 0007: Button-only UI, mapped from device-controls.md
 
-Status: Accepted
+Status: Superseded by 0010
 Date: 2026-11-13
 
 ## Decision

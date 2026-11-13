@@ -20,7 +20,7 @@ pnpm dev          # Device app + server + a PC agent on this computer
 ```
 
 Open http://localhost:5173 for the Device twin, and http://localhost:5173/dock for the Dock screen.
-Hold the red mic (or Space), turn the wheels (Q/E, W/S), press A (K), B (L) and the push bar (Enter).
+Hold the red mic (or Space), turn the wheels (Q/E, W/S), press A (K), B (L), C (I), D (J) and the push bar (Enter).
 
 Nothing else is required. With no keys, agents use a built-in planner and speech uses the browser.
 To go further, copy `.env.example` to `.env`, or open http://localhost:8787/setup to paste keys:

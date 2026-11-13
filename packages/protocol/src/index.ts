@@ -177,7 +177,12 @@ export interface Snapshot {
 
 /* ============================== Device -> server ============================== */
 
-export type VoiceTarget = { kind: "note" } | { kind: "append"; noteId: string };
+/**
+ * Where a dump goes. "auto" (the Notes app, ADR 0011): the main agent reads the open note and decides.
+ * Same topic, or "add to this note …": appended there. Clearly another note: appended there.
+ * Otherwise, or "new note …": a new note. The answer comes back as note.routed.
+ */
+export type VoiceTarget = { kind: "note" } | { kind: "append"; noteId: string } | { kind: "auto"; openNoteId: string | null };
 
 export type DeviceMessage =
   | { type: "hello"; deviceId: string; mode: DeviceMode; client: ClientKind; protocol: number }
@@ -221,6 +226,8 @@ export type ServerMessage =
   | { type: "transcript.partial"; streamId: string; text: string }
   | { type: "note.saved"; note: Note; streamId?: string; localId?: string }
   | { type: "suggestions"; noteId: string; suggestions: Suggestion[] }
+  /** Where an "auto" dump went: `added` is the text that was saved, `why` one short line the Device shows. */
+  | { type: "note.routed"; noteId: string; action: "new" | "append"; added: string; why: string; streamId?: string }
   | { type: "task.progress"; taskId: string; step: string }
   | { type: "approval.request"; request: ApprovalRequest }
   | { type: "approval.resolved"; requestId: string; approved: boolean }

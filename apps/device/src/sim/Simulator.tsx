@@ -5,6 +5,7 @@ import { emit, onPress, type Control, type ControlEvent } from "../input/control
 import { useNet, net } from "../net/client";
 import { DeviceApp } from "../app/App";
 import { defaultSource, type VoiceSource } from "../voice/capture";
+import { ArrowUpRightIcon, MicrophoneIcon, PlayIcon } from "@heroicons/react/20/solid";
 
 const W = 904, H = 968;
 
@@ -101,7 +102,7 @@ export function Simulator() {
   const micDown = (e: React.PointerEvent) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); emit({ c: "mic", phase: "down" }); };
   const micUp = () => { if (down.mic) emit({ c: "mic", phase: "up" }); };
   const docked = n.mode === "dock";
-  const tri = (r: number) => <svg width="16" height="16" viewBox="0 0 16 16" style={{ transform: `rotate(${r}deg)` }}><path d="M8 4 13 11H3z" fill="currentColor" /></svg>;
+  const tri = (r: number) => <PlayIcon width={16} height={16} aria-hidden="true" style={{ transform: `rotate(${r - 90}deg)` }} />;
 
   return <div className="sim">
     <header className="sim-head">
@@ -110,9 +111,9 @@ export function Simulator() {
         <p>The Device as a web app, driven only by its buttons. Hold the red mic, turn the wheels, press the push bar. Agents run on the server and act on your machines through the PC agent.</p>
       </div>
       <nav className="sim-links">
-        <a href="/dock" target="_blank" rel="noreferrer">Dock screen ↗</a>
-        <a href="/?kiosk=1" target="_blank" rel="noreferrer">Kiosk ↗</a>
-        <a href="/setup" target="_blank" rel="noreferrer">Setup ↗</a>
+        <a href="/dock" target="_blank" rel="noreferrer">Dock screen <ArrowUpRightIcon width={12} height={12} aria-hidden="true" style={{ verticalAlign: "-1px" }} /></a>
+        <a href="/?kiosk=1" target="_blank" rel="noreferrer">Kiosk <ArrowUpRightIcon width={12} height={12} aria-hidden="true" style={{ verticalAlign: "-1px" }} /></a>
+        <a href="/setup" target="_blank" rel="noreferrer">Setup <ArrowUpRightIcon width={12} height={12} aria-hidden="true" style={{ verticalAlign: "-1px" }} /></a>
       </nav>
     </header>
 
@@ -121,7 +122,7 @@ export function Simulator() {
         <div className="lid">
           <div className="glass"><div className="screen" ref={screenRef}><DeviceApp voice={voice} onWantPush={setWant} /></div></div>
           <button className="mic" aria-label="Microphone (hold)" onPointerDown={micDown} onPointerUp={micUp} onPointerCancel={micUp} onLostPointerCapture={micUp} style={down.mic ? { transform: "translateY(1px) scale(0.95)", boxShadow: "0 0 0 4px rgba(255,69,58,0.25)" } : undefined}>
-            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><rect x="7" y="2.5" width="6" height="10" rx="3" /><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" /></svg>
+            <MicrophoneIcon width={14} height={14} aria-hidden="true" />
           </button>
           <L x={680} y={576}>Mic · hold</L>
           <button className={"push" + (down.pushBar ? " down" : "") + (want ? " want" : "")} aria-label="Push bar (approve)" onPointerDown={e => { e.preventDefault(); emit({ c: "pushBar" }); }} />
@@ -138,8 +139,8 @@ export function Simulator() {
           <L x={370} y={222}>System wheel</L>
           <Wheel kind="appWheel" label="In-app wheel" spin={spin.appWheel} press />
           <L x={530} y={222}>In-app wheel · press</L>
-          <div className="abxy">
-            {btn("y", "y", "Y", "Y button")}{btn("x", "x", "X", "X button")}{btn("b", "b", "B", "B button")}{btn("a", "a", "A", "A button")}
+          <div className="abcd">
+            {btn("c", "c", "C", "C button")}{btn("d", "d", "D", "D button")}{btn("b", "b", "B", "B button")}{btn("a", "a", "A", "A button")}
           </div>
           <L x={720} y={262}>A confirm · B back</L>
           <div className="speaker" />
@@ -158,7 +159,7 @@ export function Simulator() {
       <button className="pbtn" aria-pressed={!labels} onClick={() => setLabels(!labels)}>{labels ? "Hide labels" : "Show labels"}</button>
     </div>
     <div className="keys">
-      <kbd>Space</kbd> hold mic · <kbd>Enter</kbd> push bar · <kbd>K</kbd> A · <kbd>L</kbd>/<kbd>Esc</kbd> B · <kbd>J</kbd> X · <kbd>I</kbd> Y · <kbd>←↑↓→</kbd> D-pad · <kbd>Q</kbd>/<kbd>E</kbd> system wheel · <kbd>W</kbd>/<kbd>S</kbd> or scroll on the screen: in-app wheel · <kbd>D</kbd> wheel press · An Xbox controller works too (LB/RB system wheel, LT/RT in-app wheel, Start push bar, hold View for mic).
+      <kbd>Space</kbd> hold mic · <kbd>Enter</kbd> push bar · <kbd>K</kbd> A · <kbd>L</kbd>/<kbd>Esc</kbd> B · <kbd>I</kbd> C · <kbd>J</kbd> D · <kbd>←↑↓→</kbd> D-pad · <kbd>Q</kbd>/<kbd>E</kbd> system wheel · <kbd>W</kbd>/<kbd>S</kbd> or scroll on the screen: in-app wheel · <kbd>D</kbd> wheel press · An Xbox controller works too (LB/RB system wheel, LT/RT in-app wheel, Start push bar, hold View for mic).
     </div>
   </div>;
 }

@@ -59,11 +59,11 @@ export function Suggest({ id }: { id: string }) {
       }
       return true;
     }
-    if (e.c === "x") { accept(true); return true; }
-    if (e.c === "y") { justNote(); return true; }
+    if (e.c === "d") { accept(true); return true; }
+    if (e.c === "c") { justNote(); return true; }
     return false;
   }, ready
-    ? { a: sel < sugg.length ? (picks.includes(sugg[sel]?.id) ? "Leave out" : "Include") : sel === sugg.length ? "Do it" : sel === sugg.length + 1 ? "Keep as todos" : "Just the note", x: "Keep as todos", y: "Just the note", wheel: "Move", dpad: "Move" }
+    ? { a: sel < sugg.length ? (picks.includes(sugg[sel]?.id) ? "Leave out" : "Include") : sel === sugg.length ? "Do it" : sel === sugg.length + 1 ? "Keep as todos" : "Just the note", d: "Keep as todos", c: "Just the note", wheel: "Move", dpad: "Move" }
     : { a: "OK" });
 
   if (!note) return <div className="scr"><p className="say">That note is gone.</p></div>;

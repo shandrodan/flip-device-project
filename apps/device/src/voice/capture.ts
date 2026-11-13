@@ -15,6 +15,14 @@ export const SAMPLES = [
   { text: "oh and export the dock render, and archive the old renders folder on my laptop", clean: "Export the dock render, and archive the old renders folder on my laptop." },
   { text: "idea: the dock could show a tiny ring when an agent is busy", clean: "Idea: the dock could show a tiny ring when an agent is busy." },
 ];
+/** Notes rehearsal lines, in order: a list, a related item, an explicit add, another note's topic, an explicit new note. */
+export const PAD_SAMPLES = [
+  { text: "grocery list", clean: "Grocery list" },
+  { text: "carrots and potatoes", clean: "Carrots and potatoes." },
+  { text: "add to this note, oat milk and eggs", clean: "Add to this note, oat milk and eggs." },
+  { text: "remind me to ask the venue for two more extension cords", clean: "Remind me to ask the venue for two more extension cords." },
+  { text: "new note, book the train back for Sunday evening", clean: "New note, book the train back for Sunday evening." },
+];
 const NAMES = ["Scout", "Juniper", "Echo", "Pixel", "Maple", "Orbit"];
 const WORD_MS = 95;
 
@@ -40,6 +48,8 @@ interface Opts {
   onPartial(text: string): void;
   onChunk?(b: Blob): void;
   sample?: number;
+  /** Script mode: play this line instead of a sample. */
+  line?: { text: string; clean: string };
   purpose?: "note" | "name";
 }
 
@@ -57,13 +67,19 @@ export function nextSample() {
   return i;
 }
 
+export function nextPadSample() {
+  let i = 0;
+  try { i = Number(localStorage.getItem("flip-pad-sample") || 0) % PAD_SAMPLES.length; localStorage.setItem("flip-pad-sample", String((i + 1) % PAD_SAMPLES.length)); } catch { /* ignore */ }
+  return PAD_SAMPLES[i];
+}
+
 export async function startCapture(source: VoiceSource, o: Opts): Promise<Capture> {
   return source === "mic" ? startMic(o) : startScript(o);
 }
 
 function startScript(o: Opts): Capture {
   const t0 = Date.now();
-  const s = o.purpose === "name" ? { text: NAMES[Math.floor(Math.random() * NAMES.length)], clean: "" } : SAMPLES[o.sample ?? 0];
+  const s = o.purpose === "name" ? { text: NAMES[Math.floor(Math.random() * NAMES.length)], clean: "" } : o.line ?? SAMPLES[o.sample ?? 0];
   const words = s.text.split(" ");
   let n = 0;
   const id = window.setInterval(() => {

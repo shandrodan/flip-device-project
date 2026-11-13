@@ -21,21 +21,21 @@ export function Todo() {
     if (n !== null) { setSel(n); return true; }
     if (!cur) return false;
     if (e.c === "pushBar") {
-      if (cur.agentId && cur.status !== "todo") { toast("Agent tasks finish themselves. Stop it first with Y."); return true; }
+      if (cur.agentId && cur.status !== "todo") { toast("Agent tasks finish themselves. Stop it first with C."); return true; }
       setLeaving(cur.id);
       setTimeout(() => { net.send({ type: "task.complete", taskId: cur.id }); setLeaving(null); }, 260);
       return true;
     }
     if (e.c === "a") { push({ name: "task", taskId: cur.id }); return true; }
-    if (e.c === "x" && !cur.agentId) { setPicking(cur.id); return true; }
-    if (e.c === "y" && cur.agentId && cur.status !== "todo") { net.send({ type: "task.cancel", taskId: cur.id }); return true; }
+    if (e.c === "d" && !cur.agentId) { setPicking(cur.id); return true; }
+    if (e.c === "c" && cur.agentId && cur.status !== "todo") { net.send({ type: "task.cancel", taskId: cur.id }); return true; }
     return false;
   }, {
     wheel: open.length ? "Browse" : undefined,
     push: cur && (!cur.agentId || cur.status === "todo") ? "Complete" : undefined,
     a: cur ? "Open" : undefined,
-    x: cur && !cur.agentId ? "Hand to agent" : undefined,
-    y: cur?.agentId && cur.status !== "todo" ? "Stop agent" : undefined,
+    d: cur && !cur.agentId ? "Hand to agent" : undefined,
+    c: cur?.agentId && cur.status !== "todo" ? "Stop agent" : undefined,
   });
 
   return <div className="scr">

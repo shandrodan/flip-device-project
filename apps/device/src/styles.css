@@ -7,7 +7,7 @@
   --rounded: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --ring: 0 0 0 2px #000, 0 0 0 4px #fff;
-  --btn-a: #34c759; --btn-b: #ff453a; --btn-x: #0a84ff; --btn-y: #ffd60a; --push: #ff6a00;
+  --btn-a: #34c759; --btn-b: #ff453a; --btn-c: #ffd60a; --btn-d: #0a84ff; --push: #ff6a00;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --page-bg: #000; --page-fg: #f5f5f7; --page-muted: #86868b; --page-chip: rgba(255,255,255,0.09); --page-line: rgba(255,255,255,0.1); }
@@ -69,13 +69,13 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 .dpad .c { position: absolute; left: 56px; top: 56px; width: 56px; height: 56px; background: #2c2c2e; }
 .dpad button.down { background: #1c1c1e; color: #fff; transform: scale(0.97); }
 
-/* Action buttons, Xbox layout: Y top, A bottom, X left, B right. */
-.abxy { position: absolute; left: 630px; top: 70px; width: 180px; height: 180px; }
-.abxy button { position: absolute; width: 58px; height: 58px; border-radius: 50%; border: 0; cursor: pointer; font: 700 20px var(--rounded); color: #fff;
+/* Action buttons, C (yellow) top, A bottom, D (blue) left, B right. */
+.abcd { position: absolute; left: 630px; top: 70px; width: 180px; height: 180px; }
+.abcd button { position: absolute; width: 58px; height: 58px; border-radius: 50%; border: 0; cursor: pointer; font: 700 20px var(--rounded); color: #fff;
   box-shadow: 0 3px 0 rgba(0,0,0,0.25), 0 1px 0 rgba(255,255,255,0.35) inset; transition: transform 70ms ease-out, box-shadow 70ms; }
-.abxy button.down { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
-.abxy .y { left: 61px; top: 0; background: var(--btn-y); color: #4d3d00; } .abxy .a { left: 61px; top: 122px; background: var(--btn-a); }
-.abxy .x { left: 0; top: 61px; background: var(--btn-x); } .abxy .b { left: 122px; top: 61px; background: var(--btn-b); }
+.abcd button.down { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+.abcd .c { left: 61px; top: 0; background: var(--btn-c); color: #4d3d00; } .abcd .a { left: 61px; top: 122px; background: var(--btn-a); }
+.abcd .d { left: 0; top: 61px; background: var(--btn-d); } .abcd .b { left: 122px; top: 61px; background: var(--btn-b); }
 
 /* Wheels (top view of a rotary wheel). Scroll on it, or click its left/right half. */
 .wheel { position: absolute; width: 104px; height: 104px; border-radius: 50%; cursor: ns-resize;
@@ -165,7 +165,7 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 .hints.ink { color: rgba(0,0,0,0.72); background: none; z-index: 32; }
 .hint { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .g { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; font: 700 10px/1 var(--rounded); color: #000; flex: none; }
-.g.a { background: var(--btn-a); } .g.b { background: var(--btn-b); color: #fff; } .g.x { background: var(--btn-x); color: #fff; } .g.y { background: var(--btn-y); }
+.g.a { background: var(--btn-a); } .g.b { background: var(--btn-b); color: #fff; } .g.d { background: var(--btn-d); color: #fff; } .g.c { background: var(--btn-c); }
 .g.g-push { width: 6px; height: 17px; border-radius: 3px; background: var(--push); }
 .g.g-mic { background: #ff453a; color: #fff; } .g.g-wheel { background: rgba(255,255,255,0.18); color: #fff; font-size: 11px; } .g.g-dpad { background: rgba(255,255,255,0.18); color: #fff; border-radius: 4px; font-size: 11px; }
 .hints.ink .g.g-wheel, .hints.ink .g.g-dpad { background: rgba(0,0,0,0.2); color: #000; }
@@ -188,6 +188,43 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 .orb.sel.app { background: #3a3a3c; }
 .orb .badge { position: absolute; top: 4px; right: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--push); box-shadow: 0 0 0 2px #000; }
 
+/* Command center (C on Home): a shade from the top. Flywheel of switches, then notifications. */
+.cc-scrim { position: absolute; inset: 0; z-index: 19; background: rgba(0,0,0,0.6); opacity: 0; transition: opacity 280ms ease; pointer-events: none; }
+.cc-scrim.open { opacity: 1; }
+.cc-shade { position: absolute; left: 0; right: 0; top: 0; height: 414px; z-index: 20; background: #111113; border-radius: 0 0 30px 30px; overflow: hidden;
+  box-shadow: 0 24px 50px -12px rgba(0,0,0,0.9); transform: translateY(-104%); transition: transform 520ms var(--ease); }
+.cc-shade.open { transform: none; }
+.cc-fly { position: absolute; left: 0; right: 0; top: 0; height: 232px; transition: filter 200ms ease; }
+.cc-fly.dim { filter: brightness(0.5); }
+.cc-track { position: absolute; inset: 0; }
+.cc-track path { fill: none; stroke: rgba(255,255,255,0.09); stroke-width: 1.5; }
+.cc-it { position: absolute; left: 0; top: 0; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+  background: #2c2c2e; color: rgba(235,235,245,0.6); transition: background-color 220ms ease, color 220ms ease, box-shadow 160ms ease; will-change: transform, opacity; }
+.cc-it svg { width: 28px; height: 28px; display: block; }
+.cc-it.on { background: #fff; color: #000; }
+.cc-it.on.cc-saver { background: var(--btn-c); }
+.cc-it.sel { box-shadow: var(--ring); }
+.cc-fly.dim .cc-it.sel { box-shadow: none; }
+.cc-cap { position: absolute; width: 300px; display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; animation: ccCap 260ms var(--ease) both; }
+.cc-cap b { font: 600 17px/1.2 var(--sys-display); letter-spacing: -0.015em; }
+.cc-cap span { font-size: 13px; color: rgba(235,235,245,0.58); }
+.cc-cap span.warn { color: #ff9a4d; }
+@keyframes ccCap { from { opacity: 0; transform: translateY(4px); } }
+.cc-rule { position: absolute; left: 24px; right: 24px; top: 224px; height: 0.5px; background: rgba(255,255,255,0.14); }
+.cc-list { position: absolute; left: 16px; right: 16px; top: 234px; display: flex; flex-direction: column; gap: 4px; }
+.cc-head { display: flex; justify-content: space-between; padding: 0 10px 4px; font: 600 12px/1.2 var(--sys); color: rgba(235,235,245,0.58); }
+.cc-n { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 14px; transition: background-color 150ms ease; }
+.cc-n.sel { background: rgba(255,255,255,0.1); }
+.cc-av { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.cc-t { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: baseline; white-space: nowrap; }
+.cc-t b { font-weight: 600; font-size: 14px; }
+.cc-t span { font-size: 13.5px; color: rgba(235,235,245,0.68); overflow: hidden; text-overflow: ellipsis; }
+.cc-n time { font-size: 12px; color: rgba(235,235,245,0.45); flex: none; }
+.cc-unread { width: 9px; height: 9px; border-radius: 50%; background: #0a84ff; flex: none; transition: opacity 200ms; }
+.cc-n.read .cc-unread { opacity: 0; }
+.cc-empty { padding: 18px 10px; font-size: 14px; color: rgba(235,235,245,0.45); }
+.cc-handle { position: absolute; left: 50%; bottom: 9px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: rgba(255,255,255,0.28); }
+
 /* Function switcher HUD (system wheel). */
 .hud { position: absolute; left: 50%; top: 50%; z-index: 30; transform: translate(-50%, -50%); display: flex; gap: 8px; padding: 10px; border-radius: 22px; background: rgba(28,28,30,0.92); backdrop-filter: blur(10px); animation: hudIn 260ms var(--ease) both; pointer-events: none; }
 @keyframes hudIn { from { opacity: 0; transform: translate(-50%, -46%) scale(0.96); } }
@@ -205,6 +242,8 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
     radial-gradient(45% 50% at 40% 20%, #ff9a1a 0%, transparent 70%),
     linear-gradient(to top, #ff5200, #ff8c1a); }
 .fire.on { opacity: 1; transition: clip-path 650ms var(--ease), opacity 60ms ease; }
+/* Closing: stays fully opaque and shrinks to a point (scale 0), ease-in-out so it doesn't linger as a dot. */
+.fire.out { opacity: 1; transition: clip-path 600ms cubic-bezier(0.65, 0, 0.35, 1); }
 .fire i { position: absolute; bottom: -150px; width: 280px; height: 280px; border-radius: 50%; filter: blur(55px); opacity: 0.7; animation: flame 3.4s ease-in-out infinite alternate; }
 @keyframes flame { to { transform: translateY(-130px) scale(1.2); opacity: 0.3; } }
 .fire-copy { position: absolute; left: 40px; top: 0; bottom: 0; width: 450px; display: flex; flex-direction: column; justify-content: center; color: #000; }
@@ -218,4 +257,87 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
   .in { filter: none; }
+}
+
+/* ================= Notes (ADR 0011) =================
+   A light app: yellow header, beige list, ruled legal pad. Holding the mic pushes the app down and
+   the main agent appears above it on black. */
+.np { position: absolute; inset: 0; background: #000; color: #231f14; overflow: hidden;
+  --np-y1: #fbd866; --np-y2: #f5c443; --np-y-ink: #3f2f00; --np-paper: #fffaeb; --np-list: #fbf2d6; --np-pad: #fff7d6; --np-sel: #fbe7a6;
+  --np-ink-2: #6f6754; --np-ink-3: #9a917c; --np-rule: rgba(110,90,30,0.14); }
+.np-app { position: absolute; inset: 0; overflow: hidden; background: var(--np-paper); transition: transform 460ms var(--ease), border-radius 460ms var(--ease); }
+.np.dictating .np-app { transform: translateY(112px); border-radius: 30px 30px 0 0; }
+
+.np-head { position: absolute; left: 0; right: 0; top: 0; height: 74px; color: var(--np-y-ink); z-index: 2; border-bottom: 2px dotted rgba(150,110,10,0.35);
+  /* yellow stops above the dots; behind the dots is the list colour on the left and the pad on the right */
+  background: linear-gradient(180deg, var(--np-y1), var(--np-y2)) padding-box, linear-gradient(90deg, var(--np-list) 290px, var(--np-pad) 290px) border-box; }
+.np-head.full { background: linear-gradient(180deg, var(--np-y1), var(--np-y2)) padding-box, var(--np-pad) border-box; }
+.np-status { position: absolute; top: 0; left: 0; right: 0; height: 30px; padding: 0 20px 0 24px; display: flex; align-items: center; justify-content: space-between; font: 600 13px/1 var(--sys); }
+.np-status span { display: inline-flex; align-items: center; gap: 8px; }
+.np-title { position: absolute; left: 22px; bottom: 13px; display: flex; align-items: center; gap: 10px; font: 700 21px/1 var(--sys-display); letter-spacing: -0.02em; }
+.np-count { position: absolute; left: 214px; bottom: 15px; font: 500 14px/1 var(--sys); opacity: 0.7; }
+
+.np-list { position: absolute; left: 0; width: 290px; top: 74px; bottom: 0; padding: 8px 8px 44px; overflow-y: auto; scrollbar-width: none; background: var(--np-list); border-right: 0.5px solid var(--np-rule); }
+.np-list::-webkit-scrollbar { display: none; }
+.np-row { position: relative; padding: 9px 12px 10px 14px; border-radius: 10px; transition: background-color 150ms ease; }
+.np-row-t { font: 600 15px/1.3 var(--sys); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-row-m { font-size: 13px; line-height: 1.3; color: var(--np-ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-row.sel { background: var(--np-sel); }
+.np-row.sel::before { content: ""; position: absolute; left: 4px; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: #e2ac2b; }
+.np-row.fresh { animation: npFresh 1400ms ease-out; }
+@keyframes npFresh { 0%, 30% { background-color: #ffe27a; } }
+.np-empty { margin: 8px 10px; font-size: 14px; color: var(--np-ink-2); }
+
+/* Each note is its own sheet. Forward lifts the sheet off the top of the pad; back drops the last one onto it. */
+.np-pane { --m: 72px; position: absolute; left: 290px; right: 0; top: 74px; bottom: 0; overflow: hidden; background: #f1e3b3; }
+.np-pane.full { --m: 100px; left: 0; animation: npFade 200ms ease-out both; }
+@keyframes npFade { from { opacity: 0; } }
+.np-sheet { position: absolute; inset: 0; padding: 18px 30px 60px calc(var(--m) + 24px); overflow: hidden; background-color: var(--np-pad);
+  background-image:
+    linear-gradient(90deg, transparent calc(var(--m) - 1px), rgba(214,72,60,0.45) calc(var(--m) - 1px) var(--m), transparent var(--m)),
+    repeating-linear-gradient(180deg, transparent 0 33px, rgba(70,110,180,0.2) 33px 34px);
+  background-position: 0 0, 0 17px; background-attachment: local; }
+.np-sheet.scroll { overflow-y: auto; scrollbar-width: none; }
+.np-sheet.scroll::-webkit-scrollbar { display: none; }
+.np-sheet.lift, .np-sheet.drop { z-index: 1; box-shadow: 0 12px 26px -10px rgba(70,50,0,0.45); }
+.np-sheet.lift { animation: npLift 340ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+.np-sheet.drop { animation: npDrop 340ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+@keyframes npLift { to { transform: translateY(-104%); } }
+@keyframes npDrop { from { transform: translateY(-104%); } }
+.np-in { position: relative; }
+.np-margin { position: absolute; right: calc(100% + 34px); width: calc(var(--m) - 14px); top: 0; text-align: right; font: 500 12.5px/34px var(--sys); color: var(--np-ink-2); white-space: nowrap; }
+.np-sheet h2 { font: 650 22px/34px var(--sys-display); letter-spacing: -0.016em; margin: 0 0 34px; text-wrap: pretty; } /* one empty ruled line before the body */
+.np-sheet p { font-size: 18px; line-height: 34px; margin: 0; letter-spacing: -0.006em; text-wrap: pretty; color: #2c2717; white-space: pre-wrap; max-width: 640px; }
+.np-sheet p.np-none { color: var(--np-ink-3); }
+.np-chips { display: flex; gap: 6px; min-height: 34px; align-items: center; }
+.np-chips .chip { background: rgba(110,90,30,0.09); color: var(--np-ink-2); }
+.np-chips .chip.blue { background: rgba(10,132,255,0.12); color: #0060c7; }
+.np-chips .chip.warn { background: rgba(255,106,0,0.13); color: #b54d00; }
+mark.np-added { color: inherit; border-radius: 4px; padding: 1px 2px; margin: 0 -2px; animation: npAdded 4.5s ease-out forwards; }
+@keyframes npAdded { 0%, 55% { background: #ffe27a; } 100% { background: transparent; } }
+/* Under the hint bar, so the ink hints sit on the app's own colours. */
+.np-foot { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; z-index: 3; box-shadow: 0 -0.5px 0 var(--np-rule);
+  background: linear-gradient(90deg, var(--np-list) 289.5px, var(--np-rule) 289.5px 290px, var(--np-pad) 290px); }
+.np-foot.full { background: var(--np-pad); }
+
+/* The agent band above the app */
+.np-band { position: absolute; left: 0; right: 0; top: 0; height: 112px; padding: 0 28px 0 26px; display: flex; gap: 18px; align-items: center; color: #f5f5f7;
+  opacity: 0; transform: translateY(-14px); transition: opacity 180ms ease, transform 460ms var(--ease); pointer-events: none; }
+.np.dictating .np-band { opacity: 1; transform: none; transition: opacity 240ms ease 80ms, transform 460ms var(--ease); }
+.np-bot { width: 76px; height: 76px; flex: none; }
+.np-band-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.np-label { font: 600 12.5px/1 var(--sys); letter-spacing: 0.01em; color: rgba(235,235,245,0.6); display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-live { width: 7px; height: 7px; border-radius: 50%; background: #ff453a; animation: npLive 1s ease-in-out infinite alternate; flex: none; }
+@keyframes npLive { to { opacity: 0.35; } }
+.np-dots i { font-style: normal; animation: npDot 1.2s infinite; opacity: 0.2; }
+.np-dots i:nth-child(2) { animation-delay: 150ms; } .np-dots i:nth-child(3) { animation-delay: 300ms; }
+@keyframes npDot { 30% { opacity: 1; } 60%, 100% { opacity: 0.2; } }
+.np-said { font: 500 18px/1.3 var(--sys-display); letter-spacing: -0.012em; color: #fff; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.np-band.think .np-said, .np-band.done .np-said { color: rgba(255,255,255,0.72); }
+.np-wait { color: rgba(235,235,245,0.4); }
+.np-about { font-size: 13.5px; line-height: 1.3; color: #ffd60a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-pill { flex: none; font: 500 12px/1 var(--sys); color: rgba(235,235,245,0.55); padding: 7px 11px; border-radius: 999px; background: rgba(255,255,255,0.08); }
+@media (prefers-reduced-motion: reduce) {
+  .np-app, .np-band { transition-duration: 1ms !important; }
+  .np-sheet.lift, .np-sheet.drop, mark.np-added, .np-row.fresh { animation-duration: 1ms !important; }
 }

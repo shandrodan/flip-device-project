@@ -8,7 +8,7 @@ import { useApp, useTalkTarget } from "../context";
 import { ACTIVE, AgentBot, ago, Ico, moodFor, statusChip, useScrollSel } from "../ui";
 
 // device-controls.md, Active Agents mode: the screen shows agent status by itself.
-// D-pad picks an agent (A opens it), X makes a new one. The in-app wheel does nothing here.
+// D-pad or the in-app wheel picks an agent (A opens it), D makes a new one.
 export function Agents() {
   const { snap, push } = useApp();
   const items = snap.agents.length + 1;
@@ -16,13 +16,12 @@ export function Agents() {
   const i = Math.min(sel, items - 1);
   useScrollSel(i);
   useControls(e => {
-    if (e.c === "appWheel") return true;
-    const n = step(i, e, items, { wheel: false, dpad: "grid", cols: 4 });
+    const n = step(i, e, items, { dpad: "grid", cols: 4 });
     if (n !== null) { setSel(n); return true; }
     if (e.c === "a") { push(i < snap.agents.length ? { name: "agent", agentId: snap.agents[i].id } : { name: "create" }); return true; }
-    if (e.c === "x") { push({ name: "create" }); return true; }
+    if (e.c === "d") { push({ name: "create" }); return true; }
     return false;
-  }, { dpad: "Pick", a: i < snap.agents.length ? "Open" : "New agent", x: "New agent" });
+  }, { wheel: "Pick", dpad: "Pick", a: i < snap.agents.length ? "Open" : "New agent", d: "New agent" });
 
   const busy = snap.tasks.filter(t => t.agentId && ACTIVE.includes(t.status)).length;
   return <div className="scr">
@@ -53,9 +52,9 @@ export function AgentView({ id }: { id: string }) {
   useControls(e => {
     if (!a) return false;
     if (e.c === "a" && work) { push({ name: "task", taskId: work.id }); return true; }
-    if (e.c === "y" && !a.builtin) { net.send({ type: "agent.delete", agentId: a.id }); return true; }
+    if (e.c === "c" && !a.builtin) { net.send({ type: "agent.delete", agentId: a.id }); return true; }
     return false;
-  }, { a: work ? "Open task" : undefined, y: a && !a.builtin ? "Delete agent" : undefined });
+  }, { a: work ? "Open task" : undefined, c: a && !a.builtin ? "Delete agent" : undefined });
   if (!a) return <div className="scr"><p className="say">That agent is gone.</p></div>;
   const done = snap.tasks.filter(t => t.agentId === a.id && t.status === "done").length;
   const acts = snap.activity.filter(x => x.agentId === a.id).slice(0, 4);

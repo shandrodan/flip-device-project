@@ -27,14 +27,14 @@ export function TaskView({ id }: { id: string }) {
       else return false;
       return true;
     }
-    if (e.c === "x" && (s === "todo" || s === "paused" || s === "failed")) { setPicking(true); return true; }
-    if (e.c === "y" && ["running", "held", "paused", "awaiting-approval", "failed"].includes(s!) && t.agentId) { net.send({ type: "task.cancel", taskId: t.id }); return true; }
+    if (e.c === "d" && (s === "todo" || s === "paused" || s === "failed")) { setPicking(true); return true; }
+    if (e.c === "c" && ["running", "held", "paused", "awaiting-approval", "failed"].includes(s!) && t.agentId) { net.send({ type: "task.cancel", taskId: t.id }); return true; }
     if (e.c === "pushBar" && s === "todo") { net.send({ type: "task.complete", taskId: t.id }); back(); return true; }
     return false;
   }, t ? {
     a: s === "held" ? "Review again" : s === "paused" || s === "failed" ? "Try again" : s === "done" ? "Home" : undefined,
-    x: s === "todo" ? "Hand to agent" : s === "paused" || s === "failed" ? "Other agent" : undefined,
-    y: t.agentId && ["running", "held", "paused", "awaiting-approval", "failed"].includes(s!) ? "Stop, keep as todo" : undefined,
+    d: s === "todo" ? "Hand to agent" : s === "paused" || s === "failed" ? "Other agent" : undefined,
+    c: t.agentId && ["running", "held", "paused", "awaiting-approval", "failed"].includes(s!) ? "Stop, keep as todo" : undefined,
     push: s === "todo" ? "Done" : undefined,
     wheel: t.steps.length > 6 ? "Scroll" : undefined,
   } : null);
@@ -55,7 +55,7 @@ export function TaskView({ id }: { id: string }) {
             {st.state === "asking" && <span className="chip warn">{st.risk ? "asks first" : "your press"}</span>}
           </div>;
         })}
-        {!t.steps.length && !t.agentId && <p className="mute" style={{ margin: 0 }}>A plain todo. Press the push bar when it’s done, or hand it to an agent with X.</p>}
+        {!t.steps.length && !t.agentId && <p className="mute" style={{ margin: 0 }}>A plain todo. Press the push bar when it’s done, or hand it to an agent with D.</p>}
         {t.detail && <p style={{ margin: "12px 0 0", fontSize: 15.5, lineHeight: 1.45, color: s === "failed" ? "#ff8a80" : s === "done" ? "#fff" : "rgba(235,235,245,0.7)" }}>{t.detail}</p>}
         {t.result && <p className="mute" style={{ margin: "10px 0 0", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}>{t.result}</p>}
       </div>

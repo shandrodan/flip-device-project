@@ -161,10 +161,11 @@ export function FireOverlay({ req, onWant }: { req: ApprovalRequest | null; onWa
 
   if (!shown) return null;
   const fire = phase === "fire";
-  const clip = fire ? "circle(900px at 610px 250px)" : "circle(80px at 392px 220px)";
+  // Opens from a small circle; on the way out it shrinks all the way to nothing.
+  const clip = fire ? "circle(900px at 610px 250px)" : phase === "done" ? "circle(0px at 392px 220px)" : "circle(80px at 392px 220px)";
   const ag = snap.agents.find(a => a.id === shown.agentId);
   return <div className="fire-layer">
-    <div className={"fire" + (fire ? " on" : "")} style={{ clipPath: clip, WebkitClipPath: clip }}>
+    <div className={"fire" + (fire ? " on" : phase === "done" ? " out" : "")} style={{ clipPath: clip, WebkitClipPath: clip }}>
       {([["-40px", "#ffcf33", "0s"], ["180px", "#ff2d00", "0.8s"], ["400px", "#ffb000", "1.6s"], ["600px", "#ff3d00", "0.4s"]] as const).map(([l, b, dl], i) => <i key={i} style={{ left: l, background: b, animationDelay: dl }} />)}
     </div>
     {fire && <>

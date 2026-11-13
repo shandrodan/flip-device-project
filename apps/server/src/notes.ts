@@ -4,6 +4,7 @@ import { state, id, now, noteById, log, save } from "./store.js";
 import { bus } from "./bus.js";
 import { transcribe } from "./voice.js";
 import { suggestTasks } from "./suggest.js";
+import { routeDump } from "./route.js";
 
 interface Stream {
   mime: string;
@@ -38,6 +39,11 @@ export async function voiceEnd(streamId: string, durationMs: number, hint?: stri
   const quick = (hint || "").trim();
   bus.emit({ type: "state", state: "thinking" });
 
+  if (s.target.kind === "auto") {
+    const stt = await transcribe(audio, s.mime);
+    return routeAuto(stt?.text || quick, s.target.openNoteId, durationMs, stt?.by || "local", streamId);
+  }
+
   if (s.target.kind === "append") {
     const stt = await transcribe(audio, s.mime);
     const text = stt?.text || quick;
@@ -69,6 +75,7 @@ export async function voiceEnd(streamId: string, durationMs: number, hint?: stri
 /** Scripted voice for rehearsals: `text` is what was "heard" live, `cloudText` the cloud's version. */
 export async function voiceScripted(text: string, cloudText: string | undefined, durationMs: number, target: VoiceTarget) {
   if (target.kind === "append") return appendToNote(target.noteId, cloudText || text);
+  if (target.kind === "auto") return routeAuto(cloudText || text, target.openNoteId, durationMs, cloudText ? "cloud" : "local");
   const note = createNote(text, "local", durationMs);
   bus.emit({ type: "note.saved", note });
   await new Promise(r => setTimeout(r, 350));
@@ -109,19 +116,40 @@ function createNote(text: string, by: "cloud" | "local", durationMs: number, cre
   return note;
 }
 
-function appendToNote(noteId: string, text: string) {
+/** Dumps in Notes (ADR 0011): the main agent decides between the open note, another note, or a new one. */
+async function routeAuto(raw: string, openNoteId: string | null, durationMs: number, by: "cloud" | "local", streamId?: string) {
+  const text = raw.trim();
+  if (!text) {
+    bus.notice("Didn't catch that.", "warn");
+    bus.emit({ type: "state", state: "idle" });
+    return;
+  }
+  const r = await routeDump(text, openNoteId);
+  if (r.action === "append" && r.noteId && noteById(r.noteId)) {
+    // A new line, so a list stays a list.
+    appendToNote(r.noteId, r.text, { sep: "\n", quiet: true });
+    bus.emit({ type: "note.routed", noteId: r.noteId, action: "append", added: r.text, why: r.why, streamId });
+    return;
+  }
+  const note = createNote(r.text, by, durationMs);
+  bus.emit({ type: "note.saved", note, streamId });
+  bus.emit({ type: "note.routed", noteId: note.id, action: "new", added: r.text, why: r.why, streamId });
+  await runSuggestions(note);
+}
+
+function appendToNote(noteId: string, text: string, o: { sep?: string; quiet?: boolean } = {}) {
   const note = noteById(noteId);
   if (!note || !text.trim()) {
     bus.notice("Didn't catch that.", "warn");
     bus.emit({ type: "state", state: "idle" });
     return;
   }
-  note.text = `${note.text.replace(/\s+$/, "")} ${text.trim()}`;
+  note.text = `${note.text.replace(/\s+$/, "")}${o.sep ?? " "}${text.trim()}`;
   note.editedByUser = true; // your words now: the cloud never overwrites them
   if (note.suggestionState !== "accepted") note.suggestionState = "pending";
   save();
   bus.changed();
-  bus.notice("Added to the note", "ok");
+  if (!o.quiet) bus.notice("Added to the note", "ok");
   if (note.suggestionState === "pending") void runSuggestions(note);
 }
 

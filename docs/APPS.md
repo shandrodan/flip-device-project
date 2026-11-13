@@ -11,6 +11,8 @@ Flow:
 4. The device suggests actions ("this looks like 2 tasks"). One press accepts.
 5. An accepted task goes to an agent, or to a todo list.
 
+On screen (ADR 0011): the list on the left, the open note on a ruled pad on the right. Hold the mic and just talk: the main agent reads the open note and files what you said there, in another note it clearly belongs to, or in a new note. "Add to this note …" and "new note …" force it. The result stays on screen for 5 seconds. Holding the mic anywhere else (Home) still makes a new note and shows the suggestions.
+
 Rules:
 - Cloud re-transcription only replaces the text if the user hasn't edited the note.
 - Hackathon scope: one todo integration only (our own list or Todoist). "More coming" for the rest.

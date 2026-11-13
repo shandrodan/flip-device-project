@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Command Center</title>
+<style>
+/* Temporary: four directions for the command center (C button). Same screen, tokens and
+   hint bar as apps/device/src/styles.css. Not wired into the app. */
+:root {
+  --page-bg: #f5f5f7; --page-fg: #1d1d1f; --page-muted: #6e6e73; --page-line: rgba(0,0,0,0.08); --page-chip: rgba(0,0,0,0.06);
+  --sys: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --sys-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --rounded: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ring: 0 0 0 2px #000, 0 0 0 4px #fff;
+  --btn-a: #34c759; --btn-b: #ff453a; --btn-c: #ffd60a; --btn-d: #0a84ff; --push: #ff6a00;
+  --on: #34c759;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --page-bg: #000; --page-fg: #f5f5f7; --page-muted: #86868b; --page-line: rgba(255,255,255,0.1); --page-chip: rgba(255,255,255,0.09); }
+}
+:root[data-theme="dark"] { --page-bg: #000; --page-fg: #f5f5f7; --page-muted: #86868b; --page-line: rgba(255,255,255,0.1); --page-chip: rgba(255,255,255,0.09); }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page-bg); color: var(--page-fg); font: 15px/1.47 var(--sys); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--page-line); background: var(--page-chip); }
+
+.page { max-width: 1720px; margin: 0 auto; padding: 40px 16px 96px; }
+.page-head { max-width: 760px; }
+.page-head h1 { font: 700 34px/1.1 var(--sys-display); letter-spacing: -0.022em; margin: 0 0 8px; text-wrap: balance; }
+.page-head p { margin: 0; color: var(--page-muted); font-size: 17px; letter-spacing: -0.01em; text-wrap: pretty; }
+.keys { margin-top: 14px; color: var(--page-muted); font-size: 13px; line-height: 2.1; }
+.gallery { margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 640px), 1fr)); gap: 48px 32px; }
+figure { margin: 0; }
+.frame { position: relative; width: 100%; aspect-ratio: 784 / 504; border-radius: 18px; overflow: hidden; background: #000; outline: none;
+  box-shadow: 0 0 0 8px #000, 0 0 0 9px var(--page-line); margin: 9px 0; transition: box-shadow 200ms ease; }
+.frame:focus-visible, figure.active .frame { box-shadow: 0 0 0 8px #000, 0 0 0 11px #0a84ff; }
+figcaption { margin-top: 18px; display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+figcaption b { font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
+figcaption p { margin: 2px 0 0; color: var(--page-muted); font-size: 14px; max-width: 420px; text-wrap: pretty; }
+.pad { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pad button { border: 0; width: 34px; height: 34px; border-radius: 50%; background: var(--page-chip); font: 700 13px/1 var(--rounded); display: grid; place-items: center; transition: transform 90ms ease-out; }
+.pad button:active { transform: scale(0.92); }
+.pad .pc { background: var(--btn-c); color: #4d3d00; } .pad .pa { background: var(--btn-a); color: #fff; } .pad .pb { background: var(--btn-b); color: #fff; }
+.pad .sep { width: 6px; }
+
+/* ================= Screen (784 x 504, scaled to the frame) ================= */
+.screen { position: absolute; left: 0; top: 0; width: 784px; height: 504px; transform-origin: 0 0; transform: scale(var(--s, 1));
+  overflow: hidden; background: #000; color: #f5f5f7; font-family: var(--sys); user-select: none; isolation: isolate; }
+.mute { color: rgba(235,235,245,0.58); }
+.say { font: 600 22px/1.18 var(--sys-display); letter-spacing: -0.022em; margin: 0; text-wrap: balance; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--sys); padding: 5px 9px; border-radius: 999px; background: rgba(255,255,255,0.08); color: rgba(235,235,245,0.75); white-space: nowrap; }
+.chip.warn { background: rgba(255,106,0,0.16); color: #ff9a4d; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+
+.status { position: absolute; top: 0; left: 0; right: 0; height: 34px; padding: 0 20px 0 24px; display: flex; align-items: center; justify-content: space-between;
+  font: 600 13px/1 var(--sys); z-index: 25; pointer-events: none; }
+.status span { display: inline-flex; align-items: center; gap: 8px; }
+.status svg { width: 15px; height: 15px; display: block; transition: opacity 200ms ease, width 260ms var(--ease); }
+.status .off { opacity: 0; width: 0; }
+.batt { width: 22px; height: 11px; border: 1px solid currentColor; border-radius: 3.5px; padding: 1px; opacity: 0.85; }
+.batt i { display: block; height: 100%; width: 82%; background: currentColor; border-radius: 2px; }
+
+.hints { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; padding: 0 18px; display: flex; align-items: center; gap: 14px; z-index: 24;
+  font: 500 12px/1 var(--sys); color: rgba(235,235,245,0.6); background: linear-gradient(to top, #000 55%, transparent); pointer-events: none; }
+.hint { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.hints .grow { flex: 1; }
+.g { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; font: 700 10px/1 var(--rounded); color: #000; flex: none; }
+.g.a { background: var(--btn-a); } .g.b { background: var(--btn-b); color: #fff; } .g.y { background: var(--btn-c); }
+.g.g-wheel { background: rgba(255,255,255,0.18); color: #fff; font-size: 11px; }
+.g.g-mic { background: #ff453a; color: #fff; }
+
+/* The bot: flat white circle, plain eyes. */
+.bot { position: relative; width: var(--b, 150px); height: var(--b, 150px); border-radius: 50%; background: #fff; flex: none; }
+.bot i { position: absolute; top: 38%; width: 10%; height: 22%; border-radius: 999px; background: #000; transition: transform 320ms var(--ease); animation: blink 5s infinite; }
+.bot i:first-child { left: 33%; } .bot i:last-child { right: 33%; }
+.bot.sad i { transform: translateY(30%) scaleY(0.35); animation: none; }
+@keyframes blink { 0%, 96%, 100% { transform: none; } 98% { transform: scaleY(0.1); } }
+
+/* Home (what sits behind the command center). */
+.home { position: absolute; inset: 0; transition: transform 420ms var(--ease), filter 300ms ease, opacity 300ms ease; }
+.home-main { position: absolute; left: 24px; top: 44px; width: 232px; display: flex; flex-direction: column; gap: 12px; }
+.home-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.comb { position: absolute; left: 276px; top: 40px; width: 496px; height: 428px; transition: opacity 260ms ease, transform 420ms var(--ease); }
+.orb { position: absolute; width: 84px; height: 84px; border-radius: 50%; background: #2c2c2e; display: grid; place-items: center; color: rgba(235,235,245,0.7); }
+.orb svg { width: 32px; height: 32px; }
+.orb.sel { box-shadow: var(--ring); background: #3a3a3c; color: #fff; }
+.home-cap { position: absolute; left: 24px; bottom: 44px; width: 232px; display: flex; flex-direction: column; gap: 3px; }
+.home-cap b { font: 600 17px/1.2 var(--sys-display); letter-spacing: -0.015em; }
+.home-cap .mute { font-size: 13px; }
+
+.cc { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
+.tip { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); z-index: 26; background: #2c2c2e; padding: 9px 14px; border-radius: 999px; font-size: 13.5px; font-weight: 500;
+  display: inline-flex; gap: 8px; align-items: center; white-space: nowrap; opacity: 0; transition: opacity 200ms ease, transform 300ms var(--ease); pointer-events: none; }
+.tip.show { opacity: 1; transform: translate(-50%, 4px); }
+
+/* Shared item bits */
+.ico { display: grid; place-items: center; border-radius: 50%; background: rgba(255,255,255,0.1); color: rgba(235,235,245,0.6); flex: none;
+  transition: background-color 220ms ease, color 220ms ease; }
+.on > .ico, .on .ico { background: #fff; color: #000; }
+.ico svg { display: block; }
+.name { font: 600 15px/1.2 var(--sys); letter-spacing: -0.01em; }
+.sub { font-size: 12.5px; line-height: 1.3; color: rgba(235,235,245,0.58); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sub.warn { color: #ff9a4d; }
+
+/* ---------- A. Sheet: three tiles slide up over Home ---------- */
+.d-sheet .scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.55); opacity: 0; transition: opacity 260ms ease; }
+.d-sheet .box { position: absolute; left: 24px; right: 24px; bottom: 44px; padding: 16px; border-radius: 26px; background: #1c1c1e;
+  transform: translateY(40px); opacity: 0; transition: transform 420ms var(--ease), opacity 200ms ease; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.8); }
+.d-sheet .box-head { display: flex; justify-content: space-between; align-items: baseline; padding: 2px 4px 12px; }
+.d-sheet .box-head b { font: 600 17px/1.2 var(--sys-display); letter-spacing: -0.015em; }
+.d-sheet .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.d-sheet .tile { border-radius: 20px; background: #2c2c2e; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; transition: box-shadow 150ms ease, transform 200ms var(--ease); }
+.d-sheet .tile .ico { width: 46px; height: 46px; } .d-sheet .tile .ico svg { width: 24px; height: 24px; }
+.d-sheet .tile .txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.d-sheet .tile.sel { box-shadow: inset 0 0 0 2px #fff; transform: scale(1.02); }
+.open .d-sheet .scrim { opacity: 1; }
+.open .d-sheet .box { transform: none; opacity: 1; }
+
+/* ---------- B. Panel: switches replace the honeycomb, the bot reacts ---------- */
+.open.dir-panel .comb { opacity: 0; transform: translateX(-20px); }
+.d-panel .box { position: absolute; right: 16px; top: 42px; bottom: 42px; width: 372px; border-radius: 26px; background: #1c1c1e; padding: 14px 10px;
+  transform: translateX(calc(100% + 24px)); transition: transform 460ms var(--ease); display: flex; flex-direction: column; }
+.open .d-panel .box { transform: none; }
+.d-panel .box-head { padding: 4px 12px 10px; display: flex; justify-content: space-between; align-items: baseline; }
+.d-panel .box-head b { font: 600 17px/1.2 var(--sys-display); letter-spacing: -0.015em; }
+.d-panel .rows { display: flex; flex-direction: column; gap: 2px; }
+.d-panel .r { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 16px; transition: background-color 150ms ease; }
+.d-panel .r.sel { background: rgba(255,255,255,0.1); }
+.d-panel .r .ico { width: 38px; height: 38px; } .d-panel .r .ico svg { width: 20px; height: 20px; }
+.d-panel .r .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sw { width: 46px; height: 28px; border-radius: 999px; background: rgba(255,255,255,0.16); position: relative; flex: none; transition: background-color 220ms ease; }
+.sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform 280ms var(--ease); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+.on .sw { background: var(--on); } .on .sw::after { transform: translateX(18px); }
+.d-panel .foot { margin-top: auto; padding: 12px; border-top: 0.5px solid rgba(255,255,255,0.1); display: flex; gap: 10px; align-items: center; font-size: 13px; }
+
+/* ---------- C. Dial: full screen, the in-app wheel turns it ---------- */
+.d-dial { background: #000; opacity: 0; transform: scale(1.04); transition: opacity 240ms ease, transform 420ms var(--ease); }
+.open .d-dial { opacity: 1; transform: none; }
+.d-dial .top { position: absolute; left: 0; right: 0; top: 46px; text-align: center; font: 600 12px/1.2 var(--sys); color: rgba(235,235,245,0.58); }
+.d-dial .arc { position: absolute; left: 50%; top: 92px; width: 640px; height: 640px; margin-left: -320px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.08); }
+.d-dial .it { position: absolute; left: 0; top: 0; width: 150px; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
+  transition: transform 460ms var(--ease), opacity 300ms ease; will-change: transform; }
+.d-dial .it .ico { width: 150px; height: 150px; } .d-dial .it .ico svg { width: 60px; height: 60px; }
+.d-dial .it.sel .ico { box-shadow: var(--ring); }
+.d-dial .it .txt { display: flex; flex-direction: column; gap: 4px; align-items: center; width: 260px; transition: opacity 200ms ease; }
+.d-dial .it .name { font: 600 24px/1.1 var(--sys-display); letter-spacing: -0.02em; }
+.d-dial .it .sub { font-size: 14px; white-space: normal; }
+.d-dial .it:not(.sel) .txt { opacity: 0; }
+.d-dial .state { font: 700 11px/1 var(--sys); letter-spacing: 0.08em; text-transform: uppercase; padding: 5px 9px; border-radius: 999px; background: rgba(255,255,255,0.1); color: rgba(235,235,245,0.6); }
+.d-dial .on .state { background: rgba(52,199,89,0.18); color: #7fe0a8; }
+.d-dial .dots { position: absolute; left: 0; right: 0; bottom: 48px; display: flex; gap: 6px; justify-content: center; }
+.d-dial .dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.25); transition: background-color 150ms, width 260ms var(--ease); }
+.d-dial .dots i.sel { width: 18px; border-radius: 3px; background: #fff; }
+
+/* ---------- D. Map: what each switch connects ---------- */
+.d-map { background: #000; opacity: 0; transition: opacity 260ms ease; }
+.open .d-map { opacity: 1; }
+.d-map .top { position: absolute; left: 24px; top: 44px; }
+.d-map .top b { font: 600 22px/1.15 var(--sys-display); letter-spacing: -0.022em; display: block; }
+.d-map svg.lines { position: absolute; inset: 0; }
+.d-map .ln { stroke: rgba(255,255,255,0.5); stroke-width: 2; fill: none; transition: stroke 260ms ease, opacity 260ms ease; }
+.d-map .ln.dead { stroke: rgba(255,255,255,0.18); stroke-dasharray: 4 6; }
+.d-map .ln.flow { stroke-dasharray: 2 10; animation: flow 1.2s linear infinite; stroke: #fff; }
+@keyframes flow { to { stroke-dashoffset: -12; } }
+.d-map .node { position: absolute; width: 92px; margin-left: -46px; display: flex; flex-direction: column; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; text-align: center; transition: opacity 260ms ease; }
+.d-map .node .disc { width: 58px; height: 58px; border-radius: 50%; background: #1c1c1e; display: grid; place-items: center; color: rgba(235,235,245,0.8); }
+.d-map .node .disc svg { width: 26px; height: 26px; }
+.d-map .node.dim { opacity: 0.3; }
+.d-map .node .bot { --b: 58px; }
+.d-map .link { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 7px; padding: 6px 10px 6px 6px; border-radius: 999px; background: #1c1c1e;
+  font-size: 12.5px; font-weight: 600; white-space: nowrap; transition: box-shadow 150ms ease, transform 200ms var(--ease); }
+.d-map .link .ico { width: 26px; height: 26px; } .d-map .link .ico svg { width: 15px; height: 15px; }
+.d-map .link.sel { box-shadow: var(--ring); transform: translate(-50%, -50%) scale(1.06); }
+.d-map .cap { position: absolute; right: 24px; bottom: 46px; width: 300px; display: flex; flex-direction: column; gap: 4px; }
+.d-map .cap b { font: 600 17px/1.2 var(--sys-display); letter-spacing: -0.015em; }
+.d-map .cap span { font-size: 13.5px; line-height: 1.35; color: rgba(235,235,245,0.62); text-wrap: pretty; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="page-head">
+    <h1>Command center: four directions</h1>
+    <p>Press the yellow C button to open it. Turn Wi-Fi, Bluetooth and Tailscale on or off without leaving what you were doing. Every frame works with the buttons under it or the keyboard.</p>
+    <div class="keys">Click a frame, then: <kbd>I</kbd> or <kbd>C</kbd> = C · <kbd>W</kbd> <kbd>S</kbd> or arrows = in-app wheel / D-pad · <kbd>K</kbd> or <kbd>Enter</kbd> = A · <kbd>L</kbd> or <kbd>Esc</kbd> = B</div>
+  </header>
+  <section class="gallery" id="gallery"></section>
+</main>
+
+<script>
+const svg = (p, vb = "0 0 24 24") => `<svg viewBox="${vb}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+const I = {
+  wifi: svg('<path d="M2 8.5a15 15 0 0 1 20 0"/><path d="M5.5 12.2a10 10 0 0 1 13 0"/><path d="M9 15.8a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r="1.2" fill="currentColor" stroke="none"/>'),
+  bt: svg('<path d="m7 7 10 10-5 5V2l5 5L7 17"/>'),
+  // Generic mesh icon for Tailscale (not their logo).
+  ts: svg('<circle cx="5" cy="6" r="2.4"/><circle cx="19" cy="6" r="2.4"/><circle cx="12" cy="18" r="2.4"/><path d="M7.4 6h9.2M6.3 8.1l4.5 7.8M17.7 8.1l-4.5 7.8"/>'),
+  laptop: svg('<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>'),
+  cloud: svg('<path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19.5 10 4 4 0 0 1 18 18Z"/>'),
+  router: svg('<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01"/><path d="M8.5 9a5 5 0 0 1 7 0M6 6.3a9 9 0 0 1 12 0"/>'),
+  ear: svg('<path d="M6 8.5a6 6 0 1 1 11.2 3c-1 1.7-2.7 2.5-2.7 4.5a3 3 0 0 1-5.7 1.3"/><path d="M9 9a3 3 0 0 1 5.6-1.4"/>'),
+  notes: svg('<rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
+  tasks: svg('<path d="m5 7 2 2 4-4M5 16l2 2 4-4M14 7h5M14 16h5"/>'),
+  focus: svg('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M10 2h4"/>'),
+  agents: svg('<circle cx="8" cy="10" r="4"/><circle cx="17" cy="14" r="3.5"/>'),
+  set: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>'),
+};
+
+const ITEMS = [
+  { k: "wifi", name: "Wi-Fi", icon: I.wifi },
+  { k: "bt", name: "Bluetooth", icon: I.bt },
+  { k: "ts", name: "Tailscale", icon: I.ts },
+];
+function sub(k, on) {
+  if (k === "wifi") return on.wifi ? "Studio 5G" : "Off";
+  if (k === "bt") return on.bt ? "AirPods Pro" : "Off";
+  if (!on.ts) return "Off · agents can’t reach your machines";
+  return on.wifi ? "Tailnet · laptop and VM" : "Waiting for Wi-Fi";
+}
+function why(k, on) {
+  if (k === "wifi") return on.wifi ? "Notes sync and agents can run." : "Dumps still save as notes. They sync when you’re back.";
+  if (k === "bt") return on.bt ? "Talk-back plays in your AirPods." : "Talk-back plays from the device speaker.";
+  if (!on.ts) return "The PC agent is unreachable. Tasks that need your laptop or VM wait.";
+  return on.wifi ? "Your laptop and VM are reachable. The PC agent can act." : "Turns on again once Wi-Fi is back.";
+}
+
+/* ------------------------------ Shared screen parts ------------------------------ */
+const status = () => `<div class="status"><span class="tnum">14:32</span><span>
+  <span data-stat="ts">${I.ts}</span><span data-stat="bt">${I.bt}</span><span data-stat="wifi">${I.wifi}</span><i class="batt"><i></i></i></span></div>`;
+const home = () => {
+  const orbs = [I.notes, I.tasks, I.agents, I.focus, I.set, null, null];
+  const pos = [[70, 130], [162, 130], [254, 130], [116, 210], [208, 210], [300, 210], [346, 130]];
+  return `<div class="home">
+    <div class="home-main"><div class="bot" data-bot><i></i><i></i></div><p class="say" data-line></p>
+      <div class="home-chips"><span class="chip">4 tasks today</span><span class="chip warn" data-offchip hidden><i class="dot"></i>Offline · notes still work</span></div></div>
+    <div class="comb">${orbs.map((o, n) => `<div class="orb${n === 1 ? " sel" : ""}" style="left:${pos[n][0]}px;top:${pos[n][1]}px">${o ?? `<div class="bot" style="--b:52px"><i></i><i></i></div>`}</div>`).join("")}</div>
+    <div class="home-cap"><b>To-do</b><span class="mute">Today’s tasks</span></div>
+  </div>`;
+};
+const hints = () => `<div class="hints"><span class="hint"><i class="g g-mic">●</i>Hold to talk</span><span class="hint" data-hwheel><i class="g g-wheel">⟳</i><span></span></span>
+  <span class="grow"></span><span class="hint"><i class="g c">C</i><span data-hc></span></span><span class="hint" data-hb><i class="g b">B</i>Close</span><span class="hint"><i class="g a">A</i><span data-ha></span></span></div>`;
+
+/* ------------------------------ The four directions ------------------------------ */
+const DIRS = [
+  {
+    id: "sheet", title: "A · Sheet",
+    blurb: "Three tiles slide up over whatever you were doing. Fastest to read, closest to the sheets we already have. Wheel or D-pad picks, A flips.",
+    html: () => `<div class="cc d-sheet"><div class="scrim"></div><div class="box">
+      <div class="box-head"><b>Command center</b><span class="mute" style="font-size:13px">Battery 82%</span></div>
+      <div class="tiles">${ITEMS.map(it => `<div class="tile" data-item="${it.k}"><div class="ico">${it.icon}</div><div class="txt"><span class="name">${it.name}</span><span class="sub" data-sub="${it.k}"></span></div></div>`).join("")}</div>
+    </div></div>`,
+  },
+  {
+    id: "panel", title: "B · Side panel",
+    blurb: "Switches take the honeycomb’s place, and the main bot stays on the left and reacts. Room for more rows later, like Do Not Disturb.",
+    html: () => `<div class="cc d-panel"><div class="box">
+      <div class="box-head"><b>Command center</b><span class="mute" style="font-size:13px">Docked</span></div>
+      <div class="rows">${ITEMS.map(it => `<div class="r" data-item="${it.k}"><div class="ico">${it.icon}</div><div class="txt"><span class="name">${it.name}</span><span class="sub" data-sub="${it.k}"></span></div><i class="sw"></i></div>`).join("")}</div>
+      <div class="foot mute"><span class="chip">Permission mode · Auto</span>Server: own VM</div>
+    </div></div>`,
+  },
+  {
+    id: "dial", title: "C · Dial",
+    blurb: "One switch at a time, big, on a ring the in-app wheel turns. Matches the hardware wheel and the honeycomb’s fisheye. Readable from across the desk.",
+    html: () => `<div class="cc d-dial"><div class="top">Command center</div><div class="arc"></div>
+      ${ITEMS.map(it => `<div class="it" data-item="${it.k}"><div class="ico">${it.icon}</div><div class="txt"><span class="name">${it.name}</span><span class="sub" data-sub="${it.k}"></span><span class="state" data-state="${it.k}"></span></div></div>`).join("")}
+      <div class="dots">${ITEMS.map(it => `<i data-dot="${it.k}"></i>`).join("")}</div></div>`,
+  },
+  {
+    id: "map", title: "D · Map",
+    blurb: "Shows what each switch actually connects: device to router to your laptop and VM. Turning one off greys out everything downstream. Explains the product in the pitch.",
+    html: () => `<div class="cc d-map">
+      <div class="top"><b>Command center</b><span class="mute" style="font-size:13px">What your agents can reach</span></div>
+      <svg class="lines" viewBox="0 0 784 504">
+        <path class="ln" data-ln="wifi" d="M140 230 H330"/>
+        <path class="ln" data-ln="ts" d="M390 230 H500"/>
+        <path class="ln" data-ln="ts2" d="M500 230 C560 230 560 160 620 160"/>
+        <path class="ln" data-ln="ts3" d="M500 230 C560 230 560 300 620 300"/>
+        <path class="ln" data-ln="bt" d="M110 270 V390"/>
+      </svg>
+      <div class="node" style="left:110px;top:196px"><div class="bot" data-bot2><i></i><i></i></div>Device</div>
+      <div class="node" data-node="router" style="left:360px;top:196px"><div class="disc">${I.router}</div>Studio 5G</div>
+      <div class="node" data-node="laptop" style="left:650px;top:126px"><div class="disc">${I.laptop}</div>Laptop</div>
+      <div class="node" data-node="vm" style="left:650px;top:266px"><div class="disc">${I.cloud}</div>Own VM</div>
+      <div class="node" data-node="ear" style="left:110px;top:372px"><div class="disc">${I.ear}</div>AirPods</div>
+      <div class="link" data-item="wifi" style="left:235px;top:230px"><div class="ico">${I.wifi}</div>Wi-Fi</div>
+      <div class="link" data-item="ts" style="left:500px;top:230px"><div class="ico">${I.ts}</div>Tailscale</div>
+      <div class="link" data-item="bt" style="left:110px;top:330px"><div class="ico">${I.bt}</div>Bluetooth</div>
+      <div class="cap"><b data-capname></b><span data-capwhy></span></div>
+    </div>`,
+  },
+];
+
+/* ------------------------------ State + render ------------------------------ */
+const frames = [];
+let active = null;
+
+function update(f) {
+  const { st, root, dir } = f;
+  const q = s => root.querySelector(s), qa = s => root.querySelectorAll(s);
+  root.classList.toggle("open", st.open);
+  const cur = ITEMS[st.sel];
+  ITEMS.forEach((it, n) => {
+    qa(`[data-item="${it.k}"]`).forEach(el => { el.classList.toggle("on", st.on[it.k]); el.classList.toggle("sel", st.open && n === st.sel); });
+    qa(`[data-sub="${it.k}"]`).forEach(el => { el.textContent = sub(it.k, st.on); el.classList.toggle("warn", it.k === "ts" && (!st.on.ts || !st.on.wifi)); });
+    qa(`[data-state="${it.k}"]`).forEach(el => { el.textContent = st.on[it.k] ? "On" : "Off"; });
+    qa(`[data-dot="${it.k}"]`).forEach(el => el.classList.toggle("sel", n === st.sel));
+    q(`[data-stat="${it.k}"] svg`).classList.toggle("off", !st.on[it.k] || (it.k === "ts" && !st.on.wifi));
+  });
+  // Home reacts: offline or no tailnet makes the bot sad and says why.
+  const sad = !st.on.wifi || !st.on.ts;
+  qa("[data-bot],[data-bot2]").forEach(b => b.classList.toggle("sad", sad));
+  q("[data-line]").textContent = !st.on.wifi ? "Offline. Your dumps still save as notes."
+    : !st.on.ts ? "Tailscale is off. I can’t reach your laptop."
+    : "Hold the mic and just say it.";
+  q("[data-offchip]").hidden = st.on.wifi;
+  // Hints
+  q("[data-hc]").textContent = "Command center";
+  q("[data-hc]").parentElement.style.display = st.open ? "none" : "";
+  q("[data-ha]").textContent = st.open ? (st.on[cur.k] ? "Turn off" : "Turn on") : "Open";
+  q("[data-hwheel] span").textContent = st.open ? "Choose" : "Browse";
+  q("[data-hb]").style.display = st.open ? "" : "none";
+  // Home behind: pushed back for the sheet, untouched for the panel
+  const h = q(".home");
+  h.style.transform = st.open && dir.id === "sheet" ? "scale(0.97)" : "";
+  h.style.filter = st.open && dir.id === "sheet" ? "blur(2px)" : "";
+  h.style.opacity = st.open && (dir.id === "dial" || dir.id === "map") ? "0" : "";
+
+  if (dir.id === "dial") {
+    ITEMS.forEach((it, n) => {
+      // Wrap the offset so the wheel feels endless: the ring always shows one on each side.
+      let off = n - st.sel; if (off > 1) off -= 3; if (off < -1) off += 3;
+      const a = off * 0.62, R = 320, cx = 392, cy = 92 + R;
+      const x = cx + Math.sin(a) * R - 75, y = cy - Math.cos(a) * R + 34 + (off ? 30 : 0);
+      const s = off ? 0.52 : 1;
+      const el = q(`.d-dial [data-item="${it.k}"]`);
+      el.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+      el.style.transformOrigin = "75px 75px";
+      el.style.opacity = off ? 0.55 : 1;
+    });
+  }
+  if (dir.id === "map") {
+    const wifi = st.on.wifi, ts = st.on.ts && wifi, bt = st.on.bt;
+    const set = (k, live) => { const l = q(`[data-ln="${k}"]`); l.classList.toggle("dead", !live); l.classList.toggle("flow", live); };
+    set("wifi", wifi); set("ts", ts); set("ts2", ts); set("ts3", ts); set("bt", bt);
+    q('[data-node="router"]').classList.toggle("dim", !wifi);
+    q('[data-node="laptop"]').classList.toggle("dim", !ts);
+    q('[data-node="vm"]').classList.toggle("dim", !ts);
+    q('[data-node="ear"]').classList.toggle("dim", !bt);
+    q("[data-capname]").textContent = `${cur.name} · ${st.on[cur.k] ? "On" : "Off"}`;
+    q("[data-capwhy]").textContent = why(cur.k, st.on);
+  }
+}
+
+function press(f, c) {
+  const st = f.st;
+  if (c === "c") st.open = !st.open;
+  else if (!st.open) return;
+  else if (c === "b") st.open = false;
+  else if (c === "next" || c === "prev") st.sel = (st.sel + (c === "next" ? 1 : -1) + ITEMS.length) % ITEMS.length;
+  else if (c === "a") {
+    const k = ITEMS[st.sel].k;
+    st.on[k] = !st.on[k];
+    try { navigator.vibrate?.(6); } catch {}
+  }
+  update(f);
+}
+
+function setActive(f) {
+  active = f;
+  frames.forEach(x => x.fig.classList.toggle("active", x === f));
+}
+
+const gallery = document.getElementById("gallery");
+DIRS.forEach((dir, n) => {
+  const fig = document.createElement("figure");
+  fig.innerHTML = `<div class="frame" tabindex="0" aria-label="${dir.title} preview"><div class="screen dir-${dir.id}">${status()}${home()}${dir.html()}${hints()}</div></div>
+    <figcaption><div><b>${dir.title}</b><p>${dir.blurb}</p></div>
+    <div class="pad"><button class="pc" data-c="c" aria-label="C button">C</button><span class="sep"></span>
+      <button data-c="prev" aria-label="Previous">↑</button><button data-c="next" aria-label="Next">↓</button><span class="sep"></span>
+      <button class="pb" data-c="b" aria-label="B button">B</button><button class="pa" data-c="a" aria-label="A button">A</button></div></figcaption>`;
+  gallery.appendChild(fig);
+  const frame = fig.querySelector(".frame"), root = fig.querySelector(".screen");
+  const f = { fig, frame, root, dir, st: { open: true, sel: 0, on: { wifi: true, bt: true, ts: true } } };
+  frames.push(f);
+  new ResizeObserver(() => root.style.setProperty("--s", frame.clientWidth / 784)).observe(frame);
+  frame.addEventListener("pointerdown", () => { setActive(f); frame.focus(); });
+  frame.addEventListener("focus", () => setActive(f));
+  fig.querySelectorAll("[data-c]").forEach(b => b.addEventListener("click", () => { setActive(f); press(f, b.dataset.c); }));
+  // Scroll on the screen = in-app wheel.
+  let acc = 0;
+  frame.addEventListener("wheel", e => {
+    if (!f.st.open) return;
+    e.preventDefault(); acc += e.deltaY;
+    if (Math.abs(acc) > 40) { press(f, acc > 0 ? "next" : "prev"); acc = 0; }
+  }, { passive: false });
+  update(f);
+  if (n === 0) setActive(f);
+});
+
+const KEYS = { KeyI: "c", KeyC: "c", KeyW: "prev", KeyS: "next", ArrowUp: "prev", ArrowLeft: "prev", ArrowDown: "next", ArrowRight: "next",
+  KeyK: "a", Enter: "a", KeyL: "b", Escape: "b", Backspace: "b" };
+window.addEventListener("keydown", e => {
+  if (!active || e.metaKey || e.ctrlKey || e.altKey) return;
+  const c = KEYS[e.code];
+  if (!c) return;
+  if (e.code === "Enter" && document.activeElement?.tagName === "BUTTON") return;
+  e.preventDefault();
+  press(active, c);
+});
+</script>
+</body>
+</html>

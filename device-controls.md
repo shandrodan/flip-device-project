@@ -24,13 +24,26 @@ The behavior of each control depends on the currently selected mode. Locations a
 **Future Expansion:** The In-App Wheel's press functionality is reserved for future features. Developers can assign actions to it when adding new functions to the device.
 
 
+**In-App Wheel rule (every mode):** The wheel cycles through the options and has no end. Turning past the last option brings you back to the first, and turning back past the first brings you to the last. The D-pad still stops at the edges.
+
 ## 1. System Function Selection Mode
 
 **Purpose:** Navigate between the device's main functions outside individual applications.
 
 - **System Wheel:** Rotate to switch between functions.
 - **Push Bar:** No action.
-- **In-App Wheel:** No action.
+- **In-App Wheel:** Rotate to browse every cell on the home screen.
+- **C Button (yellow):** Open the command center. Only from the home screen: inside an app, go back to Home first.
+
+### Command Center
+
+**Purpose:** Turn Wi-Fi, Bluetooth, Tailscale, Battery saver and Do Not Disturb on or off, and see recent notifications.
+
+- Opens as a shade from the top of the screen. Five switches sit on a flywheel; the one in the centre is selected.
+- **In-App Wheel / D-Pad left and right:** Turn the flywheel. Forward or right brings the next switch on the right to the centre. It never ends.
+- **A Button:** Turn the centre switch on or off.
+- **D-Pad down / up:** Move into the notifications below the flywheel, and back up to it. A opens the selected notification's agent.
+- **C Button or B Button:** Close the command center.
 
 ## 2. Active Agents Mode
 
@@ -38,8 +51,18 @@ The behavior of each control depends on the currently selected mode. Locations a
 
 - **System Wheel:** Rotate to switch to another function.
 - **Push Bar:** No action.
-- **In-App Wheel:** No action.
+- **In-App Wheel:** Rotate to pick an agent.
 - **Screen:** Automatically displays the status of active agents.
+
+## Notes Mode
+
+**Purpose:** Talk, and the main agent files it in the right note (ADR 0011).
+
+- **In-App Wheel / D-Pad up and down:** Browse the notes. The pad shows the selected one.
+- **A Button:** Read the note full width. The wheel then scrolls it, and B goes back to the list. Reading, A opens the note's tasks when it has some.
+- **C Button:** Delete the note (asks for the push bar).
+- **D Button:** Suggest tasks from the note, or review them when they're ready.
+- **Microphone Button:** Hold and talk. The app drops down and the agent listens above it. Release, and it adds to the open note, another note, or a new one. The result stays up for 5 seconds. B closes it early, and holding the mic again starts the next one.
 
 ## 3. Focus Mode
 
