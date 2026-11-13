@@ -23,6 +23,12 @@ export const PAD_SAMPLES = [
   { text: "remind me to ask the venue for two more extension cords", clean: "Remind me to ask the venue for two more extension cords." },
   { text: "new note, book the train back for Sunday evening", clean: "New note, book the train back for Sunday evening." },
 ];
+/** To-Do rehearsal lines (ADR 0016): a dated task that fits a project, a hand-off to an agent, a plain errand. */
+export const TODO_SAMPLES = [
+  { text: "remind me to print the pitch deck tomorrow morning", clean: "Remind me to print the pitch deck tomorrow morning." },
+  { text: "ask the mail agent to reply to Rasa about the venue Wi-Fi", clean: "Ask the mail agent to reply to Rasa about the venue Wi-Fi." },
+  { text: "buy AA batteries for the haptic test rig", clean: "Buy AA batteries for the haptic test rig." },
+];
 const NAMES = ["Scout", "Juniper", "Echo", "Pixel", "Maple", "Orbit"];
 const WORD_MS = 95;
 
@@ -71,6 +77,12 @@ export function nextPadSample() {
   let i = 0;
   try { i = Number(localStorage.getItem("flip-pad-sample") || 0) % PAD_SAMPLES.length; localStorage.setItem("flip-pad-sample", String((i + 1) % PAD_SAMPLES.length)); } catch { /* ignore */ }
   return PAD_SAMPLES[i];
+}
+
+export function nextTodoSample() {
+  let i = 0;
+  try { i = Number(localStorage.getItem("flip-todo-sample") || 0) % TODO_SAMPLES.length; localStorage.setItem("flip-todo-sample", String((i + 1) % TODO_SAMPLES.length)); } catch { /* ignore */ }
+  return TODO_SAMPLES[i];
 }
 
 export async function startCapture(source: VoiceSource, o: Opts): Promise<Capture> {

@@ -12,6 +12,7 @@ Our shared words. Use them exactly in code, docs, issues and the pitch.
 | **Note** | The saved transcript of a dump. |
 | **Suggestion** | A task the device proposes from a note. Accepted with one press. |
 | **Task** | A unit of work, either kept as a todo or handed to an agent. |
+| **Project** | A named list of tasks in the To-Do app. A task with no project sits in Inbox. |
 | **Task agent** | A server-side agent that owns one kind of work. A Device app has one or more assigned Task agents. Other agents send app work to one of them. |
 | **PC agent** | The small program on the user's laptop that executes actions sent over Tailscale. |
 | **Approval press** | The physical-button press, with a haptic click, that confirms a risky action. |

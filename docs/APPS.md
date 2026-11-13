@@ -28,6 +28,8 @@ Rules:
 - Tasks from notes or voice.
 - Each task can be handed to an agent or kept as a plain todo.
 
+On screen (ADR 0016): Notes' layout in blue. Today, Inbox, Scheduled (a board of days) and Completed, then projects. The selected task opens into a card in place. Hold the mic and say a task: it's kept as a note, then filed with its day, project, or the agent you named. Our own list for now; Todoist is still open.
+
 ## Focus timer
 
 - Pomodoro timer, mainly used when docked.

@@ -86,6 +86,17 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  /** When it's due, in local time: "YYYY-MM-DD", or "YYYY-MM-DDTHH:mm" with a time. None: no date. */
+  due?: string | null;
+  /** The project it belongs to. None: it sits in Inbox. */
+  projectId?: string | null;
+}
+
+/** A list of tasks in the To-Do app (ADR 0016). */
+export interface Project {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export type AgentShape = "circle" | "squircle" | "capsule" | "pebble" | "cloud" | "drop" | "hexagon" | "triangle" | "flower";
@@ -186,6 +197,7 @@ export interface Snapshot {
   serverTime: string;
   notes: Note[];
   tasks: Task[];
+  projects: Project[];
   agents: Agent[];
   appAgents: Record<AppId, string[]>;
   messages: AgentMessage[];
@@ -205,11 +217,15 @@ export interface Snapshot {
  * Where voice goes. "note"/"append"/"auto" make or extend a Note; "main"/"app"/"agent" talk to a Task agent (ADR 0012). "auto" (the Notes app, ADR 0011): the main agent reads the open note and decides.
  * Same topic, or "add to this note …": appended there. Clearly another note: appended there.
  * Otherwise, or "new note …": a new note. The answer comes back as note.routed.
+ * "task" (the To-Do app, ADR 0016): saved as a note first, then the main agent makes it one task with a date,
+ * a project and maybe an agent. listId is the open list ("today", "inbox", "scheduled", "completed" or a
+ * project id). The answer comes back as task.routed.
  */
 export type VoiceTarget =
   | { kind: "note" }
   | { kind: "append"; noteId: string }
   | { kind: "auto"; openNoteId: string | null }
+  | { kind: "task"; listId: string | null }
   | { kind: "main" }
   | { kind: "app"; app: AppId }
   | { kind: "agent"; agentId: string };
@@ -236,6 +252,7 @@ export type DeviceMessage =
   | { type: "task.assign"; taskId: string; agentId: string }
   | { type: "task.resume"; taskId: string }
   | { type: "task.cancel"; taskId: string }
+  | { type: "task.reschedule"; taskId: string; due: string | null }
   | { type: "approval.press"; requestId: string; approved: boolean; via: "push-bar" | "a-button" | "b-button" }
   | { type: "focus.start"; minutes: number; kind: "focus" | "break" }
   | { type: "focus.stop" }
@@ -264,6 +281,8 @@ export type ServerMessage =
   /** Where an "auto" dump went: `added` is the text that was saved, `why` one short line the Device shows. */
   | { type: "note.routed"; noteId: string; action: "new" | "append"; added: string; why: string; streamId?: string }
   | { type: "task.progress"; taskId: string; step: string }
+  /** Where a To-Do dump went: `label` is the headline ("Added to Pitch deck"), `why` one short line. */
+  | { type: "task.routed"; taskId: string; noteId: string; label: string; why: string; streamId?: string }
   | { type: "approval.request"; request: ApprovalRequest }
   | { type: "approval.resolved"; requestId: string; approved: boolean }
   | { type: "agent.created"; agentId: string }
@@ -363,6 +382,7 @@ function isVoiceTarget(value: unknown): value is VoiceTarget {
   if (target.kind === "app") return APP_IDS.includes(target.app as AppId);
   if (target.kind === "append") return typeof target.noteId === "string" && target.noteId.length > 0;
   if (target.kind === "auto") return target.openNoteId === null || (typeof target.openNoteId === "string" && target.openNoteId.length > 0);
+  if (target.kind === "task") return target.listId === null || (typeof target.listId === "string" && target.listId.length > 0);
   return target.kind === "agent" && typeof target.agentId === "string" && target.agentId.length > 0;
 }
 
