@@ -1,16 +1,17 @@
 import { useState } from "react";
-import type { AgentPurpose, AgentShape } from "@app/protocol";
-import { RISK_LABEL } from "@app/protocol";
+import type { AgentPurpose, AgentShape, AppId } from "@app/protocol";
+import { APP_IDS, RISK_LABEL } from "@app/protocol";
 import { Bot, BudScene, SHAPE_KEYS } from "../../bot/Bot";
 import { useControls, step } from "../../input/controls";
 import { net } from "../../net/client";
-import { useApp, useTalkTarget } from "../context";
+import { FN_LABEL, useApp, useTalkTarget } from "../context";
 import { ACTIVE, AgentBot, ago, Ico, moodFor, statusChip, useScrollSel } from "../ui";
 
 // device-controls.md, Active Agents mode: the screen shows agent status by itself.
 // D-pad picks an agent (A opens it), X makes a new one. The in-app wheel does nothing here.
 export function Agents() {
   const { snap, push } = useApp();
+  useTalkTarget({ kind: "app", app: "agents" }, []);
   const items = snap.agents.length + 1;
   const [sel, setSel] = useState(0);
   const i = Math.min(sel, items - 1);
@@ -49,31 +50,102 @@ export function Agents() {
 export function AgentView({ id }: { id: string }) {
   const { snap, push } = useApp();
   const a = snap.agents.find(x => x.id === id);
+  const ownedApp = APP_IDS.find(app => snap.appAgents[app].includes(id));
+  useTalkTarget(a ? { kind: "agent", agentId: a.id } : null, [a?.id]);
   const work = snap.tasks.find(t => t.agentId === id && ACTIVE.includes(t.status));
   useControls(e => {
     if (!a) return false;
     if (e.c === "a" && work) { push({ name: "task", taskId: work.id }); return true; }
-    if (e.c === "y" && !a.builtin) { net.send({ type: "agent.delete", agentId: a.id }); return true; }
+    if (e.c === "y" && (!a.builtin || a.purpose === "app") && !ownedApp) { net.send({ type: "agent.delete", agentId: a.id }); return true; }
     return false;
-  }, { a: work ? "Open task" : undefined, y: a && !a.builtin ? "Delete agent" : undefined });
+  }, { a: work ? "Open task" : undefined, y: a && (!a.builtin || a.purpose === "app") && !ownedApp ? "Delete agent" : undefined });
   if (!a) return <div className="scr"><p className="say">That agent is gone.</p></div>;
   const done = snap.tasks.filter(t => t.agentId === a.id && t.status === "done").length;
-  const acts = snap.activity.filter(x => x.agentId === a.id).slice(0, 4);
+  const acts = snap.activity.filter(x => x.agentId === a.id).slice(0, 2);
+  const messages = (snap.messages ?? []).filter(x => x.fromAgentId === a.id || x.toAgentId === a.id).slice(-40).reverse();
   const mode = snap.settings.permissionMode;
   const asks = mode === "manual" ? ["Every step"] : mode === "full" ? ["Nothing, Full mode is on"] : Object.values(RISK_LABEL);
   const fresh = Date.now() - Date.parse(snap.activity.find(x => x.text === `Made ${a.name}`)?.at || "0") < 4000;
   return <div className="scr">
     <div style={{ position: "absolute", left: 20, top: 92 }}><AgentBot agent={a} size={230} state={fresh ? "happy" : moodFor(work)} morphFrom={fresh ? "circle" : undefined} /></div>
-    <div style={{ position: "absolute", left: 286, right: 28, top: 56 }}>
+    <div style={{ position: "absolute", left: 286, right: 28, top: 56, bottom: 40, display: "flex", flexDirection: "column" }}>
       <p className="say in" style={{ fontSize: 30 }}>{a.name}</p>
       <p className="mute in" style={{ margin: "6px 0 14px", fontSize: 15 }}>{a.role}</p>
+      {ownedApp && <p className="mute in" style={{ margin: "0 0 12px", fontSize: 13 }}>Works in {FN_LABEL[ownedApp]}. Press blue D on the app tile to manage its agents.</p>}
       <div className="in in-2"><div className="label" style={{ marginBottom: 6 }}>Asks you before</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{asks.map(x => <span key={x} className="chip warn">{x}</span>)}</div></div>
-      <div className="in in-3" style={{ marginTop: 16 }}>
+      <div className="in in-3" style={{ marginTop: 16, minHeight: 0, display: "flex", flexDirection: "column", flex: 1 }}>
         <div className="label" style={{ marginBottom: 2 }}>{work ? "Working on" : `${done} task${done === 1 ? "" : "s"} done`}</div>
         {work && <div className="row sel"><span style={{ flex: 1 }}>{work.title}</span>{statusChip(work, snap)}</div>}
         {acts.map((x, k) => <div key={k} style={{ display: "flex", gap: 10, fontSize: 14, padding: "4px 0" }}><span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.text}</span><span className="mute">{ago(x.at)}</span></div>)}
+        <div className="label" style={{ marginTop: 12 }}>Recent messages · hold the mic to talk</div>
+        <div className="scroll" style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
+          {messages.map(message => <div key={message.id} className="row" style={{ fontSize: 13, display: "block", overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+            <b>{message.fromAgentId === "user" ? "You" : snap.agents.find(agent => agent.id === message.fromAgentId)?.name ?? "Task agent"}: </b>{message.text}
+          </div>)}
+        </div>
       </div>
+    </div>
+  </div>;
+}
+
+export function AppAgentManager({ app }: { app: AppId }) {
+  const { snap, push, online, toast } = useApp();
+  const [phase, setPhase] = useState<"menu" | "member" | "candidate">("menu");
+  const [action, setAction] = useState<"add" | "change" | "delete">("add");
+  const [oldAgentId, setOldAgentId] = useState("");
+  const [sel, setSel] = useState(0);
+  const members = snap.appAgents[app].map(id => snap.agents.find(agent => agent.id === id)).filter((agent): agent is NonNullable<typeof agent> => !!agent);
+  const free = snap.agents.filter(agent => agent.id !== "main" && !APP_IDS.some(other => snap.appAgents[other].includes(agent.id)));
+  const count = phase === "menu" ? 3 : phase === "member" ? members.length : free.length + (action === "add" ? 1 : 0);
+  const index = Math.min(sel, Math.max(0, count - 1));
+  const choosePhase = (next: typeof phase) => { setSel(0); setPhase(next); };
+  useControls(e => {
+    if (e.c === "b" && phase !== "menu") { choosePhase(phase === "candidate" && action === "change" ? "member" : "menu"); return true; }
+    const n = step(index, e, count);
+    if (n !== null) { setSel(n); return true; }
+    if (e.c !== "a") return false;
+    if (phase === "menu") {
+      const next = (["add", "change", "delete"] as const)[index];
+      setAction(next);
+      if (next === "delete" && members.length === 1) { toast("Add or choose a replacement before deleting the last app agent."); return true; }
+      choosePhase(next === "add" ? "candidate" : "member");
+      return true;
+    }
+    if (phase === "member") {
+      const member = members[index];
+      if (!member) return true;
+      if (action === "delete") {
+        if (!online) { toast("Connect to the server to delete an agent."); return true; }
+        net.send({ type: "agent.delete", agentId: member.id });
+        choosePhase("menu");
+      } else { setOldAgentId(member.id); choosePhase("candidate"); }
+      return true;
+    }
+    if (action === "add" && index === free.length) { push({ name: "create", app }); return true; }
+    const candidate = free[index];
+    if (!candidate) return true;
+    if (!online) { toast("Connect to the server to assign an agent."); return true; }
+    if (action === "add") net.send({ type: "app.agent.add", app, agentId: candidate.id });
+    else net.send({ type: "app.agent.replace", app, oldAgentId, newAgentId: candidate.id });
+    choosePhase("menu");
+    return true;
+  }, { wheel: "Pick", a: "Choose", b: "Back" });
+
+  const title = phase === "menu" ? `${FN_LABEL[app]} agents` : phase === "member" ? `${action === "delete" ? "Delete" : "Change"} which agent?` : action === "add" ? "Add which agent?" : "Choose a replacement";
+  return <div className="scr">
+    <p className="h1 in">{title}</p>
+    <div className="mute in">{members.map(agent => agent.name).join(", ")} · {members.length} assigned</div>
+    <div className="scroll in in-2" style={{ position: "absolute", left: 28, right: 28, top: 104, bottom: 40 }}>
+      {phase === "menu" ? [
+        ["Add agent", "Assign a free agent or make a new one."],
+        ["Change agent", "Replace one agent. Keep the old agent in your list."],
+        ["Delete agent", members.length === 1 ? "Add or choose a replacement first." : "Delete one agent after your approval."],
+      ].map(([label, detail], k) => <div key={label} className={"row" + (k === index ? " sel" : "")} style={{ display: "block", opacity: k === 2 && members.length === 1 ? 0.55 : 1 }}><b>{label}</b><div className="mute">{detail}</div></div>)
+        : phase === "member" ? members.map((agent, k) => <div key={agent.id} className={"row" + (k === index ? " sel" : "")}><AgentBot agent={agent} size={38} state="idle" /><span><b>{agent.name}</b><br /><span className="mute">{agent.role}</span></span></div>)
+          : <>{free.map((agent, k) => <div key={agent.id} className={"row" + (k === index ? " sel" : "")}><AgentBot agent={agent} size={38} state="idle" /><span><b>{agent.name}</b><br /><span className="mute">{agent.role}</span></span></div>)}
+            {action === "add" && <div className={"row" + (index === free.length ? " sel" : "")}><span>{Ico.plus}</span><b>Make a new agent</b></div>}
+            {action === "change" && !free.length && <div className="mute">No free agent. Add a new agent first.</div>}</>}
     </div>
   </div>;
 }
@@ -88,7 +160,7 @@ const PURPOSES: { k: AgentPurpose; label: string; name: string; shape: AgentShap
 ];
 const NAME_IDEAS = ["Scout", "Juniper", "Echo", "Pixel", "Maple"];
 
-export function Create() {
+export function Create({ app }: { app?: AppId }) {
   const { back, snap } = useApp();
   const [stage, setStage] = useState(0);
   const [p, setP] = useState(0);
@@ -100,7 +172,7 @@ export function Create() {
   const name = names[ni] || purpose.name;
   useTalkTarget(stage === 2 ? { kind: "name", onText: t => { if (t) { setNames(n => [t, ...n.filter(x => x !== t)]); setNi(0); } } } : null, [stage]);
 
-  const made = () => net.send({ type: "agent.create", agent: { name, purpose: purpose.k, shape, color } });
+  const made = () => net.send({ type: "agent.create", agent: { name, purpose: purpose.k, shape, color }, app });
 
   useControls(e => {
     if (stage === 3) return true;

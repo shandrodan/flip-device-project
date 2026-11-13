@@ -139,7 +139,7 @@ export function Simulator() {
           <Wheel kind="appWheel" label="In-app wheel" spin={spin.appWheel} press />
           <L x={530} y={222}>In-app wheel · press</L>
           <div className="abxy">
-            {btn("y", "y", "Y", "Y button")}{btn("x", "x", "X", "X button")}{btn("b", "b", "B", "B button")}{btn("a", "a", "A", "A button")}
+            {btn("y", "y", "C", "C button")}{btn("x", "x", "D", "D button")}{btn("b", "b", "B", "B button")}{btn("a", "a", "A", "A button")}
           </div>
           <L x={720} y={262}>A confirm · B back</L>
           <div className="speaker" />

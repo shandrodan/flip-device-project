@@ -5,6 +5,7 @@ import os from "node:os";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   PROTOCOL_VERSION,
+  APP_IDS,
   parseDeviceMessage,
   type ClientKind,
   type DeviceMessage,
@@ -14,15 +15,16 @@ import {
   type Task,
 } from "@app/protocol";
 import { config } from "./config.js";
-import { state, save, id, now, agentById, taskById, noteById, log, patchTask, resetState, PURPOSE_ROLES } from "./store.js";
+import { state, save, saveNow, id, now, agentById, appOfAgent, taskById, noteById, log, patchTask, resetState, PURPOSE_ROLES } from "./store.js";
 import { bus } from "./bus.js";
 import { machines } from "./machines.js";
 import { hasLlm, apiKey } from "./llm.js";
-import { sttMode } from "./voice.js";
+import { sttMode, transcribe } from "./voice.js";
 import { press, requestApproval, resumeHeld } from "./approvals.js";
-import { startTask, cancelTask, isRunning, resumePausedForMachines } from "./agents/runner.js";
+import { startTask, cancelTask, isRunning, resumePausedForMachines, resumeQueuedTasks } from "./agents/runner.js";
 import { voiceStart, voiceChunk, voiceEnd, voiceCancel, voiceScripted, syncOfflineNote, runSuggestions } from "./notes.js";
 import { handleSetup } from "./setup.js";
+import { acceptVoiceMessage } from "./agents/coordination.js";
 
 const SERVER_ID = id("srv");
 
@@ -52,6 +54,8 @@ function snapshot(): Snapshot {
     notes: state.notes.slice(0, 80),
     tasks: state.tasks.slice(0, 120),
     agents: state.agents,
+    appAgents: state.appAgents,
+    messages: state.messages.slice(-120),
     activity: state.activity.slice(0, 20),
     approvals: state.approvals,
     machines: machines.list(),
@@ -95,6 +99,7 @@ function newTask(title: string, agentId: string | null, noteId?: string): Task {
   const t = now();
   return { id: id("t"), noteId, title, target: agentId ? "agent" : "todo", agentId, status: "todo", steps: [], createdAt: t, updatedAt: t };
 }
+const busyTask = (agentId: string) => state.tasks.some(task => task.agentId === agentId && ["running", "waiting", "queued", "awaiting-approval", "held"].includes(task.status));
 
 async function handle(c: Client, m: DeviceMessage) {
   switch (m.type) {
@@ -120,7 +125,20 @@ async function handle(c: Client, m: DeviceMessage) {
     case "voice.end":
       return voiceEnd(m.streamId, m.durationMs, m.hint);
     case "voice.scripted":
-      return voiceScripted(m.text, m.cloudText, m.durationMs, m.target);
+      return voiceScripted(m.text, m.cloudText, m.durationMs, m.target, m.streamId);
+    case "voice.message": {
+      if (m.target.kind !== "main" && m.target.kind !== "agent" && m.target.kind !== "app") return;
+      try {
+        const stored = state.messages.find(message => message.id === m.requestId);
+        const previous = stored && state.tasks.find(task => task.id === stored.taskId);
+        if (previous) return send(c.ws, { type: "voice.accepted", streamId: m.requestId, taskId: previous.id, agentId: stored.toAgentId });
+        const transcript = m.audio ? await transcribe(Buffer.from(m.audio, "base64"), m.mime || "audio/webm") : null;
+        const task = acceptVoiceMessage(m.target, transcript?.text || m.text, m.requestId, startTask);
+        return send(c.ws, { type: "voice.accepted", streamId: m.requestId, taskId: task.id, agentId: task.agentId! });
+      } catch (error) {
+        return send(c.ws, { type: "voice.rejected", streamId: m.requestId, reason: (error as Error).message });
+      }
+    }
     case "note.sync": {
       const fixed = await syncOfflineNote(m.note);
       if (fixed) bus.notice("Back online. Re-checked a note with the cloud", "ok");
@@ -238,22 +256,63 @@ async function handle(c: Client, m: DeviceMessage) {
       const a = m.agent;
       const agent = { id: id("a"), name: a.name.slice(0, 24) || "New agent", purpose: a.purpose, shape: a.shape, color: a.color, seed: 40 + state.agents.length * 17, role: PURPOSE_ROLES[a.purpose] || PURPOSE_ROLES.custom, builtin: false };
       state.agents.push(agent);
+      if (m.app) state.appAgents[m.app].push(agent.id);
+      saveNow();
       log("main", `Made ${agent.name}`);
       send(c.ws, { type: "agent.created", agentId: agent.id });
       break;
     }
     case "agent.delete": {
       const a = agentById(m.agentId);
-      if (!a || a.builtin) return;
+      if (!a || (a.builtin && a.purpose !== "app")) return;
+      const app = appOfAgent(a.id);
+      if (app && state.appAgents[app].length === 1) {
+        send(c.ws, { type: "notice", text: `Add or choose another ${app} agent before deleting ${a.name}.`, tone: "warn" });
+        return;
+      }
+      if (busyTask(a.id)) { send(c.ws, { type: "notice", text: `Wait for ${a.name}'s current work to finish before deleting it.`, tone: "warn" }); return; }
       const ok = await requestApproval({ agentId: "main", kind: "risky", risk: "delete", title: `Delete ${a.name}?`, body: "Its open tasks move back to your list. Deleting always needs your press." });
       if (!ok) return;
+      const currentApp = appOfAgent(a.id);
+      if (busyTask(a.id) || (currentApp && state.appAgents[currentApp].length === 1)) return;
       for (const t of state.tasks) {
         if (t.agentId !== a.id || t.status === "done") continue;
         cancelTask(t.id);
         patchTask(t, { agentId: null, target: "todo", status: "todo" });
       }
+      if (currentApp) state.appAgents[currentApp] = state.appAgents[currentApp].filter(agentId => agentId !== a.id);
       state.agents = state.agents.filter(x => x.id !== a.id);
+      saveNow();
       bus.notice(`${a.name} deleted`, "info");
+      break;
+    }
+    case "app.agent.add": {
+      const agent = agentById(m.agentId);
+      if (!APP_IDS.includes(m.app) || !agent) return;
+      if (agent.id === "main") {
+        send(c.ws, { type: "notice", text: "Main agent coordinates work. Choose another Task agent for this app.", tone: "warn" });
+        return;
+      }
+      if (appOfAgent(agent.id)) {
+        send(c.ws, { type: "notice", text: `${agent.name} is already assigned to an app. Choose another Task agent.`, tone: "warn" });
+        return;
+      }
+      state.appAgents[m.app].push(agent.id);
+      saveNow();
+      log("main", `${agent.name} joined ${m.app}`);
+      bus.notice(`${agent.name} joined ${m.app}`, "ok");
+      break;
+    }
+    case "app.agent.replace": {
+      const agent = agentById(m.newAgentId);
+      const old = agentById(m.oldAgentId);
+      if (!APP_IDS.includes(m.app) || !agent || !old || !state.appAgents[m.app].includes(old.id)) return;
+      if (agent.id === "main" || appOfAgent(agent.id)) { send(c.ws, { type: "notice", text: "Choose an agent that is not assigned to an app.", tone: "warn" }); return; }
+      if (busyTask(old.id)) { send(c.ws, { type: "notice", text: `Wait for ${old.name}'s current work to finish.`, tone: "warn" }); return; }
+      state.appAgents[m.app] = state.appAgents[m.app].map(agentId => agentId === old.id ? agent.id : agentId);
+      saveNow();
+      log("main", `${agent.name} replaced ${old.name} in ${m.app}`);
+      bus.notice(`${agent.name} replaced ${old.name} in ${m.app}`, "ok");
       break;
     }
     case "machine.check":
@@ -355,6 +414,7 @@ wss.on("connection", ws => {
 });
 
 machines.sync();
+resumeQueuedTasks();
 server.listen(config.port, config.host, () => {
   console.log(`\nFlip server on ${lanUrl()}  (ws path /ws)`);
   console.log(`Setup page: ${lanUrl()}/setup`);

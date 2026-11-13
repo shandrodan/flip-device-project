@@ -63,7 +63,11 @@ The behavior of each control depends on the currently selected mode. Locations a
 ## 5. Microphone Button
 **Location:** Red button with a microphone icon on the lower edge of the screen housing, above the action buttons.
 
-**Purpose:** Record voice input while the button is held.
+**Purpose:** Record voice input while the button is held. Home addresses the main Task agent.
+An agent screen addresses that Task agent. To-Do, Focus, Agents, and Settings address one of
+their assigned Task agents. Notes makes a Dump. On Home, select an app and press the blue D
+button to add, change, or delete an app agent. With another Home item selected, D opens
+pending Suggestions.
 - Press and hold: Start recording and continue while held.
 - Release: Stop recording.
 

@@ -20,7 +20,12 @@ pnpm dev          # Device app + server + a PC agent on this computer
 ```
 
 Open http://localhost:5173 for the Device twin, and http://localhost:5173/dock for the Dock screen.
-Hold the red mic (or Space), turn the wheels (Q/E, W/S), press A (K), B (L) and the push bar (Enter).
+Hold the red mic (or Space), turn the wheels (Q/E, W/S), press A (K), B (L), blue D (J), yellow C (I), and the push bar (Enter).
+The Home mic talks to the main Task agent. On an agent screen it talks to that agent.
+Each Device app has one or more assigned Task agents. Select an app on Home and press the blue D button
+to add, change, or delete an agent. With another Home item selected, D opens pending Suggestions.
+The To-Do, Focus, Agents, and Settings mics talk to an assigned agent.
+The Notes mic makes a Dump and saves a Note.
 
 Nothing else is required. With no keys, agents use a built-in planner and speech uses the browser.
 To go further, copy `.env.example` to `.env`, or open http://localhost:8787/setup to paste keys:

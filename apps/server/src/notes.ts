@@ -4,6 +4,8 @@ import { state, id, now, noteById, log, save } from "./store.js";
 import { bus } from "./bus.js";
 import { transcribe } from "./voice.js";
 import { suggestTasks } from "./suggest.js";
+import { acceptVoiceMessage } from "./agents/coordination.js";
+import { startTask } from "./agents/runner.js";
 
 interface Stream {
   mime: string;
@@ -45,6 +47,19 @@ export async function voiceEnd(streamId: string, durationMs: number, hint?: stri
     return;
   }
 
+  if (s.target.kind === "main" || s.target.kind === "agent" || s.target.kind === "app") {
+    const stt = await transcribe(audio, s.mime);
+    const text = stt?.text || quick;
+    if (!text.trim()) {
+      bus.notice("No speech was transcribed. Try again.", "warn");
+      bus.emit({ type: "state", state: "idle" });
+      return;
+    }
+    const task = acceptVoiceMessage(s.target, text, streamId, startTask);
+    bus.emit({ type: "voice.accepted", streamId, taskId: task.id, agentId: task.agentId! });
+    return;
+  }
+
   // Save first, with whatever text we already have, so the screen reacts at once.
   const note = createNote(quick || "Transcribing…", "local", durationMs);
   bus.emit({ type: "note.saved", note, streamId });
@@ -67,8 +82,13 @@ export async function voiceEnd(streamId: string, durationMs: number, hint?: stri
 }
 
 /** Scripted voice for rehearsals: `text` is what was "heard" live, `cloudText` the cloud's version. */
-export async function voiceScripted(text: string, cloudText: string | undefined, durationMs: number, target: VoiceTarget) {
+export async function voiceScripted(text: string, cloudText: string | undefined, durationMs: number, target: VoiceTarget, streamId = id("voice")) {
   if (target.kind === "append") return appendToNote(target.noteId, cloudText || text);
+  if (target.kind === "main" || target.kind === "agent" || target.kind === "app") {
+    const task = acceptVoiceMessage(target, cloudText || text, streamId, startTask);
+    bus.emit({ type: "voice.accepted", streamId, taskId: task.id, agentId: task.agentId! });
+    return;
+  }
   const note = createNote(text, "local", durationMs);
   bus.emit({ type: "note.saved", note });
   await new Promise(r => setTimeout(r, 350));

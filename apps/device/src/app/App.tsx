@@ -1,6 +1,7 @@
 // The Device screen (784 × 504). Non-touch: the system wheel switches functions, the rest of
 // the controls act inside the function on screen (device-controls.md, ADR 0007).
 import { useEffect, useMemo, useRef, useState } from "react";
+import { APP_IDS, type AppId } from "@app/protocol";
 import { Bot } from "../bot/Bot";
 import { useControls, LAYER } from "../input/controls";
 import { useNet, net } from "../net/client";
@@ -13,7 +14,7 @@ import { Suggest } from "./screens/Suggest";
 import { TaskView } from "./screens/TaskView";
 import { Notes, NoteView } from "./screens/Notes";
 import { Todo } from "./screens/Todo";
-import { Agents, AgentView, Create } from "./screens/Agents";
+import { Agents, AgentView, AppAgentManager, Create } from "./screens/Agents";
 import { Focus } from "./screens/Focus";
 import { Settings } from "./screens/Settings";
 import { Dock } from "./screens/Dock";
@@ -44,6 +45,8 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   // Server events: notices become toasts; a synced offline note takes over its local route.
   useEffect(() => net.on(m => {
     if (m.type === "notice") toast(m.text);
+    if (m.type === "error") toast(m.message);
+    if (m.type === "voice.rejected") toast(m.reason);
     if (m.type === "note.saved" && m.localId) setStack(s => s.map(r => (r.name === "suggest" && r.noteId === "local:" + m.localId ? { name: "suggest", noteId: m.note.id } : r)));
     if (m.type === "agent.created") setStack(s => [...s.filter(r => r.name !== "create"), { name: "agent", agentId: m.agentId }]);
   }), []);
@@ -110,7 +113,8 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   else if (route?.name === "task") screen = <TaskView key={route.taskId} id={route.taskId} />;
   else if (route?.name === "note") screen = <NoteView key={route.noteId} id={route.noteId} />;
   else if (route?.name === "agent") screen = <AgentView key={route.agentId} id={route.agentId} />;
-  else if (route?.name === "create") screen = <Create />;
+  else if (route?.name === "appAgents") screen = <AppAgentManager key={route.app} app={route.app} />;
+  else if (route?.name === "create") screen = <Create app={route.app} />;
   else if (fn === "home") screen = <Home />;
   else if (fn === "notes") screen = <Notes />;
   else if (fn === "todo") screen = <Todo />;
@@ -132,7 +136,12 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
           <span className={"batt" + (docked ? " charge" : "")}><i /></span>
         </span>
       </div>
-      <div className={"main" + (fullBleed ? " full" : "")} data-fn={fn} data-route={route?.name ?? ""}>{screen}</div>
+      <div className={"main" + (fullBleed ? " full" : "")} data-fn={fn} data-route={route?.name ?? ""}>
+        {screen}
+        {!route && APP_IDS.includes(fn as AppId) && <div className="chip" style={{ position: "absolute", top: 54, right: 28, zIndex: 3, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          Agents: {snap.appAgents[fn as AppId].map(id => snap.agents.find(agent => agent.id === id)?.name ?? "Unavailable").join(", ")}
+        </div>}
+      </div>
       <HintBar ink={!!fire} />
       {hud > 0 && <Hud fns={fns} fn={fn} icons={icons} />}
       {soft && !fire && <SoftApproval req={soft} />}

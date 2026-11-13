@@ -2,12 +2,13 @@ import { useState } from "react";
 import { Bot } from "../../bot/Bot";
 import { useControls } from "../../input/controls";
 import { net } from "../../net/client";
-import { useApp } from "../context";
+import { useApp, useTalkTarget } from "../context";
 import { mmss, useTick } from "../ui";
 
 // device-controls.md, Focus mode: in-app wheel picks the length, push bar starts, second press ends.
 export function Focus() {
   const { snap, online, toast } = useApp();
+  useTalkTarget({ kind: "app", app: "focus" }, []);
   useTick(500);
   const f = snap.focus;
   const [mins, setMins] = useState(Math.round(f.lengthMs / 60000) || 25);

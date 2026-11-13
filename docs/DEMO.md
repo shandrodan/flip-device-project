@@ -23,6 +23,17 @@ The one flow everything is built toward. If a feature isn't in here, it's a rend
 
 Exact task to show: TBD (must be visible on the laptop and reliable).
 
+## Agent conversation flow
+
+1. On Home, hold the mic and ask the main Task agent to send the pitch deck.
+2. The main Task agent gives the work to Mail agent and waits for its reply.
+3. Approve the send with the push bar. Main reports the result on the Device.
+4. Open a Task agent, hold the mic, and speak to it directly.
+5. Ask that agent to add a To-Do or start Focus. The app changes on the Device.
+6. Add another Task agent and send it a direct voice request without a restart.
+
+The original Dump → Note → Suggestion flow above is still available from Notes.
+
 ## Before Sunday
 
 - [ ] Flow runs end to end 20 times in a row

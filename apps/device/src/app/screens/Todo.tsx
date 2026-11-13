@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useControls, step, LAYER } from "../../input/controls";
 import { net } from "../../net/client";
-import { useApp } from "../context";
+import { useApp, useTalkTarget } from "../context";
 import { AgentBot, Empty, statusChip, useScrollSel } from "../ui";
 
 // device-controls.md, To-Do mode: in-app wheel browses, push bar completes, done tasks disappear.
 export function Todo() {
   const { snap, push, toast } = useApp();
+  useTalkTarget({ kind: "app", app: "todo" }, []);
   const open = snap.tasks.filter(t => t.status !== "done");
   const doneToday = snap.tasks.filter(t => t.status === "done" && t.completedAt && new Date(t.completedAt).toDateString() === new Date().toDateString()).length;
   const [sel, setSel] = useState(0);

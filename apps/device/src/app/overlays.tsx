@@ -8,8 +8,8 @@ import { useApp, FN_LABEL, type Fn, type TalkTarget } from "./context";
 import { Ico, AgentBot } from "./ui";
 
 /* ================================ Talk ================================ */
-// Mounted while the mic button is held. Streams audio to the server; on release the dump is
-// saved as a note at once (ADR 0005), online or not.
+// Mounted while the mic button is held. Home talks to main, an Agent view talks
+// to that Task agent, and Notes makes a Dump (ADR 0010).
 
 export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sample: number; onDone: () => void }) {
   const app = useApp();
@@ -38,7 +38,7 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
         if (!alive) return c.cancel();
         cap.current = c;
         if (c.source === "mic" && online && target.kind !== "name") {
-          streaming.current = net.send({ type: "voice.start", streamId: streamId.current, mime: c.mime, target: target.kind === "append" ? { kind: "append", noteId: target.noteId } : { kind: "note" } });
+          streaming.current = net.send({ type: "voice.start", streamId: streamId.current, mime: c.mime, target });
         }
         if (released.current) finish();
       } catch {
@@ -70,17 +70,44 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
       target.onText(heard.replace(/[.!?]+$/, "").split(/\s+/).slice(0, 3).join(" "));
       return onDone();
     }
+    let queuedAgentMessage = false;
+    if (target.kind === "main" || target.kind === "agent" || target.kind === "app") {
+      const audio = r.audio && r.audio.size < 1.5e6 ? await blobToBase64(r.audio) : undefined;
+      if (heard || audio) {
+        net.saveOfflineAgentMessage({ requestId: streamId.current, target, text: heard, audio, mime: r.mime });
+        queuedAgentMessage = true;
+      }
+    }
     if (net.online) {
+      let sent = false;
       if (c.source === "script") {
-        net.send({ type: "voice.scripted", text: heard, cloudText: r.cloudText, durationMs: r.durationMs, target: target.kind === "append" ? { kind: "append", noteId: target.noteId } : { kind: "note" } });
+        sent = net.send({ type: "voice.scripted", streamId: streamId.current, text: heard, cloudText: r.cloudText, durationMs: r.durationMs, target });
       } else if (streaming.current) {
-        net.send({ type: "voice.end", streamId: streamId.current, durationMs: r.durationMs, hint: heard || undefined });
+        sent = net.send({ type: "voice.end", streamId: streamId.current, durationMs: r.durationMs, hint: heard || undefined });
+      } else if (target.kind === "main" || target.kind === "agent" || target.kind === "app") {
+        const pending = net.offlineAgentMessages.find(message => message.requestId === streamId.current);
+        if (pending) sent = net.send({ type: "voice.message", ...pending });
+        else app.toast("No speech was transcribed. Try again.");
       } else {
         // Connection came back mid-dump: send it as a synced note.
         const audio = r.audio && r.audio.size < 8e6 ? await blobToBase64(r.audio) : undefined;
-        net.send({ type: "note.sync", note: { localId: streamId.current, text: heard || "Voice note", createdAt: new Date().toISOString(), durationMs: r.durationMs, editedByUser: false, audio, mime: r.mime } });
+        sent = net.send({ type: "note.sync", note: { localId: streamId.current, text: heard || "Voice note", createdAt: new Date().toISOString(), durationMs: r.durationMs, editedByUser: false, audio, mime: r.mime } });
       }
-      if (target.kind === "append") return onDone();
+      if (target.kind === "append") {
+        if (!sent) app.toast("Connection lost. Try adding to the Note again.");
+        return onDone();
+      }
+      if (target.kind === "main" || target.kind === "agent" || target.kind === "app") {
+        if (!sent && !queuedAgentMessage) app.toast("Connection lost. Try again online.");
+        if (sent && target.kind === "main") app.push({ name: "agent", agentId: "main" });
+        return onDone();
+      }
+      if (!sent) {
+        const audio = r.audio && r.audio.size < 1.5e6 ? await blobToBase64(r.audio) : undefined;
+        net.saveOffline({ localId: streamId.current, text: heard || "Voice note", createdAt: new Date().toISOString(), durationMs: r.durationMs, editedByUser: false, audio, mime: r.mime, cloudText: r.cloudText });
+        app.push({ name: "suggest", noteId: "local:" + streamId.current });
+        return onDone();
+      }
       // Wait for the server's note.saved (usually well under a second).
       const stop = net.on(m => {
         if (m.type === "note.saved" && (m.streamId === streamId.current || m.localId === streamId.current || c.source === "script")) {
@@ -99,6 +126,12 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
       else app.toast("Offline. I can add to this note once we’re back.");
       return onDone();
     }
+    if (target.kind === "main" || target.kind === "agent" || target.kind === "app") {
+      if (queuedAgentMessage) {
+        app.toast("Saved. I will send this when the server is online.");
+      } else app.toast("No transcript while offline. Try again online.");
+      return onDone();
+    }
     const audio = r.audio && r.audio.size < 1.5e6 ? await blobToBase64(r.audio) : undefined;
     const localId = streamId.current;
     net.saveOffline({ localId, text: heard || `Voice note (${Math.round(r.durationMs / 1000)}s)`, createdAt: new Date().toISOString(), durationMs: r.durationMs, editedByUser: false, audio, mime: r.mime, cloudText: r.cloudText });
@@ -112,9 +145,10 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
       void finish();
     }
     return true; // nothing else while talking
-  }, { mic: phase === "listen" ? "Let go to save" : "Saving…" }, true, LAYER.talk);
+  }, { mic: phase === "listen" ? "Let go to send" : "Saving…" }, true, LAYER.talk);
 
-  const label = target.kind === "name" ? "Say a name" : target.kind === "append" ? "Adding to the note" : online ? "Listening" : "Listening · on device";
+  const agentName = target.kind === "agent" ? app.snap.agents.find(a => a.id === target.agentId)?.name : null;
+  const label = target.kind === "name" ? "Say a name" : target.kind === "append" ? "Adding to the note" : target.kind === "main" ? "Talking to Main agent" : target.kind === "app" ? `Talking to a ${FN_LABEL[target.app]} agent` : target.kind === "agent" ? `Talking to ${agentName ?? "Task agent"}` : online ? "Listening" : "Listening · on device";
   return <div className="fill" style={{ background: "#000", zIndex: 20 }}>
     <div style={{ position: "absolute", left: 60, top: 92 }}><Bot state={phase === "saving" ? "think" : "listen"} level={level} size={300} seed={3} /></div>
     <div style={{ position: "absolute", left: 410, top: 110, right: 40 }}>
@@ -122,7 +156,7 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
       <p style={{ margin: "10px 0 0", font: "500 25px/1.32 var(--sys-display)", letterSpacing: "-0.02em", maxHeight: 230, overflow: "hidden" }}>
         {text || <span className="mute">{app.voice === "mic" ? "Go ahead, I’m listening…" : "…"}</span>}
       </p>
-      {!online && target.kind !== "name" && <p className="mute" style={{ fontSize: 14, marginTop: 18 }}>No connection. I’ll save this on the Device and re-check it with the cloud once you’re back.</p>}
+      {!online && target.kind !== "name" && <p className="mute" style={{ fontSize: 14, marginTop: 18 }}>No connection. I’ll save this on the Device and send it when you’re back online.</p>}
     </div>
   </div>;
 }
