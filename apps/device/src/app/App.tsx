@@ -18,6 +18,14 @@ import { Agents, AgentView, AppAgentManager, Create } from "./screens/Agents";
 import { Focus } from "./screens/Focus";
 import { Settings } from "./screens/Settings";
 import { Dock } from "./screens/Dock";
+import { Onboarding } from "./screens/Onboarding";
+
+const ONBOARDING_KEY = "flip-device-onboarding-v1";
+
+function needsOnboarding() {
+  try { return localStorage.getItem(ONBOARDING_KEY) !== "done"; }
+  catch { return true; }
+}
 
 export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: VoiceSource; onWantPush?: (w: boolean) => void }) {
   const n = useNet();
@@ -29,6 +37,7 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   const [toastMsg, setToast] = useState<{ text: string; k: number } | null>(null);
   const [hud, setHud] = useState(0);
   const [talk, setTalk] = useState<{ target: TalkTarget; sample: number } | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(needsOnboarding);
   const talkTarget = useRef<TalkTarget | null>(null);
   useTick(15000);
 
@@ -52,6 +61,10 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   }), []);
 
   const route = stack[stack.length - 1] || null;
+  const finishOnboarding = () => {
+    try { localStorage.setItem(ONBOARDING_KEY, "done"); } catch { /* Storage can be unavailable. */ }
+    setShowOnboarding(false);
+  };
   const ctx: AppCtx | null = snap ? {
     snap,
     online: n.online,
@@ -109,7 +122,8 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   if (!snap || !ctx) return <Connecting />;
 
   let screen: JSX.Element;
-  if (route?.name === "suggest") screen = <Suggest key={route.noteId} id={route.noteId} />;
+  if (showOnboarding && !docked) screen = <Onboarding onDone={finishOnboarding} />;
+  else if (route?.name === "suggest") screen = <Suggest key={route.noteId} id={route.noteId} />;
   else if (route?.name === "task") screen = <TaskView key={route.taskId} id={route.taskId} />;
   else if (route?.name === "note") screen = <NoteView key={route.noteId} id={route.noteId} />;
   else if (route?.name === "agent") screen = <AgentView key={route.agentId} id={route.agentId} />;
@@ -120,7 +134,7 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   else if (fn === "todo") screen = <Todo />;
   else if (fn === "agents") screen = <Agents />;
   else if (fn === "focus") screen = <Focus />;
-  else if (fn === "settings") screen = <Settings />;
+  else if (fn === "settings") screen = <Settings onOpenOnboarding={() => setShowOnboarding(true)} />;
   else screen = <Dock />;
 
   const fullBleed = fn === "dock" && !route;

@@ -15,7 +15,7 @@ const HOSTS: [Hosting, string][] = [["cloud", "Our cloud"], ["vm", "Own VM"], ["
 
 interface Row { key: string; label: string; value: ReactNode; hint?: string; act?: (dir: number) => void; a?: string }
 
-export function Settings() {
+export function Settings({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
   const { snap, toast, online } = useApp();
   useTalkTarget({ kind: "app", app: "settings" }, []);
   const st = snap.settings;
@@ -24,6 +24,12 @@ export function Settings() {
   const cycle = <T,>(list: T[], cur: T, dir: number) => list[(list.indexOf(cur) + dir + list.length) % list.length];
 
   const rows: Row[] = [
+    {
+      key: "guide", label: "First-run guide", a: "Open",
+      value: <span className="chip">Mic · Notes · Approval</span>,
+      hint: "See how to use the Device controls.",
+      act: onOpenOnboarding,
+    },
     {
       key: "mode", label: "Permission mode", a: "Change",
       value: <div className="seg" style={{ width: 260 }}>{MODES.map(([k, n]) => <span key={k} className={(st.permissionMode === k ? "on" : "") + (k === "full" && st.hosting === "cloud" ? " no" : "")}>{n}</span>)}</div>,
@@ -79,7 +85,7 @@ export function Settings() {
   useControls(e => {
     const n = step(i, e, rows.length);
     if (n !== null) { setSel(n); return true; }
-    if (!online && (e.c === "a" || e.c === "left" || e.c === "right")) { toast("Offline. Settings live on the server."); return true; }
+    if (!online && cur.key !== "guide" && (e.c === "a" || e.c === "left" || e.c === "right")) { toast("Offline. Settings live on the server."); return true; }
     if ((e.c === "left" || e.c === "right") && cur.act && (cur.key === "mode" || cur.key === "host")) { cur.act(e.c === "left" ? -1 : 1); return true; }
     if (e.c === "a" && cur.act) { cur.act(1); return true; }
     return false;
