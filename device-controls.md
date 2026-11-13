@@ -4,12 +4,20 @@
 
 This document describes how the device's physical controls behave while the device is charging on the dock.
 
-The device has three physical controls:
+The device has five physical controls:
 
-- **System Wheel** — supports rotation only.
+- **System Wheel** — supports rotation only. 
+**Location:** Located on the left side of the screen housing, near the upper third of the device. The wheel is recessed into the side edge.
+
 - **Push Bar** — supports pressing only.
+**Location:** Located along the top edge of the screen housing. It is the long bar extending across most of the device's width, to the left of the In-App Wheel.
+
 - **In-App Wheel** — supports both rotation and pressing.
+**Location:** Located on the top edge of the screen housing, near the upper-right corner, immediately to the right of the Push Bar
+
 - **Microphone Button** — supports pressing and holding
+
+- **ON/OFF**
 
 The behavior of each control depends on the currently selected mode. Locations are described from the user's perspective while facing the screen.
 
@@ -58,6 +66,10 @@ The behavior of each control depends on the currently selected mode. Locations a
 **Purpose:** Record voice input while the button is held.
 - Press and hold: Start recording and continue while held.
 - Release: Stop recording.
+
+
+## 6. ON/OFF
+**Location:** located on the front bezel near the lower-right corner of the screen. It is the small round button marked with a power symbol.
 
 
 ## Additional Controls
