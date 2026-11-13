@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect } from "react";
-import type { Snapshot } from "@app/protocol";
+import type { AppId, Snapshot } from "@app/protocol";
 import type { VoiceSource } from "../voice/capture";
 
 export type Fn = "home" | "notes" | "todo" | "agents" | "focus" | "settings" | "dock";
@@ -8,14 +8,21 @@ export type Route =
   | { name: "note"; noteId: string }
   | { name: "task"; taskId: string }
   | { name: "agent"; agentId: string }
-  | { name: "create" };
+  | { name: "create"; app?: AppId }
+  | { name: "appAgents"; app: AppId };
 
 export const HANDHELD_FNS: Fn[] = ["home", "notes", "todo", "agents", "focus", "settings"];
 // device-controls.md: docked, the system wheel steps through the companion functions.
 export const DOCK_FNS: Fn[] = ["dock", "agents", "focus", "todo"];
 export const FN_LABEL: Record<Fn, string> = { home: "Home", notes: "Notes", todo: "To-Do", agents: "Agents", focus: "Focus", settings: "Settings", dock: "Dock" };
 
-export type TalkTarget = { kind: "note" } | { kind: "append"; noteId: string } | { kind: "name"; onText: (t: string) => void };
+export type TalkTarget =
+  | { kind: "note" }
+  | { kind: "append"; noteId: string }
+  | { kind: "main" }
+  | { kind: "app"; app: AppId }
+  | { kind: "agent"; agentId: string }
+  | { kind: "name"; onText: (t: string) => void };
 
 export interface AppCtx {
   snap: Snapshot;

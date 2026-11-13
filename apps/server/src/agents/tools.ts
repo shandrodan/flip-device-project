@@ -3,9 +3,12 @@
 // Grey-zone tools carry an `ask_first` flag the model sets in Auto mode.
 // Every tool calls ctx.gate first: in Manual mode that means every action waits for a press.
 import type Anthropic from "@anthropic-ai/sdk";
-import type { Agent, AgentPurpose, ApprovalRequest, FsEntry, PcAction, RiskKind, Task } from "@app/protocol";
+import type { Agent, AgentPurpose, AppId, ApprovalRequest, FsEntry, PcAction, RiskKind, Task } from "@app/protocol";
+import { APP_IDS } from "@app/protocol";
 import nodemailer from "nodemailer";
 import { config } from "../config.js";
+import { agentById, state } from "../store.js";
+import { APP_TOOLS } from "./app-tools.js";
 
 export interface PcResult { output: string; data: any }
 
@@ -22,6 +25,9 @@ export interface Ctx {
   pc(action: PcAction, args: Record<string, unknown>, machine?: string): Promise<PcResult>;
   machineName(machine?: string): string;
   hasShell(): boolean;
+  sendAgentMessage(recipientId: string, text: string, expectsReply: boolean, callId?: string): Task;
+  delegateApp(app: AppId, tool: "read_app" | "change_app", input: Record<string, unknown>, callId?: string): Promise<{ text: string }>;
+  waitForChildren(): Promise<string | null>;
 }
 
 export class ToolError extends Error {}
@@ -36,7 +42,7 @@ export interface ToolDef {
   grey?: boolean; // gets an ask_first flag
   alwaysAsk?: boolean; // asks in Manual and Auto, never skipped except in Full
   purposes: AgentPurpose[] | "all";
-  run(ctx: Ctx, input: Input): Promise<{ text: string; data?: any }>;
+  run(ctx: Ctx, input: Input, callId?: string): Promise<{ text: string; data?: any }>;
 }
 
 const SAY = { type: "string", description: "What you're doing, 3 to 8 words, shown on the user's device. Present tense, plain words, e.g. 'Moving 167 screenshots to Archive'." };
@@ -49,6 +55,31 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const mb = (b: number) => (b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b >= 1e3 ? `${Math.round(b / 1e3)} KB` : `${b} bytes`);
 
 export const TOOLS: ToolDef[] = [
+  ...APP_TOOLS,
+  {
+    name: "list_agents",
+    description: "List current Task agents, their app ownership, roles and active work. Use current IDs for messages.",
+    props: { say: SAY }, required: ["say"], purposes: "all",
+    async run(ctx) {
+      await ctx.gate({ title: "List Task agents?" });
+      return { text: JSON.stringify(state.agents.map(agent => ({
+        id: agent.id, name: agent.name, role: agent.role,
+        apps: APP_IDS.filter(app => state.appAgents[app].includes(agent.id)),
+        tasks: state.tasks.filter(task => task.agentId === agent.id && ["running", "waiting", "awaiting-approval"].includes(task.status)).map(task => ({ id: task.id, status: task.status, title: task.title })),
+      }))) };
+    },
+  },
+  {
+    name: "send_agent_message",
+    description: "Give another Task agent a request or a notice. A request gets a reply before you answer. Use list_agents for the ID. Do not send the same work twice.",
+    props: { agent_id: { type: "string" }, message: { type: "string" }, expects_reply: { type: "boolean" }, say: SAY },
+    required: ["agent_id", "message", "expects_reply", "say"], purposes: "all",
+    async run(ctx, input, callId) {
+      await ctx.gate({ title: `Ask ${agentById(String(input.agent_id))?.name ?? "Task agent"} to work?`, body: String(input.message).slice(0, 120) });
+      const task = ctx.sendAgentMessage(String(input.agent_id), String(input.message), input.expects_reply === true, callId);
+      return { text: `Sent to ${agentById(task.agentId)?.name ?? task.agentId}. Task ${task.id}. ${input.expects_reply ? "I will give you the result before you answer." : "No reply requested."}` };
+    },
+  },
   {
     name: "list_files",
     description: "List a folder on one of the user's machines, newest first. Returns name, path, size, modified time and whether it is a folder.",

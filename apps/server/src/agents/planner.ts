@@ -2,7 +2,8 @@
 // tools (and the same approval rules) the Claude agents use. Reliable for rehearsals and offline demos.
 import type { FsEntry } from "@app/protocol";
 import { TOOLS, ToolError, type Ctx } from "./tools.js";
-import { noteById } from "../store.js";
+import { noteById, state } from "../store.js";
+import { requestText } from "./coordination.js";
 
 async function use(ctx: Ctx, name: string, input: Record<string, any>) {
   const def = TOOLS.find(t => t.name === name)!;
@@ -27,12 +28,50 @@ const size = (b: number) => (b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b >= 1e3 
 const STOP = new Set(["the", "a", "an", "my", "old", "up", "folder", "folders", "files", "on", "laptop", "macbook", "computer", "archive", "move", "clean", "tidy", "to", "of", "and", "from", "in", "this", "that", "week", "but", "keep", "ones", "it"]);
 
 export async function runPlanner(ctx: Ctx): Promise<string> {
-  const title = ctx.task.title;
+  const title = requestText(ctx.task);
   const t = title.toLowerCase();
+  const ask = title.match(/^ask (.+?) to (.+)$/i);
+  if (ask) {
+    const name = ask[1].trim().toLowerCase();
+    const recipient = state.agents.find(agent => agent.id !== ctx.agent.id && (agent.name.toLowerCase() === name || agent.id.toLowerCase() === name));
+    if (recipient) {
+      ctx.step(`Asking ${recipient.name}`);
+      await ctx.gate({ title: `Ask ${recipient.name} to work?`, body: ask[2].slice(0, 120) });
+      ctx.sendAgentMessage(recipient.id, ask[2], true);
+      return (await ctx.waitForChildren()) ?? "The request did not return a result.";
+    }
+  }
+  const todo = title.match(/^(?:add|create|make) (?:me )?(?:a )?(?:to-?do|task)(?: to|:)? (.+)$/i);
+  if (todo) return (await use(ctx, "change_app", { action: "todo.create", text: todo[1], say: "Adding a To-Do" })).text;
+  const note = title.match(/^save (?:a )?note (?:that|to|:)? (.+)$/i);
+  if (note) return (await use(ctx, "change_app", { action: "notes.create", text: note[1], say: "Saving a Note" })).text;
+  const focus = title.match(/^start (?:a )?focus(?: timer)? for (\d+) minutes?$/i);
+  if (focus) return (await use(ctx, "change_app", { action: "focus.start", minutes: Number(focus[1]), say: "Starting focus" })).text;
+  if (/^stop (?:the )?focus(?: timer)?$/i.test(title))
+    return (await use(ctx, "change_app", { action: "focus.stop", say: "Stopping focus" })).text;
+  const mode = title.match(/^(?:set|change) (?:the )?permission mode (?:to )?(manual|auto)$/i);
+  if (mode) return (await use(ctx, "change_app", { action: "settings.permission", mode: mode[1].toLowerCase(), say: "Changing permission mode" })).text;
+  const newAgent = title.match(/^(?:create|make) (?:a )?(?:task )?agent (.+?) (?:to|for) (.+)$/i);
+  if (newAgent) return (await use(ctx, "change_app", { action: "agents.create", name: newAgent[1], role: newAgent[2], say: "Making a Task agent" })).text;
+  if (ctx.agent.id === "main" && ctx.task.requestMessageId && (ctx.task.depth ?? 0) === 0) {
+    const purposes = /\b(send|email|mail|reply)\b/.test(t) ? ["mail"]
+      : /\b(screenshot|folder|file|clean|tidy|archive|move|duplicate)\b/.test(t) ? ["files", "pc"]
+      : /\b(research|look up|compare|summari[sz]e)\b/.test(t) ? ["research"]
+      : /\b(write|draft|document)\b/.test(t) ? ["writer"] : [];
+    const recipient = state.agents.find(agent => agent.id !== "main" && purposes.includes(agent.purpose));
+    if (recipient) {
+      ctx.step(`Asking ${recipient.name} to work`);
+      await ctx.gate({ title: `Ask ${recipient.name} to work?`, body: title.slice(0, 120) });
+      ctx.sendAgentMessage(recipient.id, title, true);
+      return (await ctx.waitForChildren()) ?? "The request did not return a result.";
+    }
+  }
   if (ctx.agent.purpose === "mail" || /\b(send|email|e-mail|mail)\b/.test(t)) return emailPlan(ctx);
   if (/\b(research|look up|find out|summari[sz]e|write-?ups?|compare)\b/.test(t)) return researchPlan(ctx);
   if (/\b(screenshots?|clean|tidy|declutter|organi[sz]e|duplicates?)\b/.test(t)) return cleanupPlan(ctx);
   if (/\b(archive|move)\b/.test(t)) return archivePlan(ctx);
+  if (ctx.task.requestMessageId && !/\b(write|draft|make|create)\b/.test(t))
+    return "I heard you. With no AI key, I can add a To-Do, start focus, send email, or work with files. Add an AI key for open questions.";
   return writePlan(ctx);
 }
 

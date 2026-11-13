@@ -3,7 +3,7 @@ import type { Hosting, PermissionMode } from "@app/protocol";
 import { RISK_LABEL } from "@app/protocol";
 import { useControls, step } from "../../input/controls";
 import { net } from "../../net/client";
-import { useApp } from "../context";
+import { useApp, useTalkTarget } from "../context";
 import { useScrollSel } from "../ui";
 
 const MODES: [PermissionMode, string, string][] = [
@@ -17,6 +17,7 @@ interface Row { key: string; label: string; value: ReactNode; hint?: string; act
 
 export function Settings() {
   const { snap, toast, online } = useApp();
+  useTalkTarget({ kind: "app", app: "settings" }, []);
   const st = snap.settings;
   const [sel, setSel] = useState(0);
   const [armed, setArmed] = useState(0);

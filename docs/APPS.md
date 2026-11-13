@@ -1,6 +1,12 @@
 # APPS.md
 
-Built-in apps. Each app has its own agent behind it. Keep them simple.
+Built-in apps. Notes, To-Do, Focus, Agents, and Settings each have at least one assigned Task agent.
+When another Task agent needs an app, the server sends a saved request to the assigned agent
+with the fewest active Tasks and waits for a reply. The server checks approvals before an
+agent changes app state.
+On Home, select an app and press the blue D button to add, change, or delete a Task agent.
+One Task agent can belong to only one app. The last Task agent of an app cannot be deleted.
+The Dock reads other app state and has no assigned Task agent.
 
 ## Notes (core of the demo)
 
@@ -11,7 +17,7 @@ Flow:
 4. The device suggests actions ("this looks like 2 tasks"). One press accepts.
 5. An accepted task goes to an agent, or to a todo list.
 
-On screen (ADR 0011): the list on the left, the open note on a ruled pad on the right. Hold the mic and just talk: the main agent reads the open note and files what you said there, in another note it clearly belongs to, or in a new note. "Add to this note …" and "new note …" force it. The result stays on screen for 5 seconds. Holding the mic anywhere else (Home) still makes a new note and shows the suggestions.
+On screen (ADR 0011): the list on the left, the open note on a ruled pad on the right. Hold the mic and just talk: the main agent reads the open note and files what you said there, in another note it clearly belongs to, or in a new note. "Add to this note …" and "new note …" force it. The result stays on screen for 5 seconds. On Home the mic talks to the main Task agent instead (ADR 0012).
 
 Rules:
 - Cloud re-transcription only replaces the text if the user hasn't edited the note.

@@ -1,7 +1,7 @@
 // Approval requests (ADR 0004). An agent awaits a promise; the Device answers with an
 // approval press. "Not now" holds a task's request until the user resumes it.
 import type { ApprovalRequest } from "@app/protocol";
-import { state, id, now, taskById, patchTask, save } from "./store.js";
+import { state, id, now, taskById, patchTask, saveNow } from "./store.js";
 import { bus } from "./bus.js";
 
 export class Cancelled extends Error {
@@ -19,7 +19,7 @@ export function requestApproval(req: Omit<ApprovalRequest, "requestId" | "create
     const t = taskById(full.taskId);
     if (t) patchTask(t, { status: "awaiting-approval" });
   }
-  save();
+  saveNow();
   bus.emit({ type: "approval.request", request: full });
   bus.changed();
   return new Promise(resolve => waiters.set(full.requestId, resolve));
@@ -35,7 +35,7 @@ function settle(requestId: string, approved: boolean) {
   }
   waiters.get(requestId)?.(approved);
   waiters.delete(requestId);
-  save();
+  saveNow();
   bus.emit({ type: "approval.resolved", requestId, approved });
   bus.changed();
 }
@@ -50,7 +50,7 @@ export function press(requestId: string, approved: boolean) {
     req.held = true;
     const t = taskById(req.taskId);
     if (t) patchTask(t, { status: "held" });
-    save();
+    saveNow();
     bus.emit({ type: "approval.resolved", requestId, approved: false });
     bus.changed();
   } else settle(requestId, false);
@@ -62,7 +62,7 @@ export function resumeHeld(taskId: string) {
   req.held = false;
   const t = taskById(taskId);
   if (t) patchTask(t, { status: "awaiting-approval" });
-  save();
+  saveNow();
   bus.emit({ type: "approval.request", request: req });
   bus.changed();
   return true;

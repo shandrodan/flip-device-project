@@ -16,7 +16,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import os from "node:os";
 import fs from "node:fs/promises";
-import { createReadStream, existsSync, mkdirSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawn, exec } from "node:child_process";
@@ -41,6 +41,8 @@ const ROOTS = (process.env.PC_AGENT_ROOTS
 
 mkdirSync(WORKSPACE, { recursive: true });
 const ACTIVE_ROOTS = ROOTS.filter(r => existsSync(r));
+// Compare against resolved roots: on macOS /var is /private/var, and Desktop may be a symlink.
+const REAL_ROOTS = ACTIVE_ROOTS.map(r => realpathSync(r));
 const ACTIONS: PcAction[] = ["fs.list", "fs.read", "fs.write", "fs.mkdir", "fs.move", "fs.trash", "fs.duplicates", "open", "notify", "claude.window", ...(ALLOW_SHELL ? (["shell"] as PcAction[]) : [])];
 const MACHINE_ID = crypto.createHash("sha1").update(os.hostname() + HOME).digest("hex").slice(0, 10);
 
@@ -61,7 +63,8 @@ function expand(p: string) {
   return path.resolve(p);
 }
 
-const short = (p: string) => (p.startsWith(HOME) ? "~" + p.slice(HOME.length) : p);
+const short = (p: string) => p === HOME ? "~" : p.startsWith(HOME + path.sep)
+  ? "~/" + p.slice(HOME.length + 1).split(path.sep).join("/") : p;
 
 /** Resolve a path and refuse anything outside the allowed roots (symlinks included). */
 async function inRoots(p: unknown, { mustExist = true } = {}): Promise<string> {
@@ -75,7 +78,7 @@ async function inRoots(p: unknown, { mustExist = true } = {}): Promise<string> {
     while (!existsSync(dir) && dir !== path.dirname(dir)) dir = path.dirname(dir);
     real = path.join(await fs.realpath(dir), path.relative(dir, abs));
   }
-  const ok = ACTIVE_ROOTS.some(r => real === r || real.startsWith(r + path.sep));
+  const ok = REAL_ROOTS.some(r => real === r || real.startsWith(r + path.sep));
   if (!ok) throw new Error(`${short(abs)} is outside the folders this machine allows (${ACTIVE_ROOTS.map(short).join(", ")})`);
   return real;
 }

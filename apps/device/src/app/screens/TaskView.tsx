@@ -28,13 +28,13 @@ export function TaskView({ id }: { id: string }) {
       return true;
     }
     if (e.c === "d" && (s === "todo" || s === "paused" || s === "failed")) { setPicking(true); return true; }
-    if (e.c === "c" && ["running", "held", "paused", "awaiting-approval", "failed"].includes(s!) && t.agentId) { net.send({ type: "task.cancel", taskId: t.id }); return true; }
+    if (e.c === "c" && ["queued", "running", "waiting", "held", "paused", "awaiting-approval", "failed"].includes(s!) && t.agentId) { net.send({ type: "task.cancel", taskId: t.id }); return true; }
     if (e.c === "pushBar" && s === "todo") { net.send({ type: "task.complete", taskId: t.id }); back(); return true; }
     return false;
   }, t ? {
     a: s === "held" ? "Review again" : s === "paused" || s === "failed" ? "Try again" : s === "done" ? "Home" : undefined,
     d: s === "todo" ? "Hand to agent" : s === "paused" || s === "failed" ? "Other agent" : undefined,
-    c: t.agentId && ["running", "held", "paused", "awaiting-approval", "failed"].includes(s!) ? "Stop, keep as todo" : undefined,
+    c: t.agentId && ["queued", "running", "waiting", "held", "paused", "awaiting-approval", "failed"].includes(s!) ? "Stop, keep as todo" : undefined,
     push: s === "todo" ? "Done" : undefined,
     wheel: t.steps.length > 6 ? "Scroll" : undefined,
   } : null);

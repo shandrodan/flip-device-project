@@ -1,9 +1,9 @@
 // Turn a note into suggested tasks (ADR 0005). Claude when a key is set, otherwise a small
 // rule-based splitter that still routes obvious work to the right agent.
-import type { Agent, Note, Suggestion } from "@app/protocol";
+import { APP_IDS, type Agent, type Note, type Suggestion } from "@app/protocol";
 import { claude, hasLlm, FALLBACK, describeApiError } from "./llm.js";
 import { config } from "./config.js";
-import { state, id } from "./store.js";
+import { state, id, appOfAgent, pickAppAgent } from "./store.js";
 
 const WHY: Record<string, string> = {
   mail: "asks before it sends",
@@ -11,6 +11,7 @@ const WHY: Record<string, string> = {
   files: "asks before it deletes",
   research: "searches the web, writes a summary",
   writer: "writes it into a file",
+  app: "owns a Device app",
 };
 
 function why(agent: Agent | undefined) {
@@ -53,7 +54,7 @@ const SCHEMA = {
 };
 
 async function viaClaude(note: Note): Promise<Suggestion[]> {
-  const agents = state.agents.map(a => `- ${a.id}: ${a.name}. ${a.role}`).join("\n");
+  const agents = state.agents.map(a => `- ${a.id}: ${a.name}. ${a.role} Apps: ${APP_IDS.filter(app => state.appAgents[app].includes(a.id)).join(", ") || "none"}.`).join("\n");
   const res = await claude().beta.messages.create({
     model: config.suggestModel,
     max_tokens: 2000,
@@ -63,6 +64,7 @@ async function viaClaude(note: Note): Promise<Suggestion[]> {
       "You read a voice note someone dumped into a small desk device and pull out the tasks in it. " +
       "Only real tasks: a passing thought or idea gives zero tasks. At most 4. Keep the speaker's names and details. " +
       "Hand a task to an agent only if that agent can actually do it with its tools (email, files on the user's computer, web research, writing files). " +
+      "For a task that changes a Device app, use that app's assigned Task agent. " +
       "Errands, calls and things only a person can do are 'todo'.\n\nAgents:\n" + agents,
     messages: [{ role: "user", content: note.text }],
   });
@@ -70,7 +72,10 @@ async function viaClaude(note: Note): Promise<Suggestion[]> {
   const text = res.content.map(b => (b.type === "text" ? b.text : "")).join("");
   const parsed = JSON.parse(text) as { tasks: { title: string; agent: string }[] };
   return parsed.tasks.slice(0, 4).map(t => {
-    const agent = state.agents.find(a => a.id === t.agent);
+    const selected = state.agents.find(a => a.id === t.agent);
+    const selectedApp = selected && appOfAgent(selected.id);
+    const routed = routeByWords(t.title);
+    const agent = routed && appOfAgent(routed.id) ? routed : selectedApp ? pickAppAgent(selectedApp) : selected;
     return { id: id("s"), title: t.title.trim(), agentId: agent ? agent.id : null, why: why(agent) };
   });
 }
@@ -79,7 +84,7 @@ async function viaClaude(note: Note): Promise<Suggestion[]> {
 
 const FILLER = /^(okay|ok|so|and|oh|um|uh|also|then|right|well|like|anyway|plus|but)\b[\s,]*/i;
 const LEAD = /^(i (really )?(need|have|want|got|should|must) to|i'?ll|remind me to|don'?t forget to|can you|could you|please|let'?s|we need to|need to|gotta|you should|maybe)\s+/i;
-const VERB = /\b(send|email|mail|reply|clean|tidy|organi[sz]e|archive|move|delete|remove|sort|find|research|look up|summari[sz]e|write|draft|call|buy|book|export|record|rename|fix|check|update|prepare|make|create|schedule|plan|review|read|ship|deploy|test|ask|tell|pay|order|print|backup|back up)\b/i;
+const VERB = /\b(add|start|stop|save|set|change|send|email|mail|reply|clean|tidy|organi[sz]e|archive|move|delete|remove|sort|find|research|look up|summari[sz]e|write|draft|call|buy|book|export|record|rename|fix|check|update|prepare|make|create|schedule|plan|review|read|ship|deploy|test|ask|tell|pay|order|print|backup|back up)\b/i;
 
 export function viaRules(text: string): Suggestion[] {
   const clauses = text
@@ -126,6 +131,12 @@ function routeByWords(t: string): Agent | undefined {
     }
     return undefined;
   };
+  const appOwner = (app: keyof typeof state.appAgents) => pickAppAgent(app);
+  if (has(/\b(add|create|make) (a )?(to-?do|task)( to|:)/i)) return appOwner("todo");
+  if (has(/\b(start|stop) (a |the )?focus( timer)?\b/i)) return appOwner("focus");
+  if (has(/\bsave (a )?note\b/i)) return appOwner("notes");
+  if (has(/\b(create|make) (a |an )?agent\b/i)) return appOwner("agents");
+  if (has(/\b(change|set) (the )?(permission|settings)\b/i)) return appOwner("settings");
   if (has(/\b(call|buy|book|pick up|meet|phone|visit|record|print)\b/i)) return undefined;
   if (has(/\b(send|email|e-mail|mail|reply)\b/i)) return byPurpose("mail", "main");
   if (has(/\b(research|look up|find out|summari[sz]e|write-?ups?|articles?|compare)\b/i)) return byPurpose("research", "main");
