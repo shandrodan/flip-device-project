@@ -31,6 +31,7 @@ Product name: TBD.
 | `packages/protocol` | Shared WebSocket message types. Every app imports these. |
 | `docs/` | SHAPE, STACK, APPS, DEMO |
 | `docs/adr/` | One file per decision. Read before changing direction. |
+| `device-controls.md` | The physical controls. The UI is button-only (ADR 0007). |
 | `renders/` | Blender scripts and exported renders |
 | `pitch/` | Slides, video, demo script |
 | `docker/` | Container setup for the device-side demo |
@@ -48,6 +49,6 @@ Product name: TBD.
 ## Open questions
 
 - Product name
-- What the PC agent can control (files, apps, terminal) and how
+- ~~What the PC agent can control~~: see `docs/adr/0008-agent-runtime-and-pc-actions.md`
 - Why buy our hardware instead of flashing our OS onto your own Pi
 - Hackathon rules on prior code, submission format and judging

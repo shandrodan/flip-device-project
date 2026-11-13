@@ -61,7 +61,7 @@ The behavior of each control depends on the currently selected mode. Locations a
 
 
 ## Additional Controls
-The following controls provide confirmation, cancellation, contextual actions, and directional navigation. The action buttons follow the Xbox layout: Y at the top, A at the bottom, X on the left, and B on the right.
+The following controls provide confirmation, cancellation, contextual actions, and directional navigation. The action buttons sit in a diamond: C (yellow) at the top, A (green) at the bottom, D (blue) on the left, and B (red) on the right.
 
 ## 6. A Button
 **Location:** Green button at the bottom of the action-button cluster on the right side of the device.
@@ -76,22 +76,23 @@ The following controls provide confirmation, cancellation, contextual actions, a
 - During a pending request: Press to cancel.
 - During navigation: Press to return to the previous screen.
 
-## 8. X Button
-**Location:** Blue button on the left of the action-button cluster.
+## 8. C Button
+**Location:** Yellow button at the top of the action-button cluster.
 
 **Purpose:** Perform an additional action defined by the current application or mode.
 - Press: Execute the assigned action.
 - Screen: Display the assigned action when available.
 - Unassigned: No action.
 
-## 9. Y Button
-**Location:** Yellow button at the top of the action-button cluster.
+## 9. D Button
+**Location:** Blue button on the left of the action-button cluster.
 
 **Purpose:** Perform another additional action defined by the current application or mode.
 - Press: Execute the assigned action.
 - Screen: Display the assigned action when available.
 - Unassigned: No action.
-Future Expansion: Developers can assign actions to the X and Y buttons when adding new functions to the device.
+
+**Future Expansion:** Developers can assign actions to the C and D buttons when adding new functions to the device.
 
 ## 10. Directional Pad (D-Pad)
 **Location:** Cross-shaped control on the left side of the device, below the screen.
