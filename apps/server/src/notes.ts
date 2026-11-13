@@ -61,9 +61,7 @@ export async function voiceEnd(streamId: string, durationMs: number, hint?: stri
       bus.emit({ type: "state", state: "idle" });
       return;
     }
-    const task = acceptVoiceMessage(s.target, text, streamId, startTask);
-    bus.emit({ type: "voice.accepted", streamId, taskId: task.id, agentId: task.agentId! });
-    return;
+    return sendToAgent(s.target, text, streamId);
   }
 
   // Save first, with whatever text we already have, so the screen reacts at once.
@@ -87,14 +85,23 @@ export async function voiceEnd(streamId: string, durationMs: number, hint?: stri
   await runSuggestions(current);
 }
 
+/** Hand speech to a Task agent. A refusal (agent gone, empty, too long) reaches the Device instead of leaving the mic busy. */
+function sendToAgent(target: Extract<VoiceTarget, { kind: "main" | "agent" | "app" }>, text: string, streamId: string) {
+  try {
+    const task = acceptVoiceMessage(target, text, streamId, startTask);
+    bus.emit({ type: "voice.accepted", streamId, taskId: task.id, agentId: task.agentId! });
+  } catch (error) {
+    bus.emit({ type: "voice.rejected", streamId, reason: (error as Error).message });
+    bus.emit({ type: "state", state: "idle" });
+  }
+}
+
 /** Scripted voice for rehearsals: `text` is what was "heard" live, `cloudText` the cloud's version. */
 export async function voiceScripted(text: string, cloudText: string | undefined, durationMs: number, target: VoiceTarget, streamId = id("voice")) {
   if (target.kind === "append") return appendToNote(target.noteId, cloudText || text);
   if (target.kind === "auto") return routeAuto(cloudText || text, target.openNoteId, durationMs, cloudText ? "cloud" : "local", streamId);
   if (target.kind === "main" || target.kind === "agent" || target.kind === "app") {
-    const task = acceptVoiceMessage(target, cloudText || text, streamId, startTask);
-    bus.emit({ type: "voice.accepted", streamId, taskId: task.id, agentId: task.agentId! });
-    return;
+    return sendToAgent(target, cloudText || text, streamId);
   }
   const note = createNote(text, "local", durationMs);
   bus.emit({ type: "note.saved", note });
