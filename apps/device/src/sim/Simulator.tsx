@@ -150,7 +150,7 @@ export function Simulator() {
 
     <div className="panel">
       <span className="pstat"><i className="dot" style={{ background: n.conn === "online" ? "#34c759" : n.conn === "connecting" ? "#ffd60a" : "#ff453a" }} />
-        {n.conn === "online" ? `Server online${n.snap ? ` · ${n.snap.services.llm === "claude" ? "Claude agents" : "planner agents"} · ${n.snap.machines.filter(m => m.online).length}/${n.snap.machines.length} machines` : ""}` : n.conn === "connecting" ? "Connecting…" : "Offline"}
+        {n.conn === "online" ? `Server online${n.snap ? ` · ${n.snap.services.llm === "openrouter" ? "OpenRouter agents" : n.snap.services.llm === "claude" ? "Claude agents" : "planner agents"} · ${n.snap.machines.filter(m => m.online).length}/${n.snap.machines.length} machines` : ""}` : n.conn === "connecting" ? "Connecting…" : "Offline"}
       </span>
       <span style={{ flex: 1 }} />
       <button className="pbtn" aria-pressed={docked} onClick={() => net.setMode(docked ? "handheld" : "dock")}>{docked ? "Take off dock" : "Put on dock"}</button>

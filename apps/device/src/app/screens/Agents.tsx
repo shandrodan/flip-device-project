@@ -28,7 +28,7 @@ export function Agents() {
   const busy = snap.tasks.filter(t => t.agentId && ACTIVE.includes(t.status)).length;
   return <div className="scr">
     <p className="h1 in">Agents</p>
-    <div className="mute in" style={{ fontSize: 14 }}>{busy ? `${busy} working now` : "All quiet"} · {snap.services.llm === "claude" ? "Claude" : "built-in planner"}</div>
+    <div className="mute in" style={{ fontSize: 14 }}>{busy ? `${busy} working now` : "All quiet"} · {snap.services.llm === "openrouter" ? "OpenRouter" : snap.services.llm === "claude" ? "Claude" : "built-in planner"}</div>
     <div className="scroll in in-2" style={{ position: "absolute", left: 28, right: 28, top: 104, bottom: 40, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, alignContent: "start", padding: 2 }}>
       {snap.agents.map((a, k) => {
         const work = snap.tasks.find(t => t.agentId === a.id && ACTIVE.includes(t.status));

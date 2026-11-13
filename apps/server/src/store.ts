@@ -27,6 +27,7 @@ export interface State {
 }
 
 export interface Secrets {
+  openRouterKey?: string;
   anthropicKey?: string;
   sttKey?: string;
   sttUrl?: string;

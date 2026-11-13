@@ -20,7 +20,7 @@ import { config } from "./config.js";
 import { state, save, saveNow, id, now, agentById, appOfAgent, taskById, noteById, log, patchTask, resetState, PURPOSE_ROLES } from "./store.js";
 import { bus } from "./bus.js";
 import { machines } from "./machines.js";
-import { hasLlm, apiKey } from "./llm.js";
+import { hasLlm, apiKey, llmMode, agentModel } from "./llm.js";
 import { sttMode, transcribe } from "./voice.js";
 import { press, requestApproval, resumeHeld } from "./approvals.js";
 import { startTask, cancelTask, isRunning, resumePausedForMachines, resumeQueuedTasks } from "./agents/runner.js";
@@ -66,15 +66,15 @@ function snapshot(): Snapshot {
       permissionMode: state.permissionMode,
       hosting: state.hosting,
       serverUrl: lanUrl(),
-      provider: "anthropic",
+      provider: llmMode() === "openrouter" ? "openrouter" : "anthropic",
       keySet: hasLlm(),
       keyHint: apiKey() ? apiKey().slice(-4) : undefined,
-      model: config.agentModel,
+      model: agentModel(),
       setupUrl: `${lanUrl()}/setup`,
     },
     focus: state.focus,
     limits: state.limits,
-    services: { llm: hasLlm() ? "claude" : "planner", stt: sttMode(), smtp: !!config.smtpUrl },
+    services: { llm: llmMode(), stt: sttMode(), smtp: !!config.smtpUrl },
     devices: { handheld: handheld.length, dock: devices.length - handheld.length, mode: handheld[handheld.length - 1]?.mode ?? "handheld" },
   };
 }
@@ -440,6 +440,6 @@ resumeQueuedTasks();
 server.listen(config.port, config.host, () => {
   console.log(`\nFlip server on ${lanUrl()}  (ws path /ws)`);
   console.log(`Setup page: ${lanUrl()}/setup`);
-  console.log(`Agents: ${hasLlm() ? `Claude (${config.agentModel})` : "built-in planner (no ANTHROPIC_API_KEY yet)"} · Speech to text: ${sttMode()}`);
+  console.log(`Agents: ${hasLlm() ? `${llmMode()} (${agentModel()})` : "built-in planner"} · Speech to text: ${sttMode()}`);
   console.log(`Machines: ${state.machines.map(m => `${m.name} (${m.url})`).join(", ") || "none"}\n`);
 });

@@ -1,9 +1,9 @@
 // Dumps in the To-Do app (ADR 0016). The words are saved as a note first (CONTEXT: a dump is always a
 // note), then the main agent turns them into one task: a title, maybe a day and time, maybe a project,
-// and an agent only when you name one ("ask the mail agent to …"). Claude when a key is set, otherwise
+// and an agent only when you name one ("ask the mail agent to …"). The configured model when a key is set, otherwise
 // rules that cover the demo.
 import type { Agent, Project } from "@app/protocol";
-import { claude, hasLlm, FALLBACK, describeApiError } from "./llm.js";
+import { structuredMessage, hasLlm, describeApiError } from "./llm.js";
 import { config } from "./config.js";
 import { state, localDay } from "./store.js";
 
@@ -25,10 +25,10 @@ const projectById = (pid: string | null | undefined) => state.projects.find(p =>
 export async function routeTask(text: string, listId: string | null): Promise<TaskRoute> {
   if (hasLlm()) {
     try {
-      const r = await viaClaude(text, listId);
+      const r = await viaModel(text, listId);
       if (r) return r;
     } catch (err) {
-      console.warn("[tasks] Claude failed, using rules:", describeApiError(err));
+      console.warn("[tasks] Model failed, using rules:", describeApiError(err));
     }
   }
   return viaRules(text, listId);
@@ -49,7 +49,7 @@ function finish(title: string, due: string | null, project: Project | undefined,
   return { title, due, projectId: project?.id ?? null, agentId: agent?.id ?? null, label, why };
 }
 
-/* ------------------------------- Claude ------------------------------- */
+/* ------------------------------- Model ------------------------------- */
 
 const SCHEMA = {
   type: "object",
@@ -65,13 +65,12 @@ const SCHEMA = {
   },
 };
 
-async function viaClaude(text: string, listId: string | null): Promise<TaskRoute | null> {
+async function viaModel(text: string, listId: string | null): Promise<TaskRoute | null> {
   const today = new Date();
   const open = listId && !LISTS.has(listId) ? projectById(listId) : undefined;
-  const res = await claude().beta.messages.create({
+  const res = await structuredMessage({
     model: config.suggestModel,
     max_tokens: 600,
-    ...FALLBACK,
     output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
     system:
       `Someone holds the mic in the To-Do app of a small desk device and says one task. Today is ${today.toLocaleDateString("en-GB", { weekday: "long" })} ${localDay(0)}.\n` +
@@ -81,8 +80,8 @@ async function viaClaude(text: string, listId: string | null): Promise<TaskRoute
       "\n\nAgents:\n" + state.agents.filter(a => a.purpose !== "main").map(a => `- ${a.id}: ${a.name}. ${a.role}`).join("\n"),
     messages: [{ role: "user", content: text }],
   });
-  if (res.stop_reason === "refusal") return null;
-  const o = JSON.parse(res.content.map(b => (b.type === "text" ? b.text : "")).join("")) as Record<string, string>;
+  if (!res) return null;
+  const o = res as Record<string, string>;
   const title = o.title?.trim();
   if (!title) return null;
   let day = /^\d{4}-\d{2}-\d{2}$/.test(o.day) ? o.day : null;

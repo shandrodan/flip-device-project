@@ -1,9 +1,9 @@
 // Where a dump in Notes goes (ADR 0011). The main agent reads the open note and decides:
 // add to it, add to another note the dump is clearly about, or start a new note.
-// Claude when a key is set, otherwise rules that cover the demo (shared words, a food lexicon,
+// The configured model when a key is set, otherwise rules that cover the demo (shared words, a food lexicon,
 // and spoken commands like "add to this note …" or "new note …").
 import type { Note } from "@app/protocol";
-import { claude, hasLlm, FALLBACK, describeApiError } from "./llm.js";
+import { structuredMessage, hasLlm, describeApiError } from "./llm.js";
 import { config } from "./config.js";
 import { state, noteById } from "./store.js";
 
@@ -19,10 +19,10 @@ export interface Route {
 export async function routeDump(text: string, openNoteId: string | null): Promise<Route> {
   if (hasLlm()) {
     try {
-      const r = await viaClaude(text, openNoteId);
+      const r = await viaModel(text, openNoteId);
       if (r) return r;
     } catch (err) {
-      console.warn("[route] Claude failed, using rules:", describeApiError(err));
+      console.warn("[route] Model failed, using rules:", describeApiError(err));
     }
   }
   return viaRules(text, openNoteId);
@@ -35,7 +35,7 @@ export const titleOf = (n: Note) => {
 };
 const short = (s: string, n = 26) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
 
-/* ------------------------------- Claude ------------------------------- */
+/* ------------------------------- Model ------------------------------- */
 
 const SCHEMA = {
   type: "object",
@@ -49,13 +49,12 @@ const SCHEMA = {
   },
 };
 
-async function viaClaude(text: string, openNoteId: string | null): Promise<Route | null> {
+async function viaModel(text: string, openNoteId: string | null): Promise<Route | null> {
   const open = openNoteId ? noteById(openNoteId) : undefined;
   const list = state.notes.slice(0, 30).map(n => `- ${n.id}${n.id === open?.id ? " (OPEN)" : ""}: ${n.text.replace(/\s+/g, " ").slice(0, 160)}`).join("\n");
-  const res = await claude().beta.messages.create({
+  const res = await structuredMessage({
     model: config.suggestModel,
     max_tokens: 800,
-    ...FALLBACK,
     output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
     system:
       "Someone holds the mic on a small notes device and says something while a note is open. Decide where it goes.\n" +
@@ -66,8 +65,8 @@ async function viaClaude(text: string, openNoteId: string | null): Promise<Route
       "Never invent content. Keep the speaker's words.\n\nNotes (newest first):\n" + list,
     messages: [{ role: "user", content: text }],
   });
-  if (res.stop_reason === "refusal") return null;
-  const out = JSON.parse(res.content.map(b => (b.type === "text" ? b.text : "")).join("")) as Route & { noteId: string };
+  if (!res) return null;
+  const out = res as Route & { noteId: string };
   if (!out.text?.trim()) return null;
   if (out.action === "append" && !noteById(out.noteId)) return { action: "new", text: out.text.trim(), why: out.why };
   return { action: out.action, noteId: out.action === "append" ? out.noteId : undefined, text: out.text.trim(), why: out.why };
