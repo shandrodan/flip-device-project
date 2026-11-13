@@ -470,3 +470,41 @@ mark.np-added { color: inherit; border-radius: 4px; padding: 1px 2px; margin: 0 
 @media (prefers-reduced-motion: reduce) {
   .td *, .td *::before { transition-duration: 1ms !important; animation-duration: 1ms !important; }
 }
+
+/* Home cell menu (blue D on an app or a bot, ADR 0017). Sits over the left column; the comb dims
+   except the selected cell, so you see what the menu is for. */
+.comb-view .orb, .comb-view .goo { transition-property: transform, opacity, box-shadow, background-color, filter; }
+.comb-view.dim .orb:not(.sel), .comb-view.dim .goo { filter: brightness(0.35); }
+.cm { position: absolute; left: 16px; top: 42px; bottom: 40px; width: 252px; z-index: 6; background: #1c1c1e; border-radius: 24px; padding: 14px 10px 10px; display: flex; flex-direction: column; box-shadow: 0 24px 48px -12px rgba(0,0,0,0.9); }
+.cm-head { display: flex; gap: 10px; align-items: center; padding: 0 6px 12px; }
+.cm-head > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.cm-head b { font: 600 18px/1.15 var(--sys-display); letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm-head .mute { font-size: 12.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cm-ico { flex: none; width: 44px; height: 44px; border-radius: 50%; background: #2c2c2e; display: grid; place-items: center; color: #fff; }
+.cm-list { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
+.cm-row { padding: 9px 12px; border-radius: 14px; display: flex; flex-direction: column; gap: 3px; transition: background-color 150ms ease; }
+.cm-row b { font-size: 15px; font-weight: 600; }
+.cm-row .mute { font-size: 12.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; animation: materialize 220ms var(--ease) both; }
+.cm-row.sel { background: rgba(255,255,255,0.12); }
+.cm-row.off b { color: rgba(235,235,245,0.4); }
+
+/* Text entry (ADR 0017): dictation first, C for the D-pad keyboard. */
+.te { position: absolute; inset: 0; z-index: 22; background: #000; padding: 46px 28px 40px; display: flex; flex-direction: column; gap: 10px; animation: fadeIn 180ms ease both; }
+.te-field { display: flex; align-items: flex-start; gap: 12px; background: #1c1c1e; border-radius: 18px; padding: 14px 16px; min-height: 58px; }
+.te-text { flex: 1; min-width: 0; font: 500 22px/1.3 var(--sys-display); letter-spacing: -0.015em; overflow-wrap: anywhere; max-height: 116px; overflow: hidden; }
+.te.kb .te-text { font-size: 20px; max-height: 54px; }
+.te-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -0.12em; background: var(--btn-d); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.te-count { flex: none; font-size: 12px; color: rgba(235,235,245,0.45); margin-top: 6px; }
+.te-dict { display: flex; gap: 16px; align-items: center; margin-top: 10px; padding: 0 4px; }
+.te-dict b { font: 600 20px/1.2 var(--sys-display); }
+.te-dict .mute { font-size: 14px; line-height: 1.45; margin-top: 4px; }
+.te-dict .g { vertical-align: text-bottom; } /* centres the glyph between x-height and cap height */
+.te-mic { flex: none; width: 60px; height: 60px; border-radius: 50%; background: #ff453a; color: #fff; display: grid; place-items: center; }
+.te-keys { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.te-row { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+.te-key { height: 46px; border-radius: 12px; background: #1c1c1e; display: grid; place-items: center; font: 500 19px/1 var(--sys-display); color: #fff; transition: background-color 120ms ease, transform 120ms var(--ease), box-shadow 120ms ease; }
+.te-key.fn { font-size: 15px; background: #2c2c2e; }
+.te-key.on { background: #fff; color: #000; }
+.te-key.sel { box-shadow: inset 0 0 0 2px #fff; background: #3a3a3c; transform: scale(1.06); }
+.te-key.on.sel { background: #fff; }

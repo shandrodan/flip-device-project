@@ -99,7 +99,11 @@ export interface Project {
   color: string;
 }
 
-export type AgentShape = "circle" | "squircle" | "capsule" | "pebble" | "cloud" | "drop" | "hexagon" | "triangle" | "flower";
+export const AGENT_SHAPES = ["circle", "squircle", "capsule", "pebble", "cloud", "drop", "hexagon", "triangle", "flower"] as const;
+export type AgentShape = (typeof AGENT_SHAPES)[number];
+/** Longest agent name and personality the Device and server accept. */
+export const AGENT_NAME_MAX = 24;
+export const AGENT_PERSONALITY_MAX = 280;
 export type AgentPurpose = "main" | "mail" | "pc" | "research" | "writer" | "files" | "custom" | "app";
 
 export interface Agent {
@@ -110,6 +114,8 @@ export interface Agent {
   color: string;
   seed: number;
   role: string;
+  /** How the agent talks, set by the user on the Device (ADR 0017). Added to its instructions. */
+  personality?: string;
   builtin: boolean;
 }
 
@@ -261,11 +267,15 @@ export type DeviceMessage =
   | { type: "settings.update"; patch: Partial<Pick<Settings, "permissionMode" | "hosting">> }
   | { type: "agent.create"; agent: Pick<Agent, "name" | "purpose" | "shape" | "color">; app?: AppId }
   | { type: "agent.delete"; agentId: string } // risky: answered with an approval request
+  // Edit an agent's name, personality or look (ADR 0017). Not risky: nothing leaves the user's machines.
+  | { type: "agent.update"; agentId: string; patch: AgentPatch }
   | { type: "app.agent.add"; app: AppId; agentId: string }
   | { type: "app.agent.replace"; app: AppId; oldAgentId: string; newAgentId: string }
   | { type: "machine.check"; machineId: string }
   | { type: "demo.reset" }
   | { type: "ping"; t: number };
+
+export type AgentPatch = Partial<Pick<Agent, "name" | "personality" | "shape" | "color">>;
 
 /* ============================== Server -> device ============================== */
 
@@ -369,10 +379,22 @@ export function parseDeviceMessage(raw: string): DeviceMessage | null {
     if (m.type === "app.agent.add" && (!APP_IDS.includes(m.app) || typeof m.agentId !== "string" || !m.agentId)) return null;
     if (m.type === "app.agent.replace" && (!APP_IDS.includes(m.app) || typeof m.oldAgentId !== "string" || !m.oldAgentId || typeof m.newAgentId !== "string" || !m.newAgentId)) return null;
     if (m.type === "agent.create" && m.app !== undefined && !APP_IDS.includes(m.app)) return null;
+    if (m.type === "agent.update" && (typeof m.agentId !== "string" || !m.agentId || !isAgentPatch(m.patch))) return null;
     return m as DeviceMessage;
   } catch {
     return null;
   }
+}
+
+function isAgentPatch(value: unknown): value is AgentPatch {
+  if (!value || typeof value !== "object") return false;
+  const p = value as Record<string, unknown>;
+  if (!Object.keys(p).length || Object.keys(p).some(k => !["name", "personality", "shape", "color"].includes(k))) return false;
+  if (p.name !== undefined && (typeof p.name !== "string" || !p.name.trim() || p.name.length > AGENT_NAME_MAX)) return false;
+  if (p.personality !== undefined && (typeof p.personality !== "string" || p.personality.length > AGENT_PERSONALITY_MAX)) return false;
+  if (p.shape !== undefined && !AGENT_SHAPES.includes(p.shape as AgentShape)) return false;
+  if (p.color !== undefined && (typeof p.color !== "string" || !/^#[0-9a-f]{6}$/i.test(p.color))) return false;
+  return true;
 }
 
 function isVoiceTarget(value: unknown): value is VoiceTarget {

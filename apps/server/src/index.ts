@@ -6,6 +6,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import {
   PROTOCOL_VERSION,
   APP_IDS,
+  AGENT_NAME_MAX,
+  AGENT_PERSONALITY_MAX,
   parseDeviceMessage,
   type ClientKind,
   type DeviceMessage,
@@ -290,6 +292,20 @@ async function handle(c: Client, m: DeviceMessage) {
       state.agents = state.agents.filter(x => x.id !== a.id);
       saveNow();
       bus.notice(`${a.name} deleted`, "info");
+      break;
+    }
+    case "agent.update": {
+      const a = agentById(m.agentId);
+      if (!a) return;
+      const p = m.patch, before = a.name;
+      if (p.name !== undefined) a.name = p.name.trim().slice(0, AGENT_NAME_MAX);
+      if (p.personality !== undefined) a.personality = p.personality.trim().slice(0, AGENT_PERSONALITY_MAX) || undefined;
+      if (p.shape !== undefined) a.shape = p.shape;
+      if (p.color !== undefined) a.color = p.color;
+      saveNow();
+      const what = p.name !== undefined && p.name.trim() !== before ? `Renamed ${before} to ${a.name}` : p.personality !== undefined ? `Gave ${a.name} a new personality` : `Gave ${a.name} a new look`;
+      log(a.id, what);
+      bus.notice(what, "ok");
       break;
     }
     case "app.agent.add": {

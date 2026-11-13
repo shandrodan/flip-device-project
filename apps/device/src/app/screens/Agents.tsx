@@ -1,11 +1,12 @@
 import { useState } from "react";
 import type { AgentPurpose, AgentShape, AppId } from "@app/protocol";
-import { APP_IDS, RISK_LABEL } from "@app/protocol";
+import { AGENT_NAME_MAX, APP_IDS, RISK_LABEL } from "@app/protocol";
 import { Bot, BudScene, SHAPE_KEYS } from "../../bot/Bot";
-import { useControls, step } from "../../input/controls";
+import { useControls, step, type ControlEvent } from "../../input/controls";
 import { net } from "../../net/client";
 import { FN_LABEL, useApp, useTalkTarget } from "../context";
 import { ACTIVE, AgentBot, ago, Ico, moodFor, statusChip, useScrollSel } from "../ui";
+import { TextEntry } from "../TextEntry";
 
 // device-controls.md, Active Agents mode: the screen shows agent status by itself.
 // D-pad or the in-app wheel picks an agent (A opens it), D makes a new one.
@@ -70,7 +71,8 @@ export function AgentView({ id }: { id: string }) {
     <div style={{ position: "absolute", left: 286, right: 28, top: 56, bottom: 40, display: "flex", flexDirection: "column" }}>
       <p className="say in" style={{ fontSize: 30 }}>{a.name}</p>
       <p className="mute in" style={{ margin: "6px 0 14px", fontSize: 15 }}>{a.role}</p>
-      {ownedApp && <p className="mute in" style={{ margin: "0 0 12px", fontSize: 13 }}>Works in {FN_LABEL[ownedApp]}. Press blue D on the app tile to manage its agents.</p>}
+      {a.personality && <p className="in" style={{ margin: "-6px 0 14px", fontSize: 14, color: "rgba(235,235,245,0.8)" }}>“{a.personality}”</p>}
+      {ownedApp && <p className="mute in" style={{ margin: "0 0 12px", fontSize: 13 }}>Works in {FN_LABEL[ownedApp]}. Press blue D on the app on Home to manage its agents.</p>}
       <div className="in in-2"><div className="label" style={{ marginBottom: 6 }}>Asks you before</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{asks.map(x => <span key={x} className="chip warn">{x}</span>)}</div></div>
       <div className="in in-3" style={{ marginTop: 16, minHeight: 0, display: "flex", flexDirection: "column", flex: 1 }}>
@@ -88,10 +90,12 @@ export function AgentView({ id }: { id: string }) {
   </div>;
 }
 
-export function AppAgentManager({ app }: { app: AppId }) {
-  const { snap, push, online, toast } = useApp();
-  const [phase, setPhase] = useState<"menu" | "member" | "candidate">("menu");
-  const [action, setAction] = useState<"add" | "change" | "delete">("add");
+/** `start` opens straight at one action (from the Home cell menu, ADR 0017); B at its first step goes back. */
+export function AppAgentManager({ app, start }: { app: AppId; start?: "add" | "change" | "delete" }) {
+  const { snap, push, back, online, toast } = useApp();
+  const firstPhase = !start ? "menu" : start === "add" ? "candidate" : "member";
+  const [phase, setPhase] = useState<"menu" | "member" | "candidate">(firstPhase);
+  const [action, setAction] = useState<"add" | "change" | "delete">(start ?? "add");
   const [oldAgentId, setOldAgentId] = useState("");
   const [sel, setSel] = useState(0);
   const members = snap.appAgents[app].map(id => snap.agents.find(agent => agent.id === id)).filter((agent): agent is NonNullable<typeof agent> => !!agent);
@@ -99,7 +103,9 @@ export function AppAgentManager({ app }: { app: AppId }) {
   const count = phase === "menu" ? 3 : phase === "member" ? members.length : free.length + (action === "add" ? 1 : 0);
   const index = Math.min(sel, Math.max(0, count - 1));
   const choosePhase = (next: typeof phase) => { setSel(0); setPhase(next); };
+  const finish = () => start ? back() : choosePhase("menu");
   useControls(e => {
+    if (e.c === "b" && start && phase === firstPhase) { back(); return true; }
     if (e.c === "b" && phase !== "menu") { choosePhase(phase === "candidate" && action === "change" ? "member" : "menu"); return true; }
     const n = step(index, e, count);
     if (n !== null) { setSel(n); return true; }
@@ -117,7 +123,7 @@ export function AppAgentManager({ app }: { app: AppId }) {
       if (action === "delete") {
         if (!online) { toast("Connect to the server to delete an agent."); return true; }
         net.send({ type: "agent.delete", agentId: member.id });
-        choosePhase("menu");
+        finish();
       } else { setOldAgentId(member.id); choosePhase("candidate"); }
       return true;
     }
@@ -127,7 +133,7 @@ export function AppAgentManager({ app }: { app: AppId }) {
     if (!online) { toast("Connect to the server to assign an agent."); return true; }
     if (action === "add") net.send({ type: "app.agent.add", app, agentId: candidate.id });
     else net.send({ type: "app.agent.replace", app, oldAgentId, newAgentId: candidate.id });
-    choosePhase("menu");
+    finish();
     return true;
   }, { wheel: "Pick", a: "Choose", b: "Back" });
 
@@ -150,7 +156,7 @@ export function AppAgentManager({ app }: { app: AppId }) {
 }
 
 /* ------------------------------ Create ------------------------------ */
-const COLORS = ["#4a9dff", "#a78bfa", "#ff6eb4", "#ffd60a", "#64d2ff", "#34d17a", "#ff9f0a", "#8e8e93"];
+export const COLORS = ["#4a9dff", "#a78bfa", "#ff6eb4", "#ffd60a", "#64d2ff", "#34d17a", "#ff9f0a", "#8e8e93"];
 const PURPOSES: { k: AgentPurpose; label: string; name: string; shape: AgentShape; color: string; role: string }[] = [
   { k: "research", label: "Research the web", name: "Research agent", shape: "cloud", color: "#ff6eb4", role: "Searches the web and writes you a short summary." },
   { k: "writer", label: "Write things for me", name: "Writer", shape: "drop", color: "#64d2ff", role: "Writes docs and drafts into files on your machine." },
@@ -158,6 +164,56 @@ const PURPOSES: { k: AgentPurpose; label: string; name: string; shape: AgentShap
   { k: "custom", label: "Something else", name: "New agent", shape: "pebble", color: "#34d17a", role: "Does what you tell it. Asks before anything risky." },
 ];
 const NAME_IDEAS = ["Scout", "Juniper", "Echo", "Pixel", "Maple"];
+
+/** Body and colour picker, shared by Create and Look. D-pad picks the body, the in-app wheel the colour. */
+function LookPicker({ shape, color, colors }: { shape: AgentShape; color: string; colors: string[] }) {
+  return <>
+    <div className="in in-2" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+      {SHAPE_KEYS.map(k => <div key={k} className={"shape-pick" + (shape === k ? " on" : "")}><Bot size={54} shape={k} color={color} seed={k.length * 7} state="idle" fps={20} /></div>)}
+    </div>
+    <div className="in in-3" style={{ display: "flex", gap: 10, marginTop: 16, alignItems: "center" }}>{colors.map(c => <span key={c} className={"swatch" + (color === c ? " on" : "")} style={{ background: c }} />)}</div>
+  </>;
+}
+/** Handle a control for LookPicker. Returns the new look, or null when the control isn't for it. */
+function lookStep(e: ControlEvent, shape: AgentShape, color: string, colors: string[]): { shape: AgentShape; color: string } | null {
+  const n = step(SHAPE_KEYS.indexOf(shape), e, SHAPE_KEYS.length, { wheel: false, dpad: "grid", cols: 5 });
+  if (n !== null) return { shape: SHAPE_KEYS[n], color };
+  if (e.c === "appWheel") { const c = colors.indexOf(color); return { shape, color: colors[(c + (e.dir || 1) + colors.length) % colors.length] }; }
+  return null;
+}
+
+const Q = ({ children }: { children: string }) => <div className="in" style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}><Bot size={42} seed={3} state="idle" fps={30} /><p className="say" style={{ fontSize: 24 }}>{children}</p></div>;
+
+/** Look (ADR 0017): change a Task agent's body and colour from the Home cell menu. */
+export function AgentLook({ id }: { id: string }) {
+  const { snap, back, online, toast } = useApp();
+  const a = snap.agents.find(x => x.id === id);
+  const [shape, setShape] = useState<AgentShape>(a?.shape ?? "pebble");
+  const [color, setColor] = useState(a?.color ?? COLORS[0]);
+  const colors = !a || COLORS.includes(a.color) ? COLORS : [a.color, ...COLORS];
+  useControls(e => {
+    if (!a) return false;
+    const next = lookStep(e, shape, color, colors);
+    if (next) { setShape(next.shape); setColor(next.color); return true; }
+    if (e.c === "a") {
+      if (!online) { toast("Connect to the server to change an agent."); return true; }
+      if (shape !== a.shape || color !== a.color) net.send({ type: "agent.update", agentId: a.id, patch: { shape, color } });
+      back();
+      return true;
+    }
+    return false;
+  }, a ? { dpad: "Body", wheel: "Colour", a: "Save", b: "Cancel" } : null);
+  if (!a) return <div className="scr"><p className="say">That agent is gone.</p></div>;
+  return <div className="scr">
+    <div style={{ position: "absolute", left: 18, top: 90, width: 250, display: "grid", placeItems: "center" }}>
+      <Bot size={220} shape={shape} color={color} seed={a.seed} state="happy" morphFrom={a.shape} />
+    </div>
+    <div style={{ position: "absolute", left: 290, right: 28, top: 52 }}>
+      <Q>{`A new look for ${a.name}.`}</Q>
+      <LookPicker shape={shape} color={color} colors={colors} />
+    </div>
+  </div>;
+}
 
 export function Create({ app }: { app?: AppId }) {
   const { back, snap } = useApp();
@@ -169,12 +225,15 @@ export function Create({ app }: { app?: AppId }) {
   const [ni, setNi] = useState(0);
   const purpose = PURPOSES[p];
   const name = names[ni] || purpose.name;
-  useTalkTarget(stage === 2 ? { kind: "name", onText: t => { if (t) { setNames(n => [t, ...n.filter(x => x !== t)]); setNi(0); } } } : null, [stage]);
+  const [typing, setTyping] = useState(false);
+  const addName = (t: string) => { if (t) { setNames(n => [t, ...n.filter(x => x !== t)]); setNi(0); } };
+  useTalkTarget(stage === 2 ? { kind: "text", purpose: "name", label: "Say a name", onText: addName } : null, [stage]);
 
   const made = () => net.send({ type: "agent.create", agent: { name, purpose: purpose.k, shape, color }, app });
 
   useControls(e => {
     if (stage === 3) return true;
+    if (stage === 2 && e.c === "c") { setTyping(true); return true; }
     if (e.c === "b") { if (stage) setStage(stage - 1); else back(); return true; }
     if (stage === 0) {
       const n = step(p, e, PURPOSES.length);
@@ -186,10 +245,8 @@ export function Create({ app }: { app?: AppId }) {
         return true;
       }
     } else if (stage === 1) {
-      const si = SHAPE_KEYS.indexOf(shape);
-      const n = step(si, e, SHAPE_KEYS.length, { wheel: false, dpad: "grid", cols: 5 });
-      if (n !== null) { setShape(SHAPE_KEYS[n]); return true; }
-      if (e.c === "appWheel") { const c = COLORS.indexOf(color); setColor(COLORS[(c + (e.dir || 1) + COLORS.length) % COLORS.length]); return true; }
+      const next = lookStep(e, shape, color, COLORS);
+      if (next) { setShape(next.shape); setColor(next.color); return true; }
       if (e.c === "a") { setStage(2); return true; }
     } else if (stage === 2) {
       const n = step(ni, e, names.length);
@@ -199,14 +256,13 @@ export function Create({ app }: { app?: AppId }) {
     return false;
   }, stage === 0 ? { wheel: "Choose", a: "Next", b: "Cancel" }
     : stage === 1 ? { dpad: "Body", wheel: "Colour", a: "Next", b: "Back" }
-    : stage === 2 ? { mic: "Say a name", wheel: "Pick a name", a: "Make it", b: "Back" } : {});
+    : stage === 2 ? { mic: "Say a name", wheel: "Pick a name", a: "Make it", b: "Back", c: "Keyboard" } : {}, !typing);
 
   if (stage === 3) return <div className="fill">
     <BudScene color={color} onDone={made} />
     <p className="say in" style={{ position: "absolute", left: 0, right: 0, bottom: 50, textAlign: "center", fontSize: 24 }}>Making {name}…</p>
   </div>;
 
-  const Q = ({ children }: { children: string }) => <div className="in" style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}><Bot size={42} seed={3} state="idle" fps={30} /><p className="say" style={{ fontSize: 24 }}>{children}</p></div>;
   return <div className="scr">
     <div style={{ position: "absolute", left: 18, top: 90, width: 250, display: "grid", placeItems: "center" }}>
       {stage === 0 ? <Bot size={210} seed={3} state="wide" /> : <Bot size={220} shape={shape} color={color} seed={77} state={stage === 2 ? "happy" : "idle"} />}
@@ -215,14 +271,12 @@ export function Create({ app }: { app?: AppId }) {
       {stage === 0 && <><Q>What should your new agent do?</Q>
         <div className="in in-2" style={{ display: "grid", gap: 8 }}>{PURPOSES.map((x, k) => <div key={x.k} className={"card" + (k === p ? " sel" : "")} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px" }}>
           <span style={{ flex: 1 }}><b>{x.label}</b><br /><span className="mute" style={{ fontSize: 13 }}>{x.role}</span></span>{k === p && Ico.arrow}</div>)}</div></>}
-      {stage === 1 && <><Q>Pick a body and a colour.</Q>
-        <div className="in in-2" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
-          {SHAPE_KEYS.map(k => <div key={k} className={"shape-pick" + (shape === k ? " on" : "")}><Bot size={54} shape={k} color={color} seed={k.length * 7} state="idle" fps={20} /></div>)}
-        </div>
-        <div className="in in-3" style={{ display: "flex", gap: 10, marginTop: 16, alignItems: "center" }}>{COLORS.map(c => <span key={c} className={"swatch" + (color === c ? " on" : "")} style={{ background: c }} />)}</div></>}
+      {stage === 1 && <><Q>Pick a body and a colour.</Q><LookPicker shape={shape} color={color} colors={COLORS} /></>}
       {stage === 2 && <><Q>What should I call it?</Q>
         <div className="in in-2" style={{ display: "grid", gap: 6 }}>{names.slice(0, 5).map((x, k) => <div key={x} className={"row" + (k === ni ? " sel" : "")} style={{ fontSize: 18, fontWeight: 600 }}>{x}</div>)}</div>
-        <p className="mute in in-3" style={{ fontSize: 14, margin: "12px 0 0" }}>Or hold the mic and say a name. {purpose.role}</p></>}
+        <p className="mute in in-3" style={{ fontSize: 14, margin: "12px 0 0" }}>Or hold the mic and say a name, or press C to type one. {purpose.role}</p></>}
     </div>
+    {typing && <TextEntry title="Name your agent" initial="" max={AGENT_NAME_MAX} purpose="name" placeholder="Type a name" keyboard
+      onSave={t => { addName(t); setTyping(false); }} onCancel={() => setTyping(false)} />}
   </div>;
 }

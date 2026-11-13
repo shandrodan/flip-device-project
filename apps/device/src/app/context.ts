@@ -9,7 +9,8 @@ export type Route =
   | { name: "task"; taskId: string }
   | { name: "agent"; agentId: string }
   | { name: "create"; app?: AppId }
-  | { name: "appAgents"; app: AppId };
+  | { name: "appAgents"; app: AppId; start?: "add" | "change" | "delete" }
+  | { name: "agentLook"; agentId: string };
 
 export const HANDHELD_FNS: Fn[] = ["home", "notes", "todo", "agents", "focus", "settings"];
 // device-controls.md: docked, the system wheel steps through the companion functions.
@@ -22,7 +23,8 @@ export type TalkTarget =
   | { kind: "main" }
   | { kind: "app"; app: AppId }
   | { kind: "agent"; agentId: string }
-  | { kind: "name"; onText: (t: string) => void };
+  /** Dictation into a text field (ADR 0017). "name" keeps the first three words, "text" the whole sentence. */
+  | { kind: "text"; purpose: "name" | "text"; label: string; onText: (t: string) => void };
 
 export interface AppCtx {
   snap: Snapshot;
@@ -36,18 +38,20 @@ export interface AppCtx {
   back(): void;
   toast(text: string): void;
   voice: VoiceSource;
-  setTalkTarget(t: TalkTarget | null): void;
+  /** Say what the mic does while something is shown. The newest one wins; call the result to remove it. */
+  addTalkTarget(t: TalkTarget | null): () => void;
 }
 
 export const Ctx = createContext<AppCtx>(null as unknown as AppCtx);
 export const useApp = () => useContext(Ctx);
 
-/** A screen says what holding the mic should do while it is shown. */
-export function useTalkTarget(t: TalkTarget | null, deps: unknown[]) {
-  const { setTalkTarget } = useApp();
+/** A screen (or a sheet on top of it) says what holding the mic should do while it is shown.
+ *  Targets stack: when a sheet closes, the screen under it gets the mic back. */
+export function useTalkTarget(t: TalkTarget | null, deps: unknown[], active = true) {
+  const { addTalkTarget } = useApp();
   useEffect(() => {
-    setTalkTarget(t);
-    return () => setTalkTarget(null);
+    if (!active) return;
+    return addTalkTarget(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps, active]);
 }

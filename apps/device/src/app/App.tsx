@@ -14,7 +14,7 @@ import { TaskView } from "./screens/TaskView";
 import { Notes } from "./screens/Notes";
 import { NoteView } from "./screens/NoteView";
 import { Todo } from "./screens/Todo";
-import { Agents, AgentView, AppAgentManager, Create } from "./screens/Agents";
+import { Agents, AgentLook, AgentView, AppAgentManager, Create } from "./screens/Agents";
 import { Focus } from "./screens/Focus";
 import { Settings } from "./screens/Settings";
 import { Dock } from "./screens/Dock";
@@ -29,7 +29,8 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   const [toastMsg, setToast] = useState<{ text: string; k: number } | null>(null);
   const [hud, setHud] = useState(0);
   const [talk, setTalk] = useState<{ target: TalkTarget; sample: number } | null>(null);
-  const talkTarget = useRef<TalkTarget | null>(null);
+  // Who the mic talks to: the newest registered target wins (see useTalkTarget).
+  const talkTargets = useRef<{ t: TalkTarget | null }[]>([]);
   useTick(15000);
 
   // Docking switches the function set.
@@ -64,7 +65,11 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
     back: () => setStack(s => s.slice(0, -1)),
     toast,
     voice,
-    setTalkTarget: t => { talkTarget.current = t; },
+    addTalkTarget: t => {
+      const entry = { t };
+      talkTargets.current.push(entry);
+      return () => { talkTargets.current = talkTargets.current.filter(x => x !== entry); };
+    },
   } : null;
 
   // Bottom of the control stack: what works everywhere.
@@ -79,7 +84,7 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
     }
     if (e.c === "mic" && e.phase === "down") {
       if (!snap) return true;
-      if (!talk) setTalk({ target: talkTarget.current || { kind: "note" }, sample: nextSample() });
+      if (!talk) setTalk({ target: talkTargets.current[talkTargets.current.length - 1]?.t || { kind: "note" }, sample: nextSample() });
       return true;
     }
     if (e.c === "b") {
@@ -113,7 +118,8 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   else if (route?.name === "task") screen = <TaskView key={route.taskId} id={route.taskId} />;
   else if (route?.name === "note") screen = <NoteView key={route.noteId} id={route.noteId} />;
   else if (route?.name === "agent") screen = <AgentView key={route.agentId} id={route.agentId} />;
-  else if (route?.name === "appAgents") screen = <AppAgentManager key={route.app} app={route.app} />;
+  else if (route?.name === "appAgents") screen = <AppAgentManager key={route.app + (route.start ?? "")} app={route.app} start={route.start} />;
+  else if (route?.name === "agentLook") screen = <AgentLook key={route.agentId} id={route.agentId} />;
   else if (route?.name === "create") screen = <Create app={route.app} />;
   else if (fn === "home") screen = <Home />;
   else if (fn === "notes") screen = <Notes />;

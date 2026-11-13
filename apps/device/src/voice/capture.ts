@@ -30,6 +30,12 @@ export const TODO_SAMPLES = [
   { text: "buy AA batteries for the haptic test rig", clean: "Buy AA batteries for the haptic test rig." },
 ];
 const NAMES = ["Scout", "Juniper", "Echo", "Pixel", "Maple", "Orbit"];
+/** Rehearsal lines for dictating a longer field, such as an agent's personality (ADR 0017). */
+const TEXTS = [
+  "Calm and short. Use plain words and no emoji.",
+  "Cheerful, a little playful, and always says what it changed.",
+  "Dry humour, very direct, never more than two sentences.",
+];
 const WORD_MS = 95;
 
 export interface CaptureResult {
@@ -56,7 +62,7 @@ interface Opts {
   sample?: number;
   /** Script mode: play this line instead of a sample. */
   line?: { text: string; clean: string };
-  purpose?: "note" | "name";
+  purpose?: "note" | "name" | "text";
 }
 
 export function defaultSource(): VoiceSource {
@@ -91,7 +97,8 @@ export async function startCapture(source: VoiceSource, o: Opts): Promise<Captur
 
 function startScript(o: Opts): Capture {
   const t0 = Date.now();
-  const s = o.purpose === "name" ? { text: NAMES[Math.floor(Math.random() * NAMES.length)], clean: "" } : o.line ?? SAMPLES[o.sample ?? 0];
+  const pick = (xs: string[]) => xs[Math.floor(Math.random() * xs.length)];
+  const s = o.purpose === "name" ? { text: pick(NAMES), clean: "" } : o.purpose === "text" ? { text: pick(TEXTS), clean: "" } : o.line ?? SAMPLES[o.sample ?? 0];
   const words = s.text.split(" ");
   let n = 0;
   const id = window.setInterval(() => {

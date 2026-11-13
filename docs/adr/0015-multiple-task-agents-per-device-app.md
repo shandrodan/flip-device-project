@@ -1,6 +1,6 @@
 # 0015: One or more Task agents per Device app
 
-Status: Accepted
+Status: Accepted. The Home D menu is superseded by 0017
 Date: 2026-11-13
 
 ## Decision
