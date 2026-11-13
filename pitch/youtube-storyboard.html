@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Device — раскадровка YouTube</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #101013; color: #f5f5f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { max-width: 1360px; margin: auto; padding: 44px 28px 28px; }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 46px); letter-spacing: -.04em; }
+    header p { margin: 0; max-width: 760px; color: #a6a6ad; line-height: 1.5; }
+    main { max-width: 1360px; margin: auto; padding: 0 28px 72px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+    article { min-width: 0; border: 1px solid #303035; border-radius: 20px; overflow: hidden; background: #1b1b1f; }
+    .stage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: #050505; }
+    .meta { display: flex; gap: 12px; align-items: baseline; padding: 15px 18px 4px; }
+    .time { color: #ffd60a; font-size: 12px; font-weight: 800; letter-spacing: .06em; white-space: nowrap; }
+    h2 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
+    article p { margin: 0; padding: 0 18px 18px; color: #b7b7bf; font-size: 13px; line-height: 1.5; }
+    .device { position: absolute; left: 15%; top: 12%; width: 70%; height: 77%; border: 9px solid #f0f0f0; border-radius: 19px; background: #000; box-shadow: 0 22px 35px #000a; }
+    .screen { position: absolute; inset: 6px; border-radius: 8px; overflow: hidden; background: #000; }
+    .clock { position: absolute; left: 14px; top: 10px; font-size: 10px; font-weight: 700; }
+    .bot { position: absolute; left: 45%; top: 34%; width: 11%; aspect-ratio: 1; border-radius: 50%; background: #f5f5f7; }
+    .bot::before, .bot::after { content: ""; position: absolute; top: 37%; width: 10%; height: 29%; border-radius: 50%; background: #111; transform: rotate(-12deg); }
+    .bot::before { left: 34%; } .bot::after { right: 34%; }
+    .screen-title { position: absolute; left: 8%; bottom: 14%; width: 70%; font-size: clamp(11px, 2vw, 24px); font-weight: 750; line-height: 1.1; letter-spacing: -.03em; }
+    .chip { position: absolute; z-index: 4; padding: 6px 10px; border-radius: 99px; background: #fff; color: #090909; font-size: 11px; font-weight: 800; white-space: nowrap; }
+    .callout { position: absolute; z-index: 5; color: #fff; font-size: 12px; font-weight: 700; text-shadow: 0 2px 10px #000; }
+    .line { position: absolute; z-index: 3; height: 2px; background: #fff; transform-origin: left center; }
+    .mic { position: absolute; z-index: 4; left: 48%; bottom: 8%; width: 21px; height: 21px; border-radius: 50%; background: #ff453a; box-shadow: 0 0 0 7px #ff453a44; }
+    .wheel { position: absolute; z-index: 4; bottom: 5%; left: 41%; width: 30px; height: 30px; border-radius: 50%; background: repeating-conic-gradient(#26262b 0 8deg, #4a4a50 9deg 13deg); border: 2px solid #777; }
+    .wheel.second { left: 55%; }
+    .push { position: absolute; z-index: 4; right: 13%; top: 42%; width: 7px; height: 27%; border-radius: 5px; background: #ff6a00; box-shadow: 0 0 0 9px #ff6a0044, 0 0 34px #ff6a00; }
+    .app-card { position: absolute; z-index: 2; width: 24%; height: 26%; border-radius: 14px; background: #252529; display: grid; place-items: center; font-size: clamp(10px, 1.7vw, 20px); font-weight: 700; box-shadow: 0 15px 28px #0009; }
+    .app-card.note { background: #fbd866; color: #3f2f00; }
+    .app-card.todo { background: #1e293b; }
+    .app-card.focus { background: #24322a; }
+    .speech { position: absolute; z-index: 3; padding: 10px 14px; border-radius: 16px; background: #25252a; font-size: clamp(10px, 1.5vw, 18px); max-width: 47%; }
+    .caption { position: absolute; left: 4%; bottom: 5%; color: #fff; font-size: clamp(13px, 2.4vw, 27px); font-weight: 800; letter-spacing: -.03em; }
+    .arrow { position: absolute; z-index: 5; color: #fff; font-size: 32px; font-weight: 700; }
+    .note-page { position: absolute; top: 15%; left: 38%; width: 55%; height: 76%; padding: 13%; color: #32280f; background: repeating-linear-gradient(#fff8df 0 18px, #a9c0df 19px 20px); font-size: clamp(10px, 1.6vw, 17px); transform: rotate(-3deg); box-shadow: 0 12px 25px #0008; }
+    .pc { position: absolute; right: 5%; top: 20%; width: 46%; height: 58%; border: 7px solid #ccc; border-bottom-width: 15px; border-radius: 8px; background: #181b25; }
+    .code { margin: 17px; height: 4px; background: #588cc2; box-shadow: 0 15px #75b583, 0 30px #ad8ec9, 0 45px #588cc2, 0 60px #75b583; }
+    .timer { position: absolute; top: 39%; left: 29%; font-size: clamp(32px, 6vw, 70px); font-weight: 750; letter-spacing: -.06em; }
+    .panel { position: absolute; top: 8%; left: 4%; right: 4%; height: 75%; border-radius: 0 0 20px 20px; background: #17171b; }
+    .panel .app-card { top: 27%; left: 38%; width: 24%; height: 36%; border: 2px solid #fff; }
+    .dock { position: absolute; left: 18%; right: 18%; bottom: 6%; height: 18%; border-radius: 50% 50% 12px 12px; background: linear-gradient(#eeeeee, #a7a7ad); }
+    .s1 .bot { left: 46%; top: 26%; width: 13%; }
+    .s1 .device { top: 9%; height: 69%; }
+    .s1 .caption { bottom: 8%; }
+    .s2 .bot { left: 48%; top: 27%; width: 14%; }
+    .s2 .speech.user { left: 5%; top: 22%; max-width: 39%; }
+    .s3 .bot { left: 45%; top: 42%; width: 10%; }
+    .s3 .app-card.note { top: 18%; left: 15%; }
+    .s3 .app-card.todo { top: 14%; right: 12%; }
+    .s3 .app-card.focus { bottom: 8%; right: 19%; }
+    .s4 .app-card.note { top: 24%; left: 8%; width: 22%; }
+    .s4 .app-card.todo { top: 24%; left: 39%; width: 22%; }
+    .s4 .app-card.focus { top: 24%; right: 8%; width: 22%; }
+    .s5 .bot { left: 19%; top: 34%; }
+    .s6 .app-card.note { top: 28%; left: 12%; }
+    .s6 .app-card.todo { top: 28%; right: 12%; }
+    .s7 .device { left: 3%; width: 48%; top: 24%; height: 56%; }
+    .s7 .bot { left: 27%; top: 35%; }
+    .s8 .device { left: 22%; width: 56%; top: 6%; height: 89%; }
+    .s9 .bot { left: 45%; top: 17%; }
+    .s10 .device { top: 16%; height: 65%; }
+    .s10 .bot { left: 22%; top: 30%; }
+    .s10 .timer { left: 47%; top: 33%; font-size: clamp(22px, 4vw, 45px); }
+    @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Device · раскадровка</h1>
+    <p>Черновые схемы кадров для ролика 16:9, около 60 секунд. Это план движения камеры и подсветки. Точный вид экранов берём из живого приложения. Подробные реплики и звук — в <a href="youtube-storyboard.md">сценарии</a>.</p>
+  </header>
+  <main>
+    <article><div class="stage s1"><div class="device"><div class="screen"><span class="clock">10:08</span><i class="bot"></i></div></div><span class="caption">A thought is enough.</span></div><div class="meta"><span class="time">00–04</span><h2>Часы и первый взгляд</h2></div><p>Чёрный фон. Корпус входит в кадр. Персонаж смотрит на зрителя.</p></article>
+    <article><div class="stage s2"><div class="device"><div class="screen"><i class="bot"></i><span class="speech user">Привет, Омни. Поможешь мне?</span></div></div><i class="mic"></i><span class="chip" style="right: 10%; bottom: 6%">HOLD MIC</span></div><div class="meta"><span class="time">04–10</span><h2>Разговор начинается</h2></div><p>Виден зажатый микрофон. Реплики появляются по словам. Ответ не задерживаем монтажом.</p></article>
+    <article><div class="stage s3"><i class="bot"></i><div class="app-card note">Notes</div><div class="app-card todo">To-Do</div><div class="app-card focus">Focus</div><span class="caption">«Да. Что тебе нужно?»</span></div><div class="meta"><span class="time">10–16</span><h2>Три возможности</h2></div><p>Экраны идут вокруг персонажа. Это метафора выбора, не отдельный экран продукта.</p></article>
+    <article><div class="stage s4"><div class="device"><div class="screen"><div class="app-card note">Notes</div><div class="app-card todo">To-Do</div><div class="app-card focus">Focus</div></div></div><i class="wheel"></i><span class="arrow" style="left: 39%; bottom: 13%">↗</span><span class="chip" style="right: 5%; bottom: 8%">SYSTEM WHEEL</span></div><div class="meta"><span class="time">16–22</span><h2>Выбор экранов</h2></div><p>Поворот колеса совпадает со сменой Notes → To-Do → Focus. Стрелка связывает действие и результат.</p></article>
+    <article><div class="stage s5"><div class="device"><div class="screen"><i class="bot"></i><div class="note-page">Идея для демо<br>Подготовить показ</div></div></div><i class="mic"></i><span class="chip" style="right: 6%; bottom: 7%">SPEECH → NOTE</span></div><div class="meta"><span class="time">22–29</span><h2>Мысль сохранена</h2></div><p>Слова переходят на жёлтую страницу Notes. Микрофон отпускают; Note уже сохранена.</p></article>
+    <article><div class="stage s6"><div class="device"><div class="screen"><div class="app-card note">Note</div><span class="arrow" style="left: 47%; top: 35%">→</span><div class="app-card todo">Task</div></div></div><i class="wheel second"></i><span class="chip" style="left: 6%; bottom: 7%">D · SUGGEST</span><span class="chip" style="right: 6%; bottom: 7%; background: #34c759">A · ACCEPT</span></div><div class="meta"><span class="time">29–35</span><h2>Из Note в Task</h2></div><p>D открывает предложения. Колесо выбирает Task. A подтверждает выбор.</p></article>
+    <article><div class="stage s7"><div class="device"><div class="screen"><i class="bot"></i><span class="screen-title">Agent working…</span></div></div><div class="pc"><div class="code"></div></div><span class="caption">Agent works on your PC</span></div><div class="meta"><span class="time">35–42</span><h2>Работа на PC</h2></div><p>Одновременно видны статус на Device и заметный результат на PC. Конкретное действие ещё нужно выбрать.</p></article>
+    <article><div class="stage s8"><div class="device"><div class="screen"><i class="bot"></i><span class="screen-title">Needs your approval</span></div></div><i class="push"></i><span class="arrow" style="right: 5%; top: 32%">↙</span><span class="chip" style="left: 5%; bottom: 6%; background: #ff6a00">PUSH BAR · APPROVE</span></div><div class="meta"><span class="time">42–48</span><h2>Один осознанный нажим</h2></div><p>Оранжевая подсветка. Действие на PC продолжается только после push bar.</p></article>
+    <article><div class="stage s9"><div class="device"><div class="screen"><i class="bot"></i><span class="timer">25:00</span></div></div><i class="push"></i><span class="chip" style="left: 7%; bottom: 6%">FOCUS · PUSH TO START</span></div><div class="meta"><span class="time">48–54</span><h2>Время для фокуса</h2></div><p>Колесо открывает Focus. Push bar запускает 25 минут. B возвращает на Home.</p></article>
+    <article><div class="stage s10"><div class="device"><div class="screen"><div class="panel"><div class="app-card">Wi-Fi</div></div></div></div><div class="dock"></div><span class="chip" style="left: 6%; bottom: 6%; background: #ffd60a">C · PANEL</span><span class="chip" style="right: 5%; bottom: 6%">DOCK</span></div><div class="meta"><span class="time">54–60</span><h2>Панель и финал</h2></div><p>C открывает панель. Колесо выбирает. Финал: Device в Dock и короткая фраза.</p></article>
+  </main>
+</body>
+</html>
