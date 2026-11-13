@@ -27,6 +27,8 @@ export const config = {
   setupToken: env("SETUP_TOKEN", ""),
   hosting: (env("HOSTING", "self") as "cloud" | "vm" | "self"),
 
+  openRouterKey: env("OPENROUTER_API_KEY"),
+  openRouterModel: env("OPENROUTER_MODEL").trim() || "nvidia/nemotron-3.5-super-vl:free",
   anthropicKey: env("ANTHROPIC_API_KEY", ""),
   agentModel: env("AGENT_MODEL", "claude-opus-5-5"),
   suggestModel: env("SUGGEST_MODEL", "claude-opus-5-5"),

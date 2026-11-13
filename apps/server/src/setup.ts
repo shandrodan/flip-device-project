@@ -3,7 +3,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { config } from "./config.js";
 import { state, secrets, saveSecrets, save } from "./store.js";
-import { apiKey } from "./llm.js";
+import { anthropicKey, openRouterKey, llmMode } from "./llm.js";
 import { sttMode } from "./voice.js";
 import { machines } from "./machines.js";
 import { bus } from "./bus.js";
@@ -31,6 +31,9 @@ export async function handleSetup(req: IncomingMessage, res: ServerResponse, url
     const action = f.get("action");
     if (action === "keys") {
       const patch: Record<string, string> = {};
+      const router = (f.get("openRouterKey") || "").trim();
+      if (router) patch.openRouterKey = router;
+      if (f.get("clearOpenRouter")) patch.openRouterKey = "";
       const a = (f.get("anthropicKey") || "").trim();
       if (a) patch.anthropicKey = a;
       const s = (f.get("sttKey") || "").trim();
@@ -81,13 +84,15 @@ form.inline{display:inline}form.inline button{margin:0;padding:5px 10px;font-siz
 <p class="lead">The Device has no keyboard, so keys and machines are set here. Everything stays on this server.</p>
 ${msg ? `<div class="msg">${esc(msg)}</div>` : ""}
 <section><h2>AI provider · bring your own key</h2>
-<div class="mute">Anthropic key: <b>${hint(apiKey())}</b>. Without one, agents use the built-in planner. Model: ${esc(config.agentModel)}.</div>
+<div class="mute">OpenRouter key: <b>${esc(hint(openRouterKey()))}</b> · ${esc(config.openRouterModel)} and Whisper Large V3 Turbo.<br>Anthropic key: <b>${esc(hint(anthropicKey()))}</b> · ${esc(config.agentModel)}. Active: ${llmMode()}.</div>
 <form method="post" action="/setup${tok}"><input type="hidden" name="action" value="keys">
+<label for="openRouterKey">OpenRouter API key</label><input id="openRouterKey" name="openRouterKey" type="password" autocomplete="off" placeholder="sk-or-v1-…">
 <label>Anthropic API key</label><input name="anthropicKey" type="password" autocomplete="off" placeholder="sk-ant-…">
 <label>Speech to text key (OpenAI-compatible, e.g. OpenAI or Groq)</label><input name="sttKey" type="password" autocomplete="off" placeholder="Currently ${hint(secrets.sttKey || config.sttKey)} · mode: ${sttMode()}">
 <label>Speech to text URL</label><input name="sttUrl" placeholder="${esc(secrets.sttUrl || config.sttUrl)}">
 <label>Speech to text model</label><input name="sttModel" placeholder="${esc(secrets.sttModel || config.sttModel)}">
 <button>Save keys</button></form>
+<form method="post" action="/setup${tok}" class="inline"><input type="hidden" name="action" value="keys"><input type="hidden" name="clearOpenRouter" value="1"><button style="margin-top:10px">Remove saved OpenRouter key</button></form>
 <form method="post" action="/setup${tok}" class="inline"><input type="hidden" name="action" value="keys"><input type="hidden" name="clearAnthropic" value="1"><button style="margin-top:10px">Remove Anthropic key</button></form>
 <form method="post" action="/setup${tok}" class="inline"><input type="hidden" name="action" value="keys"><input type="hidden" name="clearStt" value="1"><button style="margin-top:10px">Remove STT key</button></form>
 </section>

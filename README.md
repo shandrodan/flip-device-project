@@ -32,7 +32,8 @@ To go further, copy `.env.example` to `.env`, or open http://localhost:8787/setu
 
 | What | Where |
 | --- | --- |
-| Real agents (Claude, your own key) | `ANTHROPIC_API_KEY`, or the setup page |
+| OpenRouter agents and Whisper Large V3 Turbo | `OPENROUTER_API_KEY`, or the OpenRouter field on the setup page |
+| Claude agents | `ANTHROPIC_API_KEY`, or the setup page |
 | Cloud speech to text | `STT_API_KEY` (OpenAI-compatible), or the setup page |
 | The laptop on the projector | run `PC_AGENT_TOKEN=… pnpm dev:pc` there, set `PC_AGENTS=Name=ws://<tailscale-ip>:7077` and the same token on the server |
 | Real email | `SMTP_URL`, `MAIL_FROM`, `CONTACTS` (otherwise mail lands in `~/Flip/Outbox` as an .eml) |
@@ -51,7 +52,7 @@ Device-side container demo: see [docker/README.md](docker/README.md).
 
 ## What's real and what isn't
 
-- Real: the server, agents (Claude with a key, the planner without), approvals with the push bar, the PC agent doing file work and opening things on the laptop, offline notes and re-transcription, focus timer, the Claude Code limit window (read from Claude Code's logs on your machine), the dock screen.
+- Real: the server, agents (OpenRouter or Claude with a key, the planner without), approvals with the push bar, the PC agent doing file work and opening things on the laptop, offline notes and re-transcription, focus timer, the Claude Code limit window (read from Claude Code's logs on your machine), the dock screen.
 - Simulated: the hardware. The Device is a web app with drawn controls (ADR 0002). Scripted voice is a rehearsal aid, labelled as such in the panel.
 
 ## Team split

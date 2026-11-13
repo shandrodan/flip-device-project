@@ -1,7 +1,7 @@
-// Turn a note into suggested tasks (ADR 0005). Claude when a key is set, otherwise a small
+// Turn a note into suggested tasks (ADR 0005). The configured model when a key is set, otherwise a small
 // rule-based splitter that still routes obvious work to the right agent.
 import { APP_IDS, type Agent, type Note, type Suggestion } from "@app/protocol";
-import { claude, hasLlm, FALLBACK, describeApiError } from "./llm.js";
+import { structuredMessage, hasLlm, describeApiError } from "./llm.js";
 import { config } from "./config.js";
 import { state, id, appOfAgent, pickAppAgent } from "./store.js";
 
@@ -23,15 +23,15 @@ function why(agent: Agent | undefined) {
 export async function suggestTasks(note: Note): Promise<Suggestion[]> {
   if (hasLlm()) {
     try {
-      return await viaClaude(note);
+      return await viaModel(note);
     } catch (err) {
-      console.warn("[suggest] Claude failed, using rules:", describeApiError(err));
+      console.warn("[suggest] Model failed, using rules:", describeApiError(err));
     }
   }
   return viaRules(note.text);
 }
 
-/* ------------------------------- Claude ------------------------------- */
+/* ------------------------------- Model ------------------------------- */
 
 const SCHEMA = {
   type: "object",
@@ -53,12 +53,11 @@ const SCHEMA = {
   },
 };
 
-async function viaClaude(note: Note): Promise<Suggestion[]> {
+async function viaModel(note: Note): Promise<Suggestion[]> {
   const agents = state.agents.map(a => `- ${a.id}: ${a.name}. ${a.role} Apps: ${APP_IDS.filter(app => state.appAgents[app].includes(a.id)).join(", ") || "none"}.`).join("\n");
-  const res = await claude().beta.messages.create({
+  const res = await structuredMessage({
     model: config.suggestModel,
     max_tokens: 2000,
-    ...FALLBACK,
     output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
     system:
       "You read a voice note someone dumped into a small desk device and pull out the tasks in it. " +
@@ -68,9 +67,8 @@ async function viaClaude(note: Note): Promise<Suggestion[]> {
       "Errands, calls and things only a person can do are 'todo'.\n\nAgents:\n" + agents,
     messages: [{ role: "user", content: note.text }],
   });
-  if (res.stop_reason === "refusal") return [];
-  const text = res.content.map(b => (b.type === "text" ? b.text : "")).join("");
-  const parsed = JSON.parse(text) as { tasks: { title: string; agent: string }[] };
+  const parsed = res as { tasks: { title: string; agent: string }[] } | null;
+  if (!parsed) return [];
   return parsed.tasks.slice(0, 4).map(t => {
     const selected = state.agents.find(a => a.id === t.agent);
     const selectedApp = selected && appOfAgent(selected.id);

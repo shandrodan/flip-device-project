@@ -1,4 +1,4 @@
-// Runs one task with its agent. With a key: a Claude tool-use loop. Without: the planner.
+// Runs one task with its agent using the configured model or the built-in planner.
 // Either way every action goes through the same tools, the same gate and the same PC link.
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AppId, Task, TaskStep } from "@app/protocol";
@@ -6,7 +6,7 @@ import { state, agentById, id, log, patchTask, pickAppAgent, save, saveNow, note
 import { bus } from "../bus.js";
 import { requestApproval, cancelForTask, Cancelled } from "../approvals.js";
 import { machines, MachineOffline } from "../machines.js";
-import { claude, hasLlm, FALLBACK, describeApiError } from "../llm.js";
+import { messageClient, hasLlm, describeApiError } from "../llm.js";
 import { config } from "../config.js";
 import { TOOLS, toolsFor, toApiTool, ToolError, WEB_SEARCH_PURPOSES, type Ctx } from "./tools.js";
 import { runPlanner } from "./planner.js";
@@ -145,7 +145,7 @@ export function startTask(task: Task) {
 
   (async () => {
     try {
-      const final = task.appRequest ? await runAppRequest(ctx) : hasLlm() ? await runClaude(ctx, ctl) : await runPlanner(ctx);
+      const final = task.appRequest ? await runAppRequest(ctx) : hasLlm() ? await runModel(ctx, ctl) : await runPlanner(ctx);
       finishStep();
       const short = final.length > 160 ? final.slice(0, 157).replace(/\s+\S*$/, "") + "…" : final;
       patchTask(task, { status: "done", detail: short, result: final.length > 160 ? final : undefined, completedAt: new Date().toISOString() });
@@ -217,11 +217,12 @@ async function runAppRequest(ctx: Ctx): Promise<string> {
   return result.text;
 }
 
-async function runClaude(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string> {
+async function runModel(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string> {
   const { agent, task } = ctx;
-  const defs = toolsFor(agent, { shell: ctx.hasShell() });
+  const model = messageClient();
+  const defs = toolsFor(agent, { shell: !model.openRouter && ctx.hasShell() });
   const tools: Anthropic.Beta.BetaToolUnion[] = defs.map(toApiTool);
-  if (WEB_SEARCH_PURPOSES.includes(agent.purpose)) tools.push({ type: "web_search_20260209", name: "web_search", max_uses: 5 });
+  if (!model.openRouter && WEB_SEARCH_PURPOSES.includes(agent.purpose)) tools.push({ type: "web_search_20260209", name: "web_search", max_uses: 5 });
 
   const ms = machines.list();
   const machineLines = ms.length
@@ -259,11 +260,10 @@ async function runClaude(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string>
   let reportedChildCount = 0;
   for (let turn = 0; turn < 24; turn++) {
     if (ctl.cancelled) throw new Cancelled();
-    const res = await claude().beta.messages.create({
+    const res = await model.create({
       model: config.agentModel,
       max_tokens: 16000,
-      ...FALLBACK,
-      output_config: { effort: "medium" },
+      ...(model.openRouter ? {} : { output_config: { effort: "medium" } }),
       system,
       tools,
       messages,
@@ -271,7 +271,8 @@ async function runClaude(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string>
     if (ctl.cancelled) throw new Cancelled();
     messages.push({ role: "assistant", content: res.content });
 
-    if (res.stop_reason === "refusal") throw new ToolError("Claude declined this task.");
+    if (res.stop_reason === "refusal") throw new ToolError(`${model.name} declined this task.`);
+    if (model.openRouter && res.stop_reason === "max_tokens") throw new ToolError("OpenRouter ran out of room to answer.");
     if (res.stop_reason === "pause_turn") continue; // server tool (web search) paused; resend to continue
 
     const uses = res.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");

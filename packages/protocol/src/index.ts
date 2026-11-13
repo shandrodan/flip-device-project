@@ -178,7 +178,7 @@ export interface Settings {
   permissionMode: PermissionMode;
   hosting: Hosting;
   serverUrl: string;
-  provider: "anthropic";
+  provider: "anthropic" | "openrouter";
   keySet: boolean;
   keyHint?: string; // last 4 chars
   model: string;
@@ -186,8 +186,8 @@ export interface Settings {
 }
 
 export interface Services {
-  /** Claude reachable with a key: real agents. Otherwise the built-in planner runs. */
-  llm: "claude" | "planner";
+  /** Active model provider, or the built-in planner when no key is configured. */
+  llm: "openrouter" | "claude" | "planner";
   stt: "cloud" | "local" | "device";
   smtp: boolean;
 }

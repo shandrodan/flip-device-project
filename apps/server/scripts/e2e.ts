@@ -75,7 +75,7 @@ async function main() {
   const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const pcEnv = { HOME: home, USERPROFILE: home, PC_AGENT_PORT: String(PC_PORT), PC_AGENT_HOST: "127.0.0.1", PC_AGENT_TOKEN: "e2e", PC_AGENT_NAME: "Test laptop" };
   let pc = start("pc", path.join(here, "../pc-agent"), pcEnv);
-  const serverEnv = { PORT: String(PORT), DATA_DIR: path.join(root, "data"), PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`, PC_AGENT_TOKEN: "e2e", ANTHROPIC_API_KEY: process.env.E2E_CLAUDE ? process.env.ANTHROPIC_API_KEY ?? "" : "", STT_API_KEY: "" };
+  const serverEnv = { PORT: String(PORT), DATA_DIR: path.join(root, "data"), PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`, PC_AGENT_TOKEN: "e2e", ANTHROPIC_API_KEY: process.env.E2E_CLAUDE ? process.env.ANTHROPIC_API_KEY ?? "" : "", STT_API_KEY: "", OPENROUTER_API_KEY: "" };
   let serverProc = start("server", here, serverEnv);
 
   const ws = await connect();
