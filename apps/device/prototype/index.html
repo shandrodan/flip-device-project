@@ -1,0 +1,1166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Device Prototype</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+:root {
+  --page-bg: #f5f5f7; --page-fg: #1d1d1f; --page-muted: #6e6e73; --page-chip: rgba(0,0,0,0.06); --page-line: rgba(0,0,0,0.08);
+  --sys: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --sys-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --rounded: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --page-bg: #000; --page-fg: #f5f5f7; --page-muted: #86868b; --page-chip: rgba(255,255,255,0.09); --page-line: rgba(255,255,255,0.1); }
+}
+:root[data-theme="dark"] { --page-bg: #000; --page-fg: #f5f5f7; --page-muted: #86868b; --page-chip: rgba(255,255,255,0.09); --page-line: rgba(255,255,255,0.1); }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page-bg); color: var(--page-fg); font: 15px/1.47 var(--sys); -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.page { max-width: 1000px; margin: 0 auto; padding: 32px 16px 80px; }
+.page h1 { font: 700 30px/1.1 var(--sys-display); letter-spacing: -0.022em; margin: 0 0 6px; }
+.page > p { margin: 0 0 22px; color: var(--page-muted); text-wrap: pretty; }
+.panel { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pbtn { border: 0; border-radius: 999px; padding: 8px 14px; background: var(--page-chip); font-size: 14px; font-weight: 500; transition: transform 100ms ease-out; touch-action: none; user-select: none; }
+.pbtn:active { transform: scale(0.96); }
+.pbtn[aria-pressed="true"] { background: var(--page-fg); color: var(--page-bg); }
+.keys { margin-top: 12px; color: var(--page-muted); font-size: 13px; }
+kbd { font: 600 12px var(--sys); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--page-line); }
+
+/* ---------- Device shell (Figma frame 1:5) ---------- */
+.fit { width: 100%; max-width: 904px; margin: 0 auto; }
+.device { position: relative; width: 904px; height: 600px; transform-origin: 0 0; }
+.bezel { position: absolute; left: 0; top: 0; width: 900px; height: 600px; border-radius: 34px;
+  background: linear-gradient(180deg, #f8f8f8 0%, #e6e6e6 100%); border: 1px solid #d4d4d4;
+  box-shadow: 0 1px 0 #fff inset, 0 30px 60px -30px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.08); }
+.glass { position: absolute; left: 50px; top: 40px; width: 800px; height: 520px; background: #000; border-radius: 24px; padding: 8px; }
+.screen { position: relative; width: 784px; height: 504px; border-radius: 16px; overflow: hidden; background: #000; color: #f5f5f7;
+  font-family: var(--sys); -webkit-font-smoothing: antialiased; isolation: isolate; user-select: none; }
+.side { position: absolute; left: 900px; top: 459px; width: 4px; height: 96px; padding: 0; border: 0; border-radius: 0 3px 3px 0;
+  background: linear-gradient(90deg, #cfcfcf, #e2e2e2); box-shadow: 1px 0 0 #bdbdbd; touch-action: none; }
+.side::before { content: ""; position: absolute; inset: -8px -16px -8px -10px; }
+.side.down { transform: translateX(-2px); background: #bdbdbd; }
+.side:focus-visible { outline: 2px solid #0a84ff; outline-offset: 4px; }
+.side.want::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: #ff6a00; animation: breathe 1.6s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: 0.25; } }
+
+/* ---------- App ---------- */
+.fill { position: absolute; inset: 0; }
+.tnum { font-variant-numeric: tabular-nums; }
+.in { animation: materialize 420ms var(--ease) both; }
+.in-2 { animation-delay: 50ms; } .in-3 { animation-delay: 100ms; } .in-4 { animation-delay: 150ms; }
+@keyframes materialize { from { opacity: 0; transform: translateY(8px) scale(0.99); filter: blur(5px); } }
+.status { position: absolute; top: 0; left: 0; right: 0; height: 34px; padding: 0 20px 0 24px; display: flex; align-items: center; justify-content: space-between;
+  font: 600 13px/1 var(--sys); color: var(--ink, #fff); z-index: 25; pointer-events: none; transition: color 300ms ease; }
+.status span { display: inline-flex; align-items: center; gap: 8px; }
+.batt { width: 22px; height: 11px; border: 1px solid currentColor; border-radius: 3.5px; padding: 1px; opacity: 0.85; }
+.batt i { display: block; height: 100%; width: 82%; background: currentColor; border-radius: 2px; }
+.batt.charge i { background: #34d17a; }
+.rail { position: absolute; left: 0; top: 0; bottom: 0; width: 72px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 42px 0 14px; z-index: 6; }
+.rail button { width: 46px; height: 46px; border-radius: 15px; border: 0; background: transparent; color: rgba(235,235,245,0.45); display: grid; place-items: center;
+  transition: background-color 200ms ease, color 200ms ease, transform 100ms ease-out; position: relative; }
+.rail button.on { background: rgba(255,255,255,0.12); color: #fff; }
+.rail button:active { transform: scale(0.93); }
+.rail .badge { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: #ff6a00; }
+.rail .grow { flex: 1; }
+.main { position: absolute; left: 72px; right: 0; top: 0; bottom: 0; overflow: hidden; }
+.main.full { left: 0; }
+.scr { position: absolute; inset: 0; padding: 44px 28px 22px 14px; }
+.scroll { overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
+.scroll::-webkit-scrollbar { display: none; }
+.h1 { font: 600 28px/1.1 var(--sys-display); letter-spacing: -0.024em; margin: 0; }
+.say { font: 600 32px/1.12 var(--sys-display); letter-spacing: -0.025em; margin: 0; text-wrap: balance; }
+.mute { color: rgba(235,235,245,0.58); }
+.label { font: 600 12px/1.2 var(--sys); color: rgba(235,235,245,0.58); }
+.btn { border: 0; border-radius: 999px; padding: 11px 18px; font: 600 15px/1 var(--sys); letter-spacing: -0.01em; background: #fff; color: #000;
+  transition: transform 100ms ease-out, opacity 150ms ease; white-space: nowrap; }
+.btn:active { transform: scale(0.96); }
+.btn:disabled { opacity: 0.35; cursor: default; }
+.btn.ghost { background: rgba(255,255,255,0.1); color: #fff; }
+.btn.sm { padding: 7px 12px; font-size: 13px; }
+.btn.danger { background: rgba(255,106,0,0.14); color: #ff9a4d; }
+.link { border: 0; background: none; padding: 0; color: #fff; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(255,255,255,0.35); }
+.back { border: 0; background: none; padding: 4px 0; color: rgba(235,235,245,0.6); font-size: 14px; display: inline-flex; align-items: center; gap: 4px; }
+.card { border-radius: 20px; background: #111113; padding: 14px 16px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--sys); padding: 5px 9px; border-radius: 999px; background: rgba(255,255,255,0.08); color: rgba(235,235,245,0.75); white-space: nowrap; }
+.chip.warn { background: rgba(255,106,0,0.16); color: #ff9a4d; }
+.chip.ok { background: rgba(52,209,122,0.16); color: #7fe0a8; }
+.chip.blue { background: rgba(74,157,255,0.16); color: #8cc4ff; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.row { display: flex; gap: 12px; align-items: center; padding: 11px 4px; border-top: 0.5px solid rgba(255,255,255,0.1); }
+.row.tap { border-radius: 12px; transition: background-color 150ms ease; cursor: pointer; }
+.row.tap:hover { background: rgba(255,255,255,0.04); }
+.check { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.3); flex: none; display: grid; place-items: center; color: #000; background: none; padding: 0; transition: transform 100ms ease-out; }
+.check:active { transform: scale(0.9); }
+.check.on { background: #fff; border-color: #fff; }
+.field { width: 100%; background: #1c1c1e; border: 0; border-radius: 12px; padding: 10px 12px; color: #fff; outline: none; font-size: 15px; user-select: text; }
+.field:focus { box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
+.seg { display: flex; padding: 3px; border-radius: 12px; background: rgba(255,255,255,0.08); }
+.seg button { flex: 1; border: 0; background: none; padding: 8px 6px; border-radius: 9px; font-size: 13.5px; font-weight: 500; color: rgba(235,235,245,0.6); transition: background-color 200ms ease, color 200ms ease; }
+.seg button.on { background: #2c2c2e; color: #fff; }
+.set-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; font-size: 15px; }
+.set-row + .set-row { border-top: 0.5px solid rgba(255,255,255,0.1); }
+.switch { width: 44px; height: 26px; border-radius: 13px; border: 0; padding: 2px; background: rgba(255,255,255,0.18); transition: background-color 200ms ease; flex: none; }
+.switch i { display: block; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform 250ms var(--ease); }
+.switch.on { background: #34d17a; }
+.switch.on i { transform: translateX(18px); }
+.perm { border-radius: 18px; background: #111113; padding: 14px; display: flex; flex-direction: column; gap: 6px; border: 2px solid transparent; text-align: left; color: #fff; transition: border-color 200ms ease, opacity 200ms ease; }
+.perm.on { border-color: #fff; }
+.perm:disabled { opacity: 0.4; cursor: default; }
+.swatch { width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; transition: transform 100ms ease-out; box-shadow: 0 0 0 0 #fff; }
+.swatch.on { box-shadow: 0 0 0 3px #000, 0 0 0 5px #fff; }
+.swatch:active { transform: scale(0.9); }
+.shape-pick { border: 0; background: #111113; border-radius: 16px; padding: 4px; display: grid; place-items: center; transition: background-color 150ms ease; }
+.shape-pick.on { background: #2c2c2e; box-shadow: inset 0 0 0 2px #fff; }
+.agent-card { border: 0; text-align: left; color: #fff; background: #111113; border-radius: 22px; padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 2px; transition: background-color 150ms ease, transform 100ms ease-out; }
+.agent-card:hover { background: #18181a; }
+.agent-card:active { transform: scale(0.98); }
+.agent-card.new { background: none; border: 1.5px dashed rgba(255,255,255,0.22); align-items: center; justify-content: center; text-align: center; }
+.talk-pill { display: inline-flex; align-items: center; gap: 10px; border: 0; border-radius: 999px; padding: 12px 20px; background: #fff; color: #000; font-weight: 600; touch-action: none; transition: transform 120ms ease-out; }
+.talk-pill:active { transform: scale(0.96); }
+.toast { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 40; background: #2c2c2e; color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; white-space: nowrap; animation: toastIn 420ms var(--ease) both; }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } }
+.soft { position: absolute; left: 86px; right: 20px; bottom: 16px; z-index: 12; display: flex; align-items: center; gap: 14px; background: #1c1c1e; border-radius: 22px; padding: 12px 16px; animation: materialize 420ms var(--ease) both; }
+.press-bar { position: absolute; right: 0; top: 406px; height: 98px; width: 5px; border-radius: 4px 0 0 4px; background: #000; animation: breathe 1.4s ease-in-out infinite; z-index: 3; }
+.press-bar.light { background: #fff; }
+
+/* ---------- Fire (approval) ---------- */
+.fire-layer { position: absolute; inset: 0; z-index: 30; pointer-events: none; }
+.fire-layer.live { pointer-events: auto; }
+.fire { position: absolute; inset: 0; overflow: hidden; opacity: 0;
+  transition: clip-path 650ms var(--ease), opacity 180ms ease 470ms;
+  background:
+    radial-gradient(55% 60% at 18% 85%, #ff2d00 0%, transparent 70%),
+    radial-gradient(50% 55% at 88% 12%, #ffb300 0%, transparent 70%),
+    radial-gradient(60% 55% at 62% 105%, #ff4800 0%, transparent 70%),
+    radial-gradient(45% 50% at 40% 20%, #ff9a1a 0%, transparent 70%),
+    linear-gradient(to top, #ff5200, #ff8c1a); }
+.fire.on { opacity: 1; transition: clip-path 650ms var(--ease), opacity 60ms ease; }
+.fire i { position: absolute; bottom: -150px; width: 280px; height: 280px; border-radius: 50%; filter: blur(55px); opacity: 0.7; animation: flame 3.4s ease-in-out infinite alternate; }
+@keyframes flame { to { transform: translateY(-130px) scale(1.2); opacity: 0.3; } }
+.fire-copy { position: absolute; left: 40px; top: 0; bottom: 0; width: 440px; display: flex; flex-direction: column; justify-content: center; color: #000; }
+.fire-copy .mute { color: rgba(0,0,0,0.66); }
+.fire-copy .btn.ghost { background: rgba(0,0,0,0.12); color: #000; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+  .in { filter: none; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+/*
+ * Device prototype. Everything runs in the page: the "server" (task agents, transcription)
+ * is simulated so the UI can be tried end to end. Real device <-> server traffic belongs in
+ * packages/protocol.
+ *
+ * Bot rendering techniques (radial-profile morphing, eyes as mask holes, ease-outs from the
+ * frozen pose, deterministic blinks and gaze drift, 3D orbit rings) are adapted from
+ * bloub by Norbert Bodziony, MIT licence: https://github.com/NorbertBodziony/bloub
+ * Shapes, expressions, colours and the budding animation here are our own.
+ */
+const { useState, useEffect, useRef, useReducer, useMemo, useCallback } = React;
+
+/* =========================== Math =========================== */
+const N = 64, TAU = Math.PI * 2;
+const ANG = Array.from({ length: N }, (_, i) => (i / N) * TAU), COS = ANG.map(Math.cos), SIN = ANG.map(Math.sin);
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
+const easeOutQuint = t => 1 - Math.pow(1 - t, 5);
+const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+function mulberry(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const loopNoise = (t, p, s = 0) => { const x = (t / p) * TAU; return 0.55 * Math.sin(x + s) + 0.3 * Math.sin(2 * x + s * 1.7 + 1.1) + 0.15 * Math.sin(3 * x + s * 2.3 + 2.4); };
+
+/* =========================== Shapes: radial profiles on 64 shared angles =========================== */
+const norm = (r, max = 1) => { const p = Math.max(...r); return r.map(x => (x * max) / p); };
+const smooth = (r, passes) => { let a = r; for (let k = 0; k < passes; k++) a = a.map((_, i) => (a[(i - 1 + N) % N] + 2 * a[i] + a[(i + 1) % N]) / 4); return a; };
+function polyRadii(poly) {
+  return ANG.map((_, k) => {
+    const dx = COS[k], dy = SIN[k]; let best = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length], ex = b.x - a.x, ey = b.y - a.y, den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = (a.x * ey - a.y * ex) / den, u = (a.x * dy - a.y * dx) / den;
+      if (t > best && u >= 0 && u <= 1) best = t;
+    }
+    return best;
+  });
+}
+const regPoly = (k, rotDeg, round) => smooth(polyRadii(Array.from({ length: k }, (_, i) => { const a = (rotDeg * Math.PI) / 180 + (i / k) * TAU; return { x: Math.cos(a), y: Math.sin(a) }; })), round);
+function unionCircles(cs) {
+  return ANG.map((_, i) => {
+    let best = 0;
+    for (const c of cs) {
+      const dc = COS[i] * c.x + SIN[i] * c.y, disc = dc * dc - (c.x * c.x + c.y * c.y) + c.r * c.r;
+      if (disc >= 0) { const t = dc + Math.sqrt(disc); if (t > best) best = t; }
+    }
+    return best;
+  });
+}
+const chain = (x1, y1, r1, x2, y2, r2, n = 24) => Array.from({ length: n + 1 }, (_, i) => ({ x: lerp(x1, x2, i / n), y: lerp(y1, y2, i / n), r: lerp(r1, r2, i / n) }));
+const SHAPES = {
+  circle: Array(N).fill(1),
+  squircle: norm(ANG.map(a => Math.pow(Math.pow(Math.abs(Math.cos(a)), 4) + Math.pow(Math.abs(Math.sin(a)), 4), -1 / 4)), 1.1),
+  capsule: norm(unionCircles(chain(-0.42, 0, 0.6, 0.42, 0, 0.6)), 1.08),
+  pebble: norm(ANG.map(a => 1 + 0.075 * Math.cos(2 * a + 0.5) + 0.035 * Math.cos(3 * a + 2.1)), 1.02),
+  cloud: norm(unionCircles([{ x: -0.46, y: 0.18, r: 0.52 }, { x: 0.46, y: 0.18, r: 0.52 }, { x: 0, y: 0.26, r: 0.6 }, { x: -0.22, y: -0.27, r: 0.5 }, { x: 0.3, y: -0.2, r: 0.45 }]), 1.06),
+  drop: norm(unionCircles(chain(0, 0.26, 0.66, 0, -0.92, 0.08)), 1.06),
+  hexagon: norm(regPoly(6, -90, 3), 1.06),
+  triangle: norm(regPoly(3, -90, 6), 1.16),
+  flower: norm(ANG.map(a => 1 + 0.09 * Math.cos(5 * a - Math.PI / 2)), 1.04),
+};
+const SHAPE_KEYS = Object.keys(SHAPES);
+const EYE_DY = { triangle: 0.2, drop: 0.14, cloud: 0.04, flower: 0.02 };
+function radiusAt(radii, ang) { const t = ((((ang / TAU) % 1) + 1) % 1) * N, i = Math.floor(t); return lerp(radii[i % N], radii[(i + 1) % N], t - i); }
+function closedPath(p) {
+  const n = p.length, f = v => v.toFixed(1);
+  let d = `M${f(p[0].x)} ${f(p[0].y)}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = p[(i - 1 + n) % n], p1 = p[i], p2 = p[(i + 1) % n], p3 = p[(i + 2) % n];
+    d += `C${f(p1.x + (p2.x - p0.x) / 6)} ${f(p1.y + (p2.y - p0.y) / 6)} ${f(p2.x - (p3.x - p1.x) / 6)} ${f(p2.y - (p3.y - p1.y) / 6)} ${f(p2.x)} ${f(p2.y)}`;
+  }
+  return d + "Z";
+}
+
+/* =========================== Expressions =========================== */
+const E0 = { lx: -0.2, ly: -0.12, rx: 0.2, ry: -0.12, w: 0.15, h: 0.34, tL: -8, tR: -8, lidL: 1, lidR: 1, cL: 0, cR: 0 };
+function statePose(s, tl, radii, shapeKey) {
+  const p = { radii, rot: 0, sx: 1, sy: 1, cx: 0, cy: 0, ring: 0, zz: 0, wob: 0, eyes: { ...E0 } }, e = p.eyes;
+  switch (s) {
+    case "listen": e.h = 0.4; e.w = 0.16; p.wob = 1; break;
+    case "think": e.lx -= 0.08; e.rx -= 0.08; e.ly -= 0.08; e.ry -= 0.08; e.h = 0.3; p.ring = 1; break;
+    case "happy": e.cL = e.cR = 1; e.ly = e.ry = -0.16; p.cy = -0.1 * Math.sin(Math.PI * clamp(tl / 0.38)); break;
+    case "wink": e.cR = 1; break;
+    case "sad": e.ly = e.ry = -0.03; e.h = 0.26; e.tL = -20; e.tR = 20; e.lx = -0.22; e.rx = 0.22; p.sy = 0.95; p.sx = 1.03; p.cy = 0.03; break;
+    case "sleep": e.lidL = e.lidR = 0.1; e.ly = e.ry = -0.04; p.zz = 1; break;
+    case "focus": e.lidL = e.lidR = 0.1; e.ly = e.ry = -0.04; break;
+    case "warn": e.h = 0.4; e.w = 0.17; e.lx += 0.06; e.rx += 0.06; e.ly += 0.05; e.ry += 0.05; break;
+    case "wide": e.w = 0.2; e.h = 0.2; e.ly = e.ry = -0.14; break;
+    default: break;
+  }
+  const dy = EYE_DY[shapeKey] || 0; e.ly += dy; e.ry += dy;
+  return p;
+}
+function blendPose(a, b, k) {
+  const e = {};
+  for (const key in b.eyes) e[key] = lerp(a.eyes[key], b.eyes[key], k);
+  return { radii: b.radii.map((r, i) => lerp(a.radii[i], r, k)), rot: lerp(a.rot, b.rot, k), sx: lerp(a.sx, b.sx, k), sy: lerp(a.sy, b.sy, k),
+    cx: lerp(a.cx, b.cx, k), cy: lerp(a.cy, b.cy, k), ring: lerp(a.ring, b.ring, k), zz: lerp(a.zz, b.zz, k), wob: lerp(a.wob, b.wob, k), eyes: e };
+}
+function makeBlinks(seed) {
+  const r = mulberry(seed * 7919 + 13), out = []; let t = 0.8 + r() * 2;
+  while (t < 3600) { out.push(t); t += 2 + r() * 2.8; if (r() < 0.16) { out.push(t); t += 0.26; } }
+  return out;
+}
+function blinkLid(sched, t) {
+  let lo = 0, hi = sched.length - 1, idx = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (sched[m] <= t) { idx = m; lo = m + 1; } else hi = m - 1; }
+  if (idx < 0) return 1;
+  const k = (t - sched[idx]) / 0.18;
+  return k > 1 ? 1 : k < 0.45 ? 1 - k / 0.45 : (k - 0.45) / 0.55;
+}
+
+/* Engine: state changes and shape changes blend from the pose on screen, with an ease-out. */
+class Engine {
+  constructor(state, shapeKey, seed) {
+    this.state = state; this.since = 0; this.from = null; this.fromT = 0;
+    this.shapeKey = shapeKey; this.target = SHAPES[shapeKey]; this.rFrom = null; this.rT = 0;
+    this.seed = seed; this.level = 0; this.lv = 0; this.lastT = 0; this.blinks = makeBlinks(seed);
+  }
+  setState(s, t) { if (s === this.state) return; this.from = this.raw(t); this.fromT = t; this.state = s; this.since = t; }
+  setShape(key, t) { if (key === this.shapeKey) return; this.rFrom = this.radii(t); this.rT = t; this.shapeKey = key; this.target = SHAPES[key]; }
+  radii(t) {
+    if (!this.rFrom) return this.target;
+    const k = easeOutQuint(clamp((t - this.rT) / 0.65));
+    if (k >= 1) { this.rFrom = null; return this.target; }
+    return this.target.map((r, i) => lerp(this.rFrom[i], r, k));
+  }
+  raw(t) {
+    let p = statePose(this.state, t - this.since, this.radii(t), this.shapeKey);
+    if (this.from) { const k = easeOutQuint(clamp((t - this.fromT) / 0.45)); if (k < 1) p = blendPose(this.from, p, k); else this.from = null; }
+    return p;
+  }
+  sample(t) {
+    const p = this.raw(t), dt = Math.max(0, t - this.lastT); this.lastT = t;
+    this.lv += (this.level - this.lv) * Math.min(1, dt * 12);
+    const e = { ...p.eyes };
+    if (e.lidL > 0.3) {
+      const dx = 0.03 * loopNoise(t, 6.5, this.seed), dy = 0.022 * loopNoise(t, 8.3, this.seed + 2), b = blinkLid(this.blinks, t);
+      e.lx += dx; e.rx += dx; e.ly += dy; e.ry += dy; e.lidL *= b; e.lidR *= b;
+    }
+    let radii = p.radii, sy = p.sy;
+    if (p.wob > 0.01 && this.lv > 0.01) {
+      const a = p.wob * this.lv;
+      radii = radii.map((r, i) => r * (1 + a * (0.028 * Math.sin(3 * ANG[i] + t * 9) + 0.018 * Math.sin(5 * ANG[i] - t * 7))));
+      sy *= 1 + 0.03 * a;
+    }
+    if (e.lidL <= 0.3) sy *= 1 + 0.014 * Math.sin(t * 1.7);
+    return { ...p, radii, sy, eyes: e, t };
+  }
+}
+
+const pill = (w, h) => { const r = Math.min(w, h) / 2; return `M${(-w / 2).toFixed(1)} ${(-h / 2 + r).toFixed(1)}A${r.toFixed(1)} ${r.toFixed(1)} 0 0 1 ${(w / 2).toFixed(1)} ${(-h / 2 + r).toFixed(1)}V${(h / 2 - r).toFixed(1)}A${r.toFixed(1)} ${r.toFixed(1)} 0 0 1 ${(-w / 2).toFixed(1)} ${(h / 2 - r).toFixed(1)}Z`; };
+function ringArc(u0, u1) {
+  const RR = 142, fl = 0.27, rot = (-16 * Math.PI) / 180, c = Math.cos(rot), s = Math.sin(rot);
+  let d = "";
+  for (let k = 0; k <= 24; k++) { const u = u0 + ((u1 - u0) * k) / 24, x = Math.cos(u) * RR, y = Math.sin(u) * RR * fl; d += (k ? "L" : "M") + (x * c - y * s).toFixed(1) + " " + (x * s + y * c).toFixed(1); }
+  return d;
+}
+const RING_F = ringArc(0, Math.PI), RING_B = ringArc(Math.PI, TAU);
+function ringDot(t) { const u = (t * 2.2) % TAU, RR = 142, fl = 0.27, rot = (-16 * Math.PI) / 180, x = Math.cos(u) * RR, y = Math.sin(u) * RR * fl;
+  return { x: x * Math.cos(rot) - y * Math.sin(rot), y: x * Math.sin(rot) + y * Math.cos(rot), front: Math.sin(u) > 0 }; }
+
+function draw(r, p) {
+  const R = 100, cr = Math.cos(p.rot), sr = Math.sin(p.rot);
+  const pts = p.radii.map((rad, i) => { const x = rad * COS[i], y = rad * SIN[i]; return { x: ((x * cr - y * sr) * p.sx + p.cx) * R, y: ((x * sr + y * cr) * p.sy + p.cy) * R }; });
+  r.body.setAttribute("d", closedPath(pts));
+  const e = p.eyes;
+  for (const S of ["L", "R"]) {
+    let x = S === "L" ? e.lx : e.rx, y = S === "L" ? e.ly : e.ry;
+    const rs = radiusAt(p.radii, Math.atan2(y, x)) * Math.min(p.sx, p.sy), d = Math.hypot(x, y), lim = Math.max(0, rs - 0.22);
+    if (d > lim && d > 0) { x *= lim / d; y *= lim / d; }
+    const X = ((x * p.sx + p.cx) * R).toFixed(1), Y = ((y * p.sy + p.cy) * R).toFixed(1), w = e.w * R, h = e.h * R;
+    const c = e["c" + S], lid = e["lid" + S], tilt = e["t" + S];
+    r["p" + S].setAttribute("d", pill(w, h));
+    r["p" + S].setAttribute("transform", `translate(${X} ${Y}) rotate(${tilt.toFixed(1)}) scale(1 ${Math.max(0.03, lid * (1 - c)).toFixed(3)})`);
+    const aw = w * 2.3, rise = w * 1.1;
+    r["a" + S].setAttribute("d", `M${(-aw / 2).toFixed(1)} ${(rise * 0.5).toFixed(1)}Q0 ${(-rise).toFixed(1)} ${(aw / 2).toFixed(1)} ${(rise * 0.5).toFixed(1)}`);
+    r["a" + S].setAttribute("transform", `translate(${X} ${Y})`);
+    r["a" + S].setAttribute("stroke-width", (w * 0.72).toFixed(1));
+    r["a" + S].setAttribute("opacity", c.toFixed(2));
+  }
+  const ro = p.ring.toFixed(2);
+  r.ringF.setAttribute("opacity", ro); r.ringB.setAttribute("opacity", (p.ring * 0.55).toFixed(2));
+  if (p.ring > 0.01) {
+    const dt = ringDot(p.t);
+    r.dotF.setAttribute("cx", dt.x.toFixed(1)); r.dotF.setAttribute("cy", dt.y.toFixed(1)); r.dotF.setAttribute("opacity", dt.front ? ro : 0);
+    r.dotB.setAttribute("cx", dt.x.toFixed(1)); r.dotB.setAttribute("cy", dt.y.toFixed(1)); r.dotB.setAttribute("opacity", dt.front ? 0 : (p.ring * 0.55).toFixed(2));
+  } else { r.dotF.setAttribute("opacity", 0); r.dotB.setAttribute("opacity", 0); }
+  r.zz.setAttribute("opacity", (p.zz * (0.55 + 0.45 * Math.sin(p.t * 2))).toFixed(2));
+  r.zz.setAttribute("transform", `translate(0 ${(-8 * Math.sin(p.t * 1.4)).toFixed(1)})`);
+}
+
+/* =========================== <Bot> =========================== */
+let BOT_UID = 0;
+function Bot({ state = "idle", shape = "circle", color = "#f2f2f2", size = 120, seed = 1, level = 0, morphFrom, eyesOnly = false, fps = 60, style }) {
+  const id = useRef("bot" + ++BOT_UID).current;
+  const eng = useRef(null);
+  if (!eng.current) eng.current = new Engine(state, morphFrom || shape, seed);
+  const refs = useRef({}), svg = useRef(null), t0 = useRef(performance.now());
+  const now = () => (performance.now() - t0.current) / 1000;
+  useEffect(() => { eng.current.setState(state, now()); }, [state]);
+  useEffect(() => { eng.current.setShape(shape, now()); }, [shape]);
+  useEffect(() => { eng.current.level = level; }, [level]);
+  useEffect(() => {
+    let raf, visible = true, last = 0;
+    const minDt = 1000 / fps;
+    const loop = ts => {
+      if (!visible) return;
+      raf = requestAnimationFrame(loop);
+      if (ts - last < minDt - 2) return;
+      last = ts;
+      draw(refs.current, eng.current.sample(now()));
+    };
+    draw(refs.current, eng.current.sample(now()));
+    const io = new IntersectionObserver(([en]) => { visible = en.isIntersecting; cancelAnimationFrame(raf); if (visible) raf = requestAnimationFrame(loop); });
+    io.observe(svg.current);
+    raf = requestAnimationFrame(loop);
+    return () => { cancelAnimationFrame(raf); io.disconnect(); };
+  }, []);
+  const ref = k => el => { refs.current[k] = el; };
+  return (
+    <svg ref={svg} width={size} height={size} viewBox="-160 -160 320 320" style={{ display: "block", overflow: "visible", ...style }} aria-hidden="true">
+      <defs>
+        <g id={id + "e"}>
+          <path ref={ref("pL")} fill="#000" /><path ref={ref("pR")} fill="#000" />
+          <path ref={ref("aL")} fill="none" stroke="#000" strokeLinecap="round" /><path ref={ref("aR")} fill="none" stroke="#000" strokeLinecap="round" />
+        </g>
+        <mask id={id} maskUnits="userSpaceOnUse" x="-160" y="-160" width="320" height="320">
+          <rect x="-160" y="-160" width="320" height="320" fill="#fff" /><use href={"#" + id + "e"} />
+        </mask>
+      </defs>
+      <g style={{ color, transition: "color 450ms ease" }}>
+        <path ref={ref("ringB")} d={RING_B} fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" opacity="0" />
+        <circle ref={ref("dotB")} r="7" fill="currentColor" opacity="0" />
+        <path ref={ref("body")} fill="currentColor" mask={`url(#${id})`} opacity={eyesOnly ? 0 : 1} />
+        {eyesOnly && <use href={"#" + id + "e"} />}
+        <path ref={ref("ringF")} d={RING_F} fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" opacity="0" />
+        <circle ref={ref("dotF")} r="7" fill="currentColor" opacity="0" />
+        <text ref={ref("zz")} x="76" y="-96" fill="currentColor" fontSize="44" fontWeight="700" fontFamily="ui-rounded, system-ui" opacity="0">z</text>
+      </g>
+    </svg>
+  );
+}
+
+/* Budding: the main agent grows a new one out of its side (gooey metaball filter). */
+function BudScene({ color, onDone }) {
+  const [t, setT] = useState(0);
+  const done = useRef(onDone); done.current = onDone;
+  useEffect(() => {
+    const t0 = performance.now(); let raf;
+    const f = now => { const k = (now - t0) / 2000; setT(Math.min(1, k)); if (k < 1.2) raf = requestAnimationFrame(f); else done.current(); };
+    raf = requestAnimationFrame(f);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const e = easeInOut(clamp(t / 0.85)), bx = lerp(318, 520, e), br = lerp(14, 74, easeOutQuint(clamp(t / 0.75)));
+  const mainR = 96 - 9 * Math.sin(Math.PI * clamp(t / 0.8)), mainX = 318 - 26 * Math.sin(Math.PI * clamp(t / 0.9));
+  const budOpen = clamp((t - 0.78) / 0.15), look = 10 * clamp(t / 0.3);
+  return (
+    <svg viewBox="0 0 712 504" width="712" height="504" style={{ position: "absolute", inset: 0 }} aria-hidden="true">
+      <defs>
+        <filter id="goo" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="b" />
+          <feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 28 -12" result="g" />
+          <feComposite in="SourceGraphic" in2="g" operator="atop" />
+        </filter>
+      </defs>
+      <g filter="url(#goo)">
+        <circle cx={mainX} cy="250" r={mainR} fill="#f2f2f2" />
+        <circle cx={bx} cy="250" r={br} fill={t > 0.6 ? color : "#f2f2f2"} style={{ transition: "fill 350ms ease" }} />
+      </g>
+      {[-18, 18].map(dx => <rect key={dx} x={mainX + dx - 7 + look} y={222} width="14" height="32" rx="7" fill="#000" transform={`rotate(-8 ${mainX + dx + look} 238)`} />)}
+      {[-11, 11].map(dx => <rect key={dx} x={bx + dx - 5} y={240 - 11 * budOpen} width="10" height={Math.max(1, 22 * budOpen)} rx="5" fill="#000" />)}
+    </svg>
+  );
+}
+
+/* =========================== Data =========================== */
+const WHITE = "#f2f2f2";
+const COLORS = ["#4a9dff", "#a78bfa", "#ff6eb4", "#ffd60a", "#64d2ff", "#34d17a", "#8e8e93"];
+const PURPOSES = {
+  research: { label: "Research the web", name: "Research agent", shape: "cloud", color: "#ff6eb4", role: "Searches the web and sums up what it finds." },
+  calendar: { label: "Plan my calendar", name: "Calendar agent", shape: "hexagon", color: "#ffd60a", role: "Plans your week. Asks before it sends an invite." },
+  github: { label: "Watch my GitHub", name: "GitHub agent", shape: "drop", color: "#64d2ff", role: "Watches your repos and tells you what changed." },
+  custom: { label: "Something else", name: "New agent", shape: "pebble", color: "#34d17a", role: "Does what you tell it. Asks before anything risky." },
+};
+const STEPS = {
+  main: ["Read the task", "Worked out a plan", "Did it"],
+  mail: ["Found what to send", "Drafted the email", { t: "Send the email", risky: "send", ask: "Send this email?", body: "Sending leaves your machines, so I always ask." }],
+  pc: ["Connected to MacBook over Tailscale", "Did the work on your MacBook"],
+  research: ["Searched the web, 24 results", "Read the 5 most useful", "Wrote a short summary"],
+  calendar: ["Checked your calendar", "Found a free slot on Thursday", { t: "Send the invite", risky: "send", ask: "Send the invite?", body: "Thursday 14:00, 30 minutes. Sending leaves your machines." }],
+  github: ["Read the repo", "Checked open pull requests", "Wrote what changed"],
+  custom: ["Read the task", "Worked out a plan", "Did it"],
+  sendDeck: ["Found Pitch-v7.pdf in Downloads", "Drafted the email to Jonas",
+    { t: "Send the email to Jonas", risky: "send", ask: "Send this to Jonas?", preview: { subject: "Pitch deck for Sunday", body: "Hey Jonas, here’s the latest deck for Sunday. Shout if anything looks off.", attach: "Pitch-v7.pdf · 4.1 MB" } }],
+  cleanScreens: ["Connected to MacBook over Tailscale", "Scanned Screenshots, 214 files", "Kept 31 from this week", "Moved 167 to Archive",
+    { t: "Delete 16 duplicates", risky: "delete", ask: "Can I delete 16 files?", body: "Duplicates in Screenshots on your MacBook, 48.2 MB. I always ask before deleting." }],
+  archive: ["Connected to MacBook over Tailscale", "Found 42 old renders", "Moved 42 renders to Archive"],
+};
+const SAMPLES = [
+  { text: "okay so before Sunday I need to send Jonas the pitch deck, and my screenshots folder is a mess, clean it up but keep the ones from this week",
+    clean: "Before Sunday I need to send Jonas the pitch deck. And my screenshots folder is a mess. Clean it up, but keep the ones from this week.",
+    tasks: [{ title: "Send pitch deck to Jonas", agent: "mail", template: "sendDeck" }, { title: "Clean up Screenshots folder", agent: "pc", template: "cleanScreens" }] },
+  { text: "remind me to call the venue about the projector adapter tomorrow morning",
+    clean: "Remind me to call the venue about the projector adapter tomorrow morning.",
+    tasks: [{ title: "Call the venue about the projector adapter", agent: null }] },
+  { text: "can you find the best write-ups on WPE WebKit memory use and give me a short summary",
+    clean: "Find the best write-ups on WPE WebKit memory use and give me a short summary.",
+    tasks: [{ title: "Summarise WPE WebKit memory write-ups", agent: "research", template: "research" }] },
+  { text: "oh and export the dock render, and archive the old renders folder on my laptop",
+    clean: "Export the dock render, and archive the old renders folder on my laptop.",
+    tasks: [{ title: "Export dock render", agent: null }, { title: "Archive old renders folder", agent: "pc", template: "archive" }] },
+];
+const WORD_MS = 95;
+const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const buildSteps = key => (STEPS[key] || STEPS.main).map(x => (typeof x === "string" ? { t: x } : { ...x }));
+
+const DEFAULT_AGENTS = [
+  { id: "main", name: "Main agent", purpose: "main", shape: "circle", color: WHITE, builtin: true, seed: 3, role: "Talks to you, runs your other agents, and makes new ones." },
+  { id: "mail", name: "Mail agent", purpose: "mail", shape: "capsule", color: "#4a9dff", builtin: true, seed: 11, role: "Drafts and sends email. Always asks before it sends." },
+  { id: "pc", name: "PC agent", purpose: "pc", shape: "squircle", color: "#a78bfa", builtin: true, seed: 29, role: "Works on your machines over Tailscale. Asks before it deletes." },
+];
+function defaults() {
+  const now = Date.now();
+  return {
+    agents: DEFAULT_AGENTS,
+    notes: [
+      { id: "n1", text: "Rename the demo branch before we record.", at: now - 864e5, source: "cloud", edited: true, suggestions: [], accepted: true },
+      { id: "n2", text: "Check the 5000 mAh cell fits the shell.", at: now - 2 * 864e5, source: "cloud", edited: false, suggestions: [], accepted: true },
+    ],
+    tasks: [
+      { id: "t1", title: "Record backup demo video", agentId: null, status: "todo", steps: [], step: 0 },
+      { id: "t2", title: "Rename the demo branch", agentId: null, status: "done", steps: [], step: 0 },
+    ],
+    activity: [{ at: now - 6e4, agentId: "main", text: "Ready when you are" }],
+    settings: { provider: "Anthropic", key: "", hosting: "cloud", vmUrl: "", mode: "auto",
+      devices: [{ id: "mac", name: "MacBook Pro", online: true }, { id: "studio", name: "Studio PC", online: false }] },
+  };
+}
+const STORE = "flip-device-prototype-v1";
+function load() {
+  const base = defaults();
+  try {
+    const raw = localStorage.getItem(STORE);
+    if (raw) {
+      const d = JSON.parse(raw);
+      Object.assign(base, d);
+      base.tasks = base.tasks.map(t => (t.status === "waiting" ? { ...t, status: "held" } : t));
+    }
+  } catch (e) {}
+  return {
+    ...base, route: "home", docked: false, online: true, speed: 1, vclock: 0, lastTick: 0,
+    focus: { len: 25 * 60e3, remaining: 25 * 60e3, running: false, round: 1 },
+    limitsAt: 47 * 60e3 + 12e3, limitsBack: false, talk: null, sampleIdx: 0, approval: null, toast: null, lastHappy: 0, freshAgent: null,
+  };
+}
+
+/* =========================== Reducer (the simulated server lives here) =========================== */
+const agentById = (s, id) => s.agents.find(a => a.id === id);
+const resolveAgent = (s, key) => (key ? (s.agents.find(a => a.purpose === key) || agentById(s, "main")).id : null);
+const upd = (s, id, patch) => ({ ...s, tasks: s.tasks.map(t => (t.id === id ? { ...t, ...patch } : t)) });
+const log = (s, agentId, text) => ({ ...s, activity: [{ at: Date.now(), agentId, text }, ...s.activity].slice(0, 30) });
+const BACK = r => (r.startsWith("note:") ? "notes" : r.startsWith("agent:") || r === "create" ? "agents" : r.startsWith("task:") ? "tasks" : "home");
+
+function stepTask(s, t, now) {
+  const st = t.steps[t.step], agent = agentById(s, t.agentId);
+  if (!st) return upd(s, t.id, { status: "done" });
+  if (agent && agent.purpose === "pc" && !s.settings.devices.find(d => d.id === "mac").online) return log(upd(s, t.id, { status: "paused" }), t.agentId, "Can’t reach MacBook");
+  const needs = (st.risky && s.settings.mode !== "full") || s.settings.mode === "manual";
+  if (needs && !st.approved) {
+    return { ...upd(s, t.id, { status: "waiting" }), approval: { id: uid("ap"), kind: "task", taskId: t.id, agentId: t.agentId, fire: !!st.risky,
+      title: st.ask || `Next: ${st.t}`, body: st.body, preview: st.preview, risky: st.risky } };
+  }
+  const steps = t.steps.map((x, i) => (i === t.step ? { ...x, done: true } : x)), next = t.step + 1, done = next >= steps.length;
+  let n = upd(s, t.id, { steps, step: next, status: done ? "done" : "running", nextAt: now + 1100 });
+  n = log(n, t.agentId, done ? `Finished: ${t.title}` : st.t);
+  if (done) n = { ...n, toast: `${agent ? agent.name : "Agent"} finished: ${t.title}`, lastHappy: now };
+  return n;
+}
+
+function reducer(s, a) {
+  switch (a.type) {
+    case "tick": {
+      const dt = s.lastTick ? Math.min(2000, a.now - s.lastTick) : 0, v = dt * s.speed;
+      let n = { ...s, lastTick: a.now, vclock: s.vclock + v };
+      if (n.focus.running) {
+        const rem = n.focus.remaining - v;
+        n = rem <= 0 ? { ...n, focus: { ...n.focus, running: false, remaining: n.focus.len, round: n.focus.round + 1 }, toast: "Focus round done. Take a break.", lastHappy: a.now }
+          : { ...n, focus: { ...n.focus, remaining: rem } };
+      }
+      if (!n.limitsBack && n.vclock >= n.limitsAt) n = { ...n, limitsBack: true, toast: "Claude limits are back", lastHappy: a.now };
+      if (n.online && !n.approval) {
+        const t = n.tasks.find(x => x.status === "running" && (x.nextAt || 0) <= a.now);
+        if (t) n = stepTask(n, t, a.now);
+      }
+      return n;
+    }
+    case "nav": return { ...s, route: a.route };
+    case "back": return s.approval || s.talk ? s : { ...s, route: BACK(s.route) };
+    case "talkStart":
+      if (s.talk || s.approval || s.docked) return s;
+      return { ...s, talk: { start: a.now, sample: s.sampleIdx } };
+    case "talkStop": {
+      if (!s.talk) return s;
+      const smp = SAMPLES[s.talk.sample], words = smp.text.split(" ");
+      const n = Math.min(words.length, Math.floor((a.now - s.talk.start) / WORD_MS));
+      if (n < 3) return { ...s, talk: null, toast: "Didn’t catch that. Hold Talk while you speak." };
+      const complete = n >= words.length * 0.7;
+      const raw = words.slice(0, n).join(" ");
+      const note = { id: uid("n"), text: complete ? smp.clean : raw.charAt(0).toUpperCase() + raw.slice(1) + "…", at: Date.now(),
+        source: s.online ? "cloud" : "local", edited: false, suggestions: complete ? smp.tasks : [], accepted: false };
+      return log({ ...s, talk: null, sampleIdx: (s.sampleIdx + 1) % SAMPLES.length, notes: [note, ...s.notes], route: "suggest:" + note.id }, "main", "Saved a note");
+    }
+    case "accept": {
+      const note = s.notes.find(x => x.id === a.noteId); if (!note) return s;
+      const now = Date.now(), made = [];
+      note.suggestions.forEach((sg, i) => {
+        if (!a.picks.includes(i)) return;
+        const agentId = a.asTodos ? null : resolveAgent(s, sg.agent);
+        const purpose = agentId ? agentById(s, agentId).purpose : null;
+        made.push({ id: uid("t"), title: sg.title, agentId, noteId: note.id, status: agentId ? "running" : "todo", nextAt: now + 700 + made.length * 300,
+          steps: agentId ? buildSteps(sg.template && (agentId !== "main" || sg.agent === "main") ? sg.template : purpose) : [], step: 0 });
+      });
+      const notes = s.notes.map(x => (x.id === note.id ? { ...x, accepted: true, taskIds: made.map(t => t.id) } : x));
+      const first = made.find(t => t.agentId);
+      return { ...s, notes, tasks: [...made, ...s.tasks], route: first ? "task:" + first.id : made.length ? "tasks" : "home" };
+    }
+    case "dismissNote": return { ...s, notes: s.notes.map(x => (x.id === a.noteId ? { ...x, accepted: true } : x)), route: "home" };
+    case "toggleTodo": return upd(s, a.id, { status: s.tasks.find(t => t.id === a.id).status === "done" ? "todo" : "done" });
+    case "assign": {
+      const ag = agentById(s, a.agentId), t = s.tasks.find(x => x.id === a.id);
+      return { ...upd(s, a.id, { agentId: a.agentId, status: "running", step: 0, nextAt: Date.now() + 600, steps: buildSteps(ag.purpose) }), route: "task:" + t.id };
+    }
+    case "approve": {
+      const ap = s.approval; if (!ap) return s;
+      let n = { ...s, approval: null, lastHappy: Date.now() };
+      if (ap.kind === "task") {
+        const t = s.tasks.find(x => x.id === ap.taskId);
+        n = upd(n, t.id, { status: "running", nextAt: Date.now() + 500, steps: t.steps.map((x, i) => (i === t.step ? { ...x, approved: true } : x)) });
+      }
+      if (ap.kind === "deleteNote") n = { ...n, notes: n.notes.filter(x => x.id !== ap.noteId), route: "notes", toast: "Note deleted" };
+      if (ap.kind === "deleteAgent") {
+        const ag = agentById(s, ap.agentId);
+        n = { ...n, agents: n.agents.filter(x => x.id !== ap.agentId), tasks: n.tasks.map(t => (t.agentId === ap.agentId && t.status !== "done" ? { ...t, agentId: null, status: "todo" } : t)),
+          route: "agents", toast: `${ag.name} deleted` };
+      }
+      return n;
+    }
+    case "decline": {
+      const ap = s.approval; if (!ap) return s;
+      let n = { ...s, approval: null };
+      if (ap.kind === "task") n = log(upd(n, ap.taskId, { status: "held" }), ap.agentId, "Waiting until you’re ready");
+      return n;
+    }
+    case "resume": return upd(s, a.id, { status: "running", nextAt: Date.now() + 300 });
+    case "editNote": return { ...s, notes: s.notes.map(x => (x.id === a.id ? { ...x, text: a.text, edited: true } : x)) };
+    case "askDeleteNote": return { ...s, approval: { id: uid("ap"), kind: "deleteNote", noteId: a.id, agentId: "main", fire: true, title: "Delete this note?", body: "You can’t undo this. Deleting always needs your press." } };
+    case "askDeleteAgent": {
+      const ag = agentById(s, a.id);
+      return { ...s, approval: { id: uid("ap"), kind: "deleteAgent", agentId: a.id, fire: true, title: `Delete ${ag.name}?`, body: "Its open tasks move back to your list. Deleting always needs your press." } };
+    }
+    case "createAgent": {
+      const id = uid("a");
+      return log({ ...s, agents: [...s.agents, { ...a.agent, id, builtin: false, seed: 40 + s.agents.length * 17 }], route: "agent:" + id, freshAgent: id, lastHappy: Date.now() }, "main", `Made ${a.agent.name}`);
+    }
+    case "settings": return { ...s, settings: { ...s.settings, ...a.patch } };
+    case "device": return { ...s, settings: { ...s.settings, devices: s.settings.devices.map(d => (d.id === a.id ? { ...d, online: !d.online } : d)) } };
+    case "addDevice": return { ...s, settings: { ...s.settings, devices: [...s.settings.devices, { id: uid("d"), name: "New machine", online: false, pending: true }] }, toast: "Install the PC agent there and sign in to Tailscale" };
+    case "online": {
+      if (a.value === s.online) return s;
+      if (!a.value) return { ...s, online: false, toast: "Offline. Notes still work." };
+      const local = s.notes.filter(x => x.source === "local");
+      const fixed = local.filter(x => !x.edited);
+      const notes = s.notes.map(x => (x.source === "local" && !x.edited ? { ...x, source: "cloud" } : x));
+      return { ...s, online: true, notes, toast: fixed.length ? `Back online. Re-checked ${fixed.length} note${fixed.length > 1 ? "s" : ""} with the cloud` : "Back online" };
+    }
+    case "dock": return { ...s, docked: a.value, route: a.value ? s.route : s.route };
+    case "speed": return { ...s, speed: a.value };
+    case "focus": {
+      const f = s.focus;
+      if (a.op === "toggle") return { ...s, focus: { ...f, running: !f.running } };
+      if (a.op === "reset") return { ...s, focus: { ...f, running: false, remaining: f.len } };
+      if (a.op === "len") return { ...s, focus: { ...f, len: a.ms, remaining: a.ms, running: false } };
+      return s;
+    }
+    case "limits": return { ...s, limitsBack: false, limitsAt: s.vclock + 5 * 3600e3 };
+    case "toast": return { ...s, toast: a.msg };
+    case "reset": { try { localStorage.removeItem(STORE); } catch (e) {} return { ...load(), toast: "Demo reset" }; }
+    default: return s;
+  }
+}
+
+/* =========================== Small UI =========================== */
+const Ico = {
+  notes: <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="4" y="3" width="14" height="16" rx="3" /><path d="M8 8h6M8 11.5h6M8 15h3.5" /></svg>,
+  tasks: <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m7.5 11.2 2.4 2.4 4.6-5" /></svg>,
+  agents: <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="8" cy="12" r="5" /><path d="M14.5 6.5a4 4 0 1 1 1.8 7.5" strokeLinecap="round" /></svg>,
+  focus: <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="11" cy="12" r="7.5" /><path d="M11 8.5V12l2.5 1.5M9 2.5h4" /></svg>,
+  settings: <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 6h8M16 6h2M4 11h2M10 11h8M4 16h10M18 16h0" /><circle cx="14" cy="6" r="2" /><circle cx="8" cy="11" r="2" /><circle cx="16" cy="16" r="2" /></svg>,
+  dock: <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><rect x="4" y="4" width="14" height="10" rx="2" /><path d="M7 18h8M11 14v4" /></svg>,
+  mic: <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="7" y="2.5" width="6" height="10" rx="3" /><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" /></svg>,
+  check: (s = 12) => <svg width={s} height={s} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 6.2 5 8.5l4.5-5" /></svg>,
+  chev: <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 3-3 3 3 3" /></svg>,
+  arrow: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>,
+  plus: <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M13 6v14M6 13h14" /></svg>,
+  clip: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M10.5 4.5 5.8 9.2a1.5 1.5 0 0 0 2.1 2.1l5-5a3 3 0 0 0-4.2-4.2l-5 5a4.5 4.5 0 0 0 6.4 6.4l4-4" /></svg>,
+};
+const ago = at => { const m = Math.round((Date.now() - at) / 6e4); return m < 1 ? "now" : m < 60 ? `${m}m` : m < 24 * 60 ? `${Math.round(m / 60)}h` : m < 48 * 60 ? "Yesterday" : `${Math.round(m / 1440)}d`; };
+const mmss = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const AgentBot = ({ agent, size, state = "idle", fps, morphFrom }) => <Bot shape={agent.shape} color={agent.color} seed={agent.seed} size={size} state={state} fps={fps || (size < 90 ? 30 : 60)} morphFrom={morphFrom} />;
+const statusChip = (t, agents) => {
+  const ag = agents.find(a => a.id === t.agentId), who = ag ? ag.name : "You";
+  if (t.status === "done") return <span className="chip ok">{ag ? who + " · done" : "Done"}</span>;
+  if (t.status === "running") return <span className="chip blue"><i className="dot" />{who} · working</span>;
+  if (t.status === "waiting" || t.status === "held") return <span className="chip warn"><i className="dot" />{who} · waiting for your press</span>;
+  if (t.status === "paused") return <span className="chip"><i className="dot" />{who} · can’t reach MacBook</span>;
+  return <span className="chip">{who}</span>;
+};
+const moodFor = t => ({ running: "think", waiting: "warn", held: "idle", paused: "sad", done: "happy" }[t.status] || "idle");
+
+/* =========================== Screens =========================== */
+function Home({ s, d, startTalk, stopTalk }) {
+  const running = s.tasks.filter(t => t.status === "running"), waiting = s.tasks.filter(t => t.status === "held" || t.status === "paused");
+  const happy = Date.now() - s.lastHappy < 2500;
+  const state = happy ? "happy" : running.length ? "think" : waiting.length ? "wide" : "idle";
+  const first = running[0], ag = first && agentById(s, first.agentId);
+  const active = s.tasks.filter(t => ["running", "held", "paused", "waiting"].includes(t.status) && t.agentId);
+  return <div className="scr">
+    <div style={{ position: "absolute", left: 0, right: 0, top: 34, display: "grid", placeItems: "center" }}><Bot state={state} size={220} seed={3} /></div>
+    <div className="in" style={{ position: "absolute", left: 0, right: 0, bottom: 30, textAlign: "center", padding: "0 24px" }}>
+      <p className="say" style={{ fontSize: 26 }}>{first ? `${ag.name} is on it: ${first.title.toLowerCase()}` : waiting.length ? `${waiting.length} task${waiting.length > 1 ? "s" : ""} need${waiting.length > 1 ? "" : "s"} you` : "Hold Talk and just say it."}</p>
+      <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", marginTop: 16 }}>
+        <button className="talk-pill" onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); startTalk(); }} onPointerUp={stopTalk} onPointerCancel={stopTalk}>{Ico.mic} Hold to talk</button>
+        {active.length > 0 && <div style={{ display: "flex", gap: 4 }}>{active.slice(0, 4).map(t => <button key={t.id} title={t.title} onClick={() => d({ type: "nav", route: "task:" + t.id })}
+          style={{ border: 0, background: "none", padding: 0 }}><AgentBot agent={agentById(s, t.agentId)} size={40} state={moodFor(t)} /></button>)}</div>}
+      </div>
+    </div>
+  </div>;
+}
+
+function TalkOverlay({ s }) {
+  const [, force] = useState(0);
+  const [level, setLevel] = useState(0.6);
+  useEffect(() => { const id = setInterval(() => { force(x => x + 1); setLevel(0.35 + Math.random() * 0.65); }, 90); return () => clearInterval(id); }, []);
+  const words = SAMPLES[s.talk.sample].text.split(" "), n = Math.min(words.length, Math.floor((Date.now() - s.talk.start) / WORD_MS));
+  return <div className="fill" style={{ background: "#000", zIndex: 15 }}>
+    <div style={{ position: "absolute", left: 60, top: 92 }}><Bot state="listen" level={level} size={320} seed={3} /></div>
+    <div style={{ position: "absolute", left: 420, top: 110, right: 40 }}>
+      <div className="label" style={{ fontSize: 14 }}>{s.online ? "Listening" : "Listening · on device"}</div>
+      <p style={{ margin: "10px 0 0", font: "500 25px/1.32 var(--sys-display)", letterSpacing: "-0.02em" }}>{words.slice(0, Math.max(1, n)).join(" ")}<span style={{ opacity: 0.35 }}>{n < words.length ? " …" : ""}</span></p>
+      {!s.online && <p className="mute" style={{ fontSize: 14, marginTop: 18 }}>No connection. Saved on the Device, re-checked with the cloud later.</p>}
+    </div>
+    <span className="label" style={{ position: "absolute", left: 420, bottom: 30 }}>Let go to save</span>
+  </div>;
+}
+
+function Suggest({ s, d, id }) {
+  const note = s.notes.find(n => n.id === id);
+  const [picks, setPicks] = useState(() => (note ? note.suggestions.map((_, i) => i) : []));
+  if (!note) return null;
+  const none = !note.suggestions.length;
+  return <div className="scr">
+    <div style={{ position: "absolute", left: 30, top: 70 }}><Bot state={none ? "idle" : "happy"} size={150} seed={3} /></div>
+    <div style={{ position: "absolute", left: 210, right: 30, top: 58 }}>
+      <p className="say in" style={{ fontSize: 30 }}>{!s.online && none ? "Saved on the Device." : none ? "Saved." : `Saved. I hear ${note.suggestions.length === 1 ? "one task" : note.suggestions.length + " tasks"}.`}</p>
+      <p className="mute in in-2" style={{ margin: "8px 0 16px", fontSize: 14.5, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>“{note.text}”</p>
+      {!none && <div className="in in-3" style={{ display: "grid", gap: 8 }}>
+        {note.suggestions.map((sg, i) => {
+          const agId = resolveAgent(s, sg.agent), ag = agId && agentById(s, agId), missing = sg.agent && ag && ag.purpose !== sg.agent, on = picks.includes(i);
+          return <div key={i} className="card" style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 14px" }}>
+            <button className={"check" + (on ? " on" : "")} aria-label="Include" onClick={() => setPicks(p => (on ? p.filter(x => x !== i) : [...p, i]))}>{on && Ico.check()}</button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>{sg.title}</div>
+              <div className="mute" style={{ fontSize: 13 }}>{ag ? (missing ? <>No {PURPOSES[sg.agent] ? PURPOSES[sg.agent].name : "agent"} yet, so I’ll do it. <button className="link" onClick={() => d({ type: "nav", route: "create" })}>Make one</button></> : ag.name + (sg.template === "sendDeck" ? ", asks before it sends" : sg.template === "cleanScreens" ? ", asks before it deletes" : "")) : "A plain todo"}</div>
+            </div>
+            {ag && <AgentBot agent={ag} size={40} />}
+          </div>;
+        })}
+      </div>}
+      <div className="in in-4" style={{ display: "flex", gap: 10, marginTop: 16 }}>
+        {none ? <button className="btn" onClick={() => d({ type: "dismissNote", noteId: note.id })}>OK</button> : <>
+          <button className="btn" disabled={!picks.length} onClick={() => d({ type: "accept", noteId: note.id, picks })}>Do it</button>
+          <button className="btn ghost" onClick={() => d({ type: "accept", noteId: note.id, picks, asTodos: true })}>Keep as todos</button>
+          <button className="btn ghost" onClick={() => d({ type: "dismissNote", noteId: note.id })}>Just the note</button></>}
+      </div>
+    </div>
+  </div>;
+}
+
+function TaskView({ s, d, id }) {
+  const t = s.tasks.find(x => x.id === id);
+  if (!t) return <div className="scr"><p className="say">That task is gone.</p></div>;
+  const ag = agentById(s, t.agentId);
+  return <div className="scr">
+    <button className="back" onClick={() => d({ type: "back" })}>{Ico.chev} Tasks</button>
+    {ag && <div style={{ position: "absolute", left: 24, top: 110 }}><AgentBot agent={ag} size={230} state={moodFor(t)} /></div>}
+    <div style={{ position: "absolute", left: ag ? 300 : 30, right: 30, top: 66 }}>
+      <div className="label in" style={{ fontSize: 13 }}>{ag ? ag.name : "Todo"} {!s.online && t.status === "running" ? "· waiting for connection" : ""}</div>
+      <p className="say in" style={{ fontSize: 28, marginTop: 4 }}>{t.title}</p>
+      <div className="in in-2" style={{ marginTop: 14 }}>
+        {t.steps.map((st, i) => {
+          const done = st.done, now = i === t.step && t.status !== "done";
+          return <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0", fontSize: 15, color: done ? "rgba(235,235,245,0.7)" : now ? (st.risky ? "#ff9a4d" : "#fff") : "rgba(235,235,245,0.35)" }}>
+            <span className={"check" + (done ? " on" : "")} style={{ width: 18, height: 18, borderColor: now ? "currentColor" : undefined }}>{done && Ico.check(10)}</span>{st.t}
+            {now && st.risky && <span className="chip warn" style={{ marginLeft: "auto" }}>asks first</span>}
+          </div>;
+        })}
+        {!t.steps.length && <p className="mute">A plain todo. Hand it to an agent from Tasks.</p>}
+      </div>
+      <div className="in in-3" style={{ display: "flex", gap: 10, marginTop: 18, alignItems: "center" }}>
+        {t.status === "held" && <><button className="btn" onClick={() => d({ type: "resume", id: t.id })}>Review again</button><span className="mute" style={{ fontSize: 14 }}>Waiting until you’re ready</span></>}
+        {t.status === "paused" && <><button className="btn" onClick={() => d({ type: "resume", id: t.id })}>Try again</button><span className="mute" style={{ fontSize: 14 }}>MacBook is offline on Tailscale</span></>}
+        {t.status === "done" && <button className="btn ghost" onClick={() => d({ type: "nav", route: "home" })}>Back home</button>}
+      </div>
+    </div>
+  </div>;
+}
+
+function Notes({ s, d }) {
+  return <div className="scr">
+    <p className="h1 in">Notes</p>
+    <div className="mute in" style={{ fontSize: 14 }}>Every dump, saved first</div>
+    <div className="scroll in in-2" style={{ position: "absolute", left: 14, right: 28, top: 110, bottom: 0, paddingBottom: 20 }}>
+      {s.notes.map(n => <div key={n.id} className="row tap" onClick={() => d({ type: "nav", route: "note:" + n.id })} style={{ display: "block" }}>
+        <div style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.text}</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+          <span className="mute" style={{ fontSize: 13 }}>{ago(n.at)}</span>
+          {n.source === "local" ? <span className="chip warn"><i className="dot" />On device{n.edited ? "" : ", re-checks when online"}</span> : n.edited ? <span className="chip">You edited this</span> : <span className="chip">Cloud transcript</span>}
+          {!n.accepted && n.suggestions.length > 0 && <span className="chip blue">{n.suggestions.length} suggested</span>}
+        </div>
+      </div>)}
+      {!s.notes.length && <p className="mute">No notes yet. Hold Talk to make one.</p>}
+    </div>
+  </div>;
+}
+
+function NoteView({ s, d, id }) {
+  const n = s.notes.find(x => x.id === id);
+  if (!n) return null;
+  const tasks = s.tasks.filter(t => (n.taskIds || []).includes(t.id));
+  return <div className="scr">
+    <button className="back" onClick={() => d({ type: "back" })}>{Ico.chev} Notes</button>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+      <span className="mute" style={{ fontSize: 13 }}>{new Date(n.at).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}</span>
+      {n.source === "local" ? <span className="chip warn"><i className="dot" />On device</span> : <span className="chip">Cloud transcript</span>}
+      {n.edited && <span className="chip">Edited, your version is kept</span>}
+    </div>
+    <textarea className="field" value={n.text} onChange={e => d({ type: "editNote", id: n.id, text: e.target.value })}
+      style={{ marginTop: 12, height: 150, resize: "none", background: "none", padding: 0, fontSize: 21, lineHeight: 1.4, letterSpacing: "-0.012em", boxShadow: "none" }} />
+    <div style={{ position: "absolute", left: 14, right: 28, bottom: 22 }}>
+      {!n.accepted && n.suggestions.length > 0 && <div className="card" style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <span style={{ flex: 1 }}>{s.online ? `${n.suggestions.length} suggested task${n.suggestions.length > 1 ? "s" : ""}` : "I’ll suggest tasks when you’re back online"}</span>
+        {s.online && <button className="btn sm" onClick={() => d({ type: "nav", route: "suggest:" + n.id })}>Review</button>}
+      </div>}
+      {tasks.length > 0 && <div style={{ marginBottom: 12 }}>{tasks.map(t => <div key={t.id} className="row tap" onClick={() => d({ type: "nav", route: "task:" + t.id })}><span style={{ flex: 1 }}>{t.title}</span>{statusChip(t, s.agents)}</div>)}</div>}
+      <button className="btn danger sm" onClick={() => d({ type: "askDeleteNote", id: n.id })}>Delete note</button>
+    </div>
+  </div>;
+}
+
+function Tasks({ s, d }) {
+  const [picking, setPicking] = useState(null);
+  const open = s.tasks.filter(t => t.status !== "done"), done = s.tasks.filter(t => t.status === "done");
+  return <div className="scr">
+    <p className="h1 in">Today</p>
+    <div className="mute in" style={{ fontSize: 14 }}>{s.tasks.length} tasks · {done.length} done</div>
+    <div className="scroll in in-2" style={{ position: "absolute", left: 14, right: 28, top: 110, bottom: 36 }}>
+      {[...open, ...done].map(t => <div key={t.id}>
+        <div className="row">
+          <button className={"check" + (t.status === "done" ? " on" : "")} disabled={!!t.agentId && t.status !== "done"} onClick={() => !t.agentId && d({ type: "toggleTodo", id: t.id })} aria-label="Done">{t.status === "done" && Ico.check()}</button>
+          <span onClick={() => t.agentId && d({ type: "nav", route: "task:" + t.id })} style={{ flex: 1, fontSize: 16, cursor: t.agentId ? "pointer" : "default", color: t.status === "done" ? "rgba(235,235,245,0.4)" : undefined, textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.title}</span>
+          {!t.agentId && t.status === "todo" ? <button className="btn ghost sm" onClick={() => setPicking(picking === t.id ? null : t.id)}>Hand to agent</button> : statusChip(t, s.agents)}
+        </div>
+        {picking === t.id && <div className="in" style={{ display: "flex", gap: 6, padding: "4px 0 12px 34px", flexWrap: "wrap" }}>
+          {s.agents.map(a => <button key={a.id} className="btn ghost sm" onClick={() => { setPicking(null); d({ type: "assign", id: t.id, agentId: a.id }); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, paddingLeft: 6 }}>
+            <AgentBot agent={a} size={24} />{a.name}</button>)}
+        </div>}
+      </div>)}
+    </div>
+    <div className="label" style={{ position: "absolute", left: 18, bottom: 18 }}>Our own list · Todoist coming soon</div>
+  </div>;
+}
+
+function Agents({ s, d }) {
+  return <div className="scr">
+    <p className="h1 in">Agents</p>
+    <div className="mute in" style={{ fontSize: 14 }}>Your main agent can make new ones</div>
+    <div className="scroll in in-2" style={{ position: "absolute", left: 14, right: 28, top: 108, bottom: 0, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, alignContent: "start", paddingBottom: 20 }}>
+      {s.agents.map(a => {
+        const work = s.tasks.find(t => t.agentId === a.id && ["running", "waiting", "held", "paused"].includes(t.status));
+        return <button key={a.id} className="agent-card" onClick={() => d({ type: "nav", route: "agent:" + a.id })}>
+          <div style={{ alignSelf: "center", margin: "2px 0 6px" }}><AgentBot agent={a} size={92} state={work ? moodFor(work) : "idle"} /></div>
+          <b style={{ fontSize: 15, letterSpacing: "-0.01em" }}>{a.name}</b>
+          <span className="mute" style={{ fontSize: 12.5, lineHeight: 1.35 }}>{work ? (work.status === "running" ? "Working: " : "Waiting: ") + work.title : a.role}</span>
+        </button>;
+      })}
+      <button className="agent-card new" onClick={() => d({ type: "nav", route: "create" })} style={{ minHeight: 190 }}>
+        <span style={{ color: "rgba(255,255,255,0.7)" }}>{Ico.plus}</span><b style={{ fontSize: 15 }}>New agent</b><span className="mute" style={{ fontSize: 12.5 }}>Made by your main agent</span>
+      </button>
+    </div>
+  </div>;
+}
+
+function AgentView({ s, d, id }) {
+  const a = agentById(s, id);
+  if (!a) return null;
+  const work = s.tasks.find(t => t.agentId === a.id && ["running", "waiting", "held", "paused"].includes(t.status));
+  const done = s.tasks.filter(t => t.agentId === a.id && t.status === "done").length;
+  const acts = s.activity.filter(x => x.agentId === a.id).slice(0, 4);
+  const fresh = s.freshAgent === a.id;
+  const asks = s.settings.mode === "manual" ? ["Every step"] : s.settings.mode === "full" ? ["Nothing, Full mode is on"] : ["Send", "Delete", "Pay", "Leaving your machines"];
+  return <div className="scr">
+    <button className="back" onClick={() => d({ type: "back" })}>{Ico.chev} Agents</button>
+    <div style={{ position: "absolute", left: 24, top: 104 }}><AgentBot agent={a} size={240} state={fresh && Date.now() - s.lastHappy < 2500 ? "happy" : work ? moodFor(work) : "idle"} morphFrom={fresh ? "circle" : undefined} /></div>
+    <div style={{ position: "absolute", left: 300, right: 30, top: 66 }}>
+      <p className="say in" style={{ fontSize: 30 }}>{a.name}</p>
+      <p className="mute in" style={{ margin: "6px 0 14px", fontSize: 15 }}>{a.role}</p>
+      <div className="in in-2"><div className="label" style={{ marginBottom: 6 }}>Asks you before</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{asks.map(x => <span key={x} className="chip warn">{x}</span>)}</div></div>
+      <div className="in in-3" style={{ marginTop: 16 }}>
+        <div className="label" style={{ marginBottom: 2 }}>{work ? "Working on" : `${done} task${done === 1 ? "" : "s"} done`}</div>
+        {work && <div className="row tap" onClick={() => d({ type: "nav", route: "task:" + work.id })}><span style={{ flex: 1 }}>{work.title}</span>{statusChip(work, s.agents)}</div>}
+        {acts.map((x, i) => <div key={i} style={{ display: "flex", gap: 10, fontSize: 14, padding: "5px 0" }}><span style={{ flex: 1 }}>{x.text}</span><span className="mute">{ago(x.at)}</span></div>)}
+      </div>
+      {!a.builtin && <button className="btn danger sm in in-4" style={{ marginTop: 16 }} onClick={() => d({ type: "askDeleteAgent", id: a.id })}>Delete agent</button>}
+    </div>
+  </div>;
+}
+
+function Create({ s, d }) {
+  const [step, setStep] = useState(0);
+  const [purpose, setPurpose] = useState(null);
+  const [shape, setShape] = useState("pebble");
+  const [color, setColor] = useState("#34d17a");
+  const [name, setName] = useState("");
+  const pick = p => { setPurpose(p); setShape(PURPOSES[p].shape); setColor(PURPOSES[p].color); setName(PURPOSES[p].name); setStep(1); };
+  const finish = useCallback(() => d({ type: "createAgent", agent: { name: name.trim() || "New agent", purpose, shape, color, role: PURPOSES[purpose].role } }), [name, purpose, shape, color]);
+  if (step === 3) return <div className="fill"><BudScene color={color} onDone={finish} /><p className="say in" style={{ position: "absolute", left: 0, right: 0, bottom: 40, textAlign: "center", fontSize: 24 }}>Making {name.trim() || "your agent"}…</p></div>;
+  const Q = ({ children }) => <div className="in" style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}><Bot size={44} seed={3} state="idle" fps={30} /><p className="say" style={{ fontSize: 24 }}>{children}</p></div>;
+  return <div className="scr">
+    <button className="back" onClick={() => (step ? setStep(step - 1) : d({ type: "back" }))}>{Ico.chev} {step ? "Back" : "Agents"}</button>
+    <div style={{ position: "absolute", left: 20, top: 96, width: 250, display: "grid", placeItems: "center" }}>
+      {step === 0 ? <Bot size={220} seed={3} state="wide" /> : <Bot size={230} shape={shape} color={color} seed={77} state={step === 2 ? "happy" : "idle"} />}
+    </div>
+    <div style={{ position: "absolute", left: 300, right: 30, top: 64 }}>
+      {step === 0 && <><Q>What should your new agent do?</Q>
+        <div className="in in-2" style={{ display: "grid", gap: 8 }}>{Object.entries(PURPOSES).map(([k, p]) => <button key={k} className="card" onClick={() => pick(k)} style={{ border: 0, textAlign: "left", color: "#fff", display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ flex: 1 }}><b>{p.label}</b><br /><span className="mute" style={{ fontSize: 13 }}>{p.role}</span></span>{Ico.arrow}</button>)}</div></>}
+      {step === 1 && <><Q>Pick a body and a colour.</Q>
+        <div className="in in-2" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+          {SHAPE_KEYS.map(k => <button key={k} className={"shape-pick" + (shape === k ? " on" : "")} onClick={() => setShape(k)} aria-label={k}><Bot size={58} shape={k} color={color} seed={k.length * 7} state="idle" fps={24} /></button>)}
+        </div>
+        <div className="in in-3" style={{ display: "flex", gap: 10, marginTop: 16 }}>{COLORS.map(c => <button key={c} className={"swatch" + (color === c ? " on" : "")} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />)}</div>
+        <button className="btn in in-4" style={{ marginTop: 18 }} onClick={() => setStep(2)}>Next</button></>}
+      {step === 2 && <><Q>What should I call it?</Q>
+        <input className="field in in-2" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && setStep(3)} maxLength={24} autoFocus style={{ fontSize: 20, padding: "12px 14px" }} />
+        <p className="mute in in-3" style={{ fontSize: 14, margin: "10px 0 18px" }}>{PURPOSES[purpose].role}</p>
+        <button className="btn in in-4" onClick={() => setStep(3)}>Make it</button></>}
+    </div>
+  </div>;
+}
+
+function Focus({ s, d }) {
+  const f = s.focus, pct = f.remaining / f.len, r = 128, L = 2 * Math.PI * r;
+  return <div className="scr">
+    <svg width="290" height="290" style={{ position: "absolute", left: "50%", top: 40, marginLeft: -145, transform: "rotate(-90deg)" }}>
+      <circle cx="145" cy="145" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
+      <circle cx="145" cy="145" r={r} fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeDasharray={L} strokeDashoffset={L * (1 - pct)} style={{ transition: "stroke-dashoffset 300ms linear" }} />
+    </svg>
+    <div style={{ position: "absolute", left: "50%", top: 75, marginLeft: -110 }}><Bot size={220} seed={3} state={f.running ? "focus" : "idle"} /></div>
+    <div style={{ position: "absolute", left: 0, right: 0, bottom: 26, textAlign: "center" }}>
+      <div className="tnum" style={{ font: "600 56px/1 var(--rounded)", letterSpacing: "-0.03em" }}>{mmss(f.remaining)}</div>
+      <div className="mute" style={{ fontSize: 14, margin: "6px 0 12px" }}>Round {f.round} · {f.running ? "I’ll hold everything that isn’t urgent" : "Ready when you are"}</div>
+      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+        <button className="btn" onClick={() => d({ type: "focus", op: "toggle" })}>{f.running ? "Pause" : "Start"}</button>
+        <button className="btn ghost" onClick={() => d({ type: "focus", op: "reset" })}>Reset</button>
+        <div className="seg" style={{ width: 180 }}>{[["Focus 25", 25], ["Break 5", 5]].map(([l, m]) => <button key={m} className={f.len === m * 60e3 ? "on" : ""} onClick={() => d({ type: "focus", op: "len", ms: m * 60e3 })}>{l}</button>)}</div>
+      </div>
+    </div>
+  </div>;
+}
+
+function Dock({ s, d }) {
+  const f = s.focus, left = Math.max(0, s.limitsAt - s.vclock);
+  return <div className="fill" style={{ padding: "44px 18px 18px", display: "grid", gridTemplateColumns: "1.15fr 1fr", gridTemplateRows: "1fr 1fr", gap: 12 }}>
+    <div className="card in" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", position: "relative" }}>
+      <div className="label">Focus · round {f.round}</div>
+      <div style={{ position: "absolute", right: 10, top: 6 }}><Bot size={70} seed={3} state={f.running ? "sleep" : "idle"} fps={30} /></div>
+      <div className="tnum" style={{ font: "600 86px/0.9 var(--rounded)", letterSpacing: "-0.04em" }}>{mmss(f.remaining)}</div>
+      <div><button className="btn sm" onClick={() => d({ type: "focus", op: "toggle" })}>{f.running ? "Pause" : "Start focus"}</button></div>
+    </div>
+    <div className="card in in-2">
+      <div className="label">Today</div>
+      {s.tasks.filter(t => t.status !== "done").slice(0, 4).map(t => <div key={t.id} style={{ fontSize: 14.5, padding: "5px 0", display: "flex", gap: 8, alignItems: "center" }}>
+        {t.agentId ? <AgentBot agent={agentById(s, t.agentId)} size={20} state={moodFor(t)} /> : <span className="check" style={{ width: 16, height: 16 }} />}<span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span></div>)}
+    </div>
+    <div className="card in in-2" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      <div className="label">{s.limitsBack ? "Claude limits" : "Claude limits reset in"}</div>
+      {s.limitsBack ? <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Bot size={56} seed={5} state="happy" fps={30} /><b style={{ fontSize: 26, letterSpacing: "-0.02em" }}>They’re back.</b></div>
+        : <div className="tnum" style={{ font: "600 46px/1.1 var(--rounded)" }}>{Math.ceil(left / 6e4)} min</div>}
+      {s.limitsBack && <div><button className="btn ghost sm" onClick={() => d({ type: "limits" })}>Got it</button></div>}
+    </div>
+    <div className="card in in-3">
+      <div className="label" style={{ marginBottom: 2 }}>Agents</div>
+      {s.activity.slice(0, 4).map((x, i) => { const ag = agentById(s, x.agentId); return <div key={i} style={{ display: "flex", gap: 8, fontSize: 13.5, padding: "4px 0", alignItems: "center" }}>
+        {ag && <AgentBot agent={ag} size={18} />}<span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.text}</span><span className="mute">{ago(x.at)}</span></div>; })}
+    </div>
+  </div>;
+}
+
+function Settings({ s, d }) {
+  const st = s.settings;
+  const [key, setKey] = useState("");
+  const set = patch => d({ type: "settings", patch });
+  return <div className="scr scroll" style={{ paddingBottom: 30 }}>
+    <p className="h1 in">Settings</p>
+    <div className="in in-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+      <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
+        <div><div className="label" style={{ margin: "0 0 6px 4px" }}>AI provider · bring your own key</div>
+          <div className="card" style={{ padding: "4px 14px" }}>
+            <div className="set-row"><span>{st.provider}</span>{st.key ? <span className="chip ok">Key saved · …{st.key.slice(-4)}</span> : <span className="chip warn">No key yet</span>}</div>
+            <div className="set-row" style={{ gap: 8 }}><input className="field" type="password" placeholder="Paste your API key" value={key} onChange={e => setKey(e.target.value)} />
+              <button className="btn sm" disabled={key.trim().length < 12} onClick={() => { set({ key: key.trim() }); setKey(""); d({ type: "toast", msg: "Key saved on your server" }); }}>Save</button></div>
+          </div></div>
+        <div><div className="label" style={{ margin: "0 0 6px 4px" }}>Where the server runs</div>
+          <div className="seg">{[["cloud", "Our cloud"], ["vm", "Own VM"], ["self", "Self-hosted"]].map(([k, l]) => <button key={k} className={st.hosting === k ? "on" : ""} onClick={() => set({ hosting: k, ...(k === "cloud" && st.mode === "full" ? { mode: "auto" } : {}) })}>{l}</button>)}</div>
+          {st.hosting !== "cloud" && <input className="field" style={{ marginTop: 8 }} placeholder="https://your-server:8443" value={st.vmUrl} onChange={e => set({ vmUrl: e.target.value })} />}
+          <div className="mute" style={{ fontSize: 13, margin: "8px 4px 0" }}>{st.hosting === "cloud" ? "The default. Switch to your own machine any time." : "Your agents and keys stay on a machine you control."}</div></div>
+        <div><div className="label" style={{ margin: "0 0 6px 4px" }}>This Device</div>
+          <div className="card" style={{ padding: "4px 14px" }}>
+            <div className="set-row"><span>Connected</span><button className={"switch" + (s.online ? " on" : "")} onClick={() => d({ type: "online", value: !s.online })} aria-label="Connected"><i /></button></div>
+            <div className="set-row"><span>Demo data</span><button className="btn ghost sm" onClick={() => d({ type: "reset" })}>Reset</button></div>
+          </div></div>
+      </div>
+      <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
+        <div><div className="label" style={{ margin: "0 0 6px 4px" }}>Permission mode</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {[["manual", "Manual", "Every action waits for your press."], ["auto", "Auto", "I decide when to ask. Send, delete, pay and leaving your machines always ask."], ["full", "Full", "Runs without asking. Your own VM or sandbox only."]].map(([k, n, desc]) =>
+              <button key={k} className={"perm" + (st.mode === k ? " on" : "")} disabled={k === "full" && st.hosting === "cloud"} onClick={() => set({ mode: k })}>
+                <b style={{ fontSize: 16 }}>{n}{k === "auto" && <span className="chip" style={{ marginLeft: 8 }}>Default</span>}</b>
+                <span className="mute" style={{ fontSize: 13, lineHeight: 1.4 }}>{k === "full" && st.hosting === "cloud" ? "Switch to your own VM or self-hosting first." : desc}</span>
+              </button>)}
+          </div></div>
+        <div><div className="label" style={{ margin: "0 0 6px 4px" }}>Connected machines · Tailscale</div>
+          <div className="card" style={{ padding: "4px 14px" }}>
+            {st.devices.map(dv => <div key={dv.id} className="set-row"><span>{dv.name}{dv.pending && <span className="mute" style={{ fontSize: 12 }}> · waiting for PC agent</span>}</span>
+              <button className={"switch" + (dv.online ? " on" : "")} onClick={() => d({ type: "device", id: dv.id })} aria-label={dv.name + " online"}><i /></button></div>)}
+            <div className="set-row"><button className="link" onClick={() => d({ type: "addDevice" })}>Add a machine</button></div>
+          </div></div>
+      </div>
+    </div>
+  </div>;
+}
+
+/* =========================== Overlays =========================== */
+function FireOverlay({ s, d }) {
+  const ap = s.approval && s.approval.fire ? s.approval : null;
+  const [shown, setShown] = useState(null), [phase, setPhase] = useState("off");
+  useEffect(() => {
+    if (ap) { setShown(ap); setPhase("pre"); const r = requestAnimationFrame(() => requestAnimationFrame(() => setPhase("fire"))); return () => cancelAnimationFrame(r); }
+    if (shown) { setPhase("done"); const t = setTimeout(() => { setShown(null); setPhase("off"); }, 720); return () => clearTimeout(t); }
+  }, [ap && ap.id]);
+  if (!shown) return null;
+  const o = { x: 392, y: 220, r: 80 }, fire = phase === "fire";
+  const clip = fire ? "circle(900px at 610px 250px)" : `circle(${o.r}px at ${o.x}px ${o.y}px)`;
+  const ag = agentById(s, shown.agentId);
+  return <div className={"fire-layer" + (fire ? " live" : "")}>
+    <div className={"fire" + (fire ? " on" : "")} style={{ clipPath: clip, WebkitClipPath: clip }}>
+      {[["-40px", "#ffcf33", "0s"], ["180px", "#ff2d00", "0.8s"], ["400px", "#ffb000", "1.6s"], ["600px", "#ff3d00", "0.4s"]].map(([l, b, dl], i) => <i key={i} style={{ left: l, background: b, animationDelay: dl }} />)}
+    </div>
+    {fire && <>
+      <div style={{ position: "absolute", left: 470, top: 100 }}><Bot size={300} seed={ag ? ag.seed : 3} shape={ag ? ag.shape : "circle"} state="warn" eyesOnly /></div>
+      <div className="fire-copy in" style={{ animationDelay: "160ms" }}>
+        <div className="label" style={{ color: "rgba(0,0,0,0.6)", marginBottom: 8 }}>{ag ? ag.name : "Main agent"} needs your press</div>
+        <p className="say" style={{ fontSize: 42 }}>{shown.title}</p>
+        {shown.preview ? <div style={{ margin: "14px 0 16px", padding: "12px 14px", borderRadius: 16, background: "rgba(0,0,0,0.12)", fontSize: 14, lineHeight: 1.5 }}>
+          <div><span style={{ opacity: 0.6 }}>Subject </span><b>{shown.preview.subject}</b></div>
+          <div style={{ opacity: 0.75 }}>{shown.preview.body}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontWeight: 600 }}>{Ico.clip} {shown.preview.attach}</div>
+        </div> : <p className="mute" style={{ margin: "12px 0 20px", fontSize: 16, lineHeight: 1.45 }}>{shown.body}</p>}
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <b style={{ display: "flex", alignItems: "center", gap: 8 }}>Press the side button {Ico.arrow}</b>
+          <button className="btn ghost sm" onClick={() => d({ type: "decline" })}>Not now</button>
+        </div>
+      </div>
+      <div className="press-bar" />
+    </>}
+  </div>;
+}
+
+function SoftApproval({ s, d }) {
+  const ap = s.approval;
+  if (!ap || ap.fire) return null;
+  const ag = agentById(s, ap.agentId);
+  return <div className="soft" key={ap.id}>
+    {ag && <AgentBot agent={ag} size={40} state="wide" />}
+    <div style={{ flex: 1 }}><div className="label">Manual mode · {ag ? ag.name : "Agent"}</div><b>{ap.title}</b></div>
+    <span className="mute" style={{ fontSize: 13 }}>Press to continue</span>
+    <button className="btn ghost sm" onClick={() => d({ type: "decline" })}>Not now</button>
+  </div>;
+}
+
+/* =========================== App =========================== */
+function Device({ children, onPress, want }) {
+  const wrap = useRef(null);
+  const [scale, setScale] = useState(1), [down, setDown] = useState(false);
+  useEffect(() => { const ro = new ResizeObserver(([e]) => setScale(Math.min(1, e.contentRect.width / 904))); ro.observe(wrap.current); return () => ro.disconnect(); }, []);
+  const press = () => { setDown(true); onPress(); };
+  return <div className="fit" ref={wrap} style={{ height: 600 * scale }}>
+    <div className="device" style={{ transform: `scale(${scale})` }}>
+      <div className="bezel"><div className="glass"><div className="screen">{children}</div></div></div>
+      <button className={"side" + (down ? " down" : "") + (want ? " want" : "")} aria-label="Approve button" onPointerDown={press} onPointerUp={() => setDown(false)} onPointerLeave={() => setDown(false)} />
+    </div>
+  </div>;
+}
+
+function Clock() {
+  const [t, setT] = useState(() => new Date());
+  useEffect(() => { const id = setInterval(() => setT(new Date()), 15e3); return () => clearInterval(id); }, []);
+  return <span className="tnum">{t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>;
+}
+
+function App() {
+  const [s, d] = useReducer(reducer, null, load);
+  const sRef = useRef(s); sRef.current = s;
+  useEffect(() => { const id = setInterval(() => d({ type: "tick", now: Date.now() }), 250); return () => clearInterval(id); }, []);
+  useEffect(() => { try { localStorage.setItem(STORE, JSON.stringify({ agents: s.agents, notes: s.notes, tasks: s.tasks, activity: s.activity, settings: s.settings })); } catch (e) {} }, [s.agents, s.notes, s.tasks, s.activity, s.settings]);
+  useEffect(() => { if (!s.toast) return; const id = setTimeout(() => d({ type: "toast", msg: null }), 2800); return () => clearTimeout(id); }, [s.toast]);
+
+  const press = useCallback(() => { try { navigator.vibrate && navigator.vibrate(18); } catch (e) {} if (sRef.current.approval) d({ type: "approve" }); }, []);
+  const startTalk = useCallback(() => d({ type: "talkStart", now: Date.now() }), []);
+  const stopTalk = useCallback(() => d({ type: "talkStop", now: Date.now() }), []);
+  useEffect(() => {
+    const typing = e => e.target.closest && e.target.closest("input, textarea");
+    const down = e => {
+      if (typing(e)) return;
+      if (e.code === "Space") { e.preventDefault(); if (!e.repeat) startTalk(); }
+      else if (e.key === "Enter") { e.preventDefault(); press(); }
+      else if (e.key === "Escape") d({ type: "back" });
+    };
+    const up = e => { if (e.code === "Space" && !typing(e)) stopTalk(); };
+    window.addEventListener("keydown", down); window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, []);
+
+  const r = s.route, [base, id] = r.split(":");
+  const tab = s.docked ? "dock" : base === "note" ? "notes" : base === "task" ? "tasks" : base === "agent" || base === "create" ? "agents" : base === "suggest" ? "home" : base;
+  const fireOn = s.approval && s.approval.fire;
+  const needs = s.tasks.some(t => t.status === "held" || t.status === "paused");
+  const nav = route => d({ type: "nav", route });
+  let screen;
+  if (s.docked) screen = <Dock s={s} d={d} />;
+  else if (base === "home") screen = <Home s={s} d={d} startTalk={startTalk} stopTalk={stopTalk} />;
+  else if (base === "suggest") screen = <Suggest key={r} s={s} d={d} id={id} />;
+  else if (base === "task") screen = <TaskView key={r} s={s} d={d} id={id} />;
+  else if (base === "notes") screen = <Notes s={s} d={d} />;
+  else if (base === "note") screen = <NoteView key={r} s={s} d={d} id={id} />;
+  else if (base === "tasks") screen = <Tasks s={s} d={d} />;
+  else if (base === "agents") screen = <Agents s={s} d={d} />;
+  else if (base === "agent") screen = <AgentView key={r} s={s} d={d} id={id} />;
+  else if (base === "create") screen = <Create s={s} d={d} />;
+  else if (base === "focus") screen = <Focus s={s} d={d} />;
+  else if (base === "settings") screen = <Settings s={s} d={d} />;
+
+  return <div className="page">
+    <h1>Device prototype</h1>
+    <p>A working build of the docs: dump, note, suggestion, task agents, the approval press, Notes, Tasks, Agents (your main agent makes new ones), Focus, Dock and Settings. The server is simulated in the page and your data stays in this browser.</p>
+    <Device onPress={press} want={!!s.approval}>
+      <div className="fill" style={{ "--ink": fireOn ? "#000" : "#fff" }}>
+        <div className="status"><span style={{ paddingLeft: s.docked ? 0 : 60 }}><Clock /></span>
+          <span>{!s.online && "Offline"}{s.docked && "Docked"}{s.focus.running && !s.docked && "Focus"} {s.speed > 1 && "×" + s.speed}<span className={"batt" + (s.docked ? " charge" : "")}><i /></span></span></div>
+        {!s.docked && <nav className="rail" aria-label="Apps">
+          <button className={tab === "home" ? "on" : ""} onClick={() => nav("home")} aria-label="Home"><Bot size={34} seed={3} state={needs ? "wide" : "idle"} fps={24} /></button>
+          <button className={tab === "notes" ? "on" : ""} onClick={() => nav("notes")} aria-label="Notes">{Ico.notes}</button>
+          <button className={tab === "tasks" ? "on" : ""} onClick={() => nav("tasks")} aria-label="Tasks">{Ico.tasks}{needs && <i className="badge" />}</button>
+          <button className={tab === "agents" ? "on" : ""} onClick={() => nav("agents")} aria-label="Agents">{Ico.agents}</button>
+          <button className={tab === "focus" ? "on" : ""} onClick={() => nav("focus")} aria-label="Focus">{Ico.focus}</button>
+          <div className="grow" />
+          <button className={tab === "settings" ? "on" : ""} onClick={() => nav("settings")} aria-label="Settings">{Ico.settings}</button>
+        </nav>}
+        <div className={"main" + (s.docked ? " full" : "")}>{screen}</div>
+        {s.talk && <TalkOverlay s={s} />}
+        <SoftApproval s={s} d={d} />
+        <FireOverlay s={s} d={d} />
+        {s.toast && <div className="toast" key={s.toast}>{s.toast}</div>}
+      </div>
+    </Device>
+    <div className="panel">
+      <button className="pbtn" onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); startTalk(); }} onPointerUp={stopTalk} onPointerCancel={stopTalk}>Hold to talk</button>
+      <button className="pbtn" onClick={press}>Approval press</button>
+      <button className="pbtn" aria-pressed={s.docked} onClick={() => d({ type: "dock", value: !s.docked })}>{s.docked ? "Take off dock" : "Put on dock"}</button>
+      <button className="pbtn" aria-pressed={!s.online} onClick={() => d({ type: "online", value: !s.online })}>{s.online ? "Go offline" : "Go online"}</button>
+      <button className="pbtn" aria-pressed={!s.settings.devices.find(x => x.id === "mac").online} onClick={() => d({ type: "device", id: "mac" })}>MacBook {s.settings.devices.find(x => x.id === "mac").online ? "online" : "offline"}</button>
+      <button className="pbtn" aria-pressed={s.speed > 1} onClick={() => d({ type: "speed", value: s.speed > 1 ? 1 : 60 })}>Time ×{s.speed > 1 ? 60 : 1}</button>
+      <button className="pbtn" onClick={() => d({ type: "reset" })}>Reset</button>
+    </div>
+    <div className="keys"><kbd>Space</kbd> hold to talk · <kbd>Enter</kbd> approval press · <kbd>Esc</kbd> back</div>
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

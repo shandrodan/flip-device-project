@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Device Screens</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+@property --c1 { syntax: "<color>"; inherits: true; initial-value: #8cc4ff; }
+@property --c2 { syntax: "<color>"; inherits: true; initial-value: #4a9dff; }
+
+/* ---------- Page ---------- */
+:root {
+  --page-bg: #f5f5f7; --page-fg: #1d1d1f; --page-muted: #6e6e73; --page-line: rgba(0,0,0,0.08);
+  --seg-bg: rgba(0,0,0,0.06);
+  --sys: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --sys-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --rounded: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --page-bg: #000; --page-fg: #f5f5f7; --page-muted: #86868b; --page-line: rgba(255,255,255,0.1); --seg-bg: rgba(255,255,255,0.08); }
+}
+:root[data-theme="dark"] { --page-bg: #000; --page-fg: #f5f5f7; --page-muted: #86868b; --page-line: rgba(255,255,255,0.1); --seg-bg: rgba(255,255,255,0.08); }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page-bg); color: var(--page-fg); font: 15px/1.47 var(--sys); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.page { max-width: 1960px; margin: 0 auto; padding: 40px 16px 96px; }
+.page-head { max-width: 760px; margin-bottom: 8px; }
+.page-head h1 { font: 700 34px/1.1 var(--sys-display); letter-spacing: -0.022em; margin: 0 0 8px; text-wrap: balance; }
+.page-head p { margin: 0; color: var(--page-muted); font-size: 17px; letter-spacing: -0.01em; text-wrap: pretty; }
+.decided { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; padding: 0; list-style: none; }
+.decided li { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--seg-bg); }
+.section { margin-top: 48px; }
+.section-head { display: flex; align-items: baseline; gap: 12px; padding-bottom: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--page-line); }
+.section-head h2 { margin: 0; font: 600 22px/1.2 var(--sys-display); letter-spacing: -0.015em; }
+.section-head span { color: var(--page-muted); font-size: 13px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 40px 28px; }
+figure { margin: 0; }
+figcaption { margin-top: 12px; display: flex; gap: 12px; align-items: baseline; justify-content: space-between; }
+figcaption b { font-weight: 600; letter-spacing: -0.01em; }
+figcaption p { margin: 2px 0 0; color: var(--page-muted); font-size: 13.5px; text-wrap: pretty; }
+.replay { flex: none; border: 0; background: var(--seg-bg); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 500; transition: transform 100ms ease-out; }
+.replay:active { transform: scale(0.96); }
+
+/* ---------- Device shell (Figma frame 1:5) ---------- */
+.fit { width: 100%; max-width: 904px; }
+.device { position: relative; width: 904px; height: 600px; transform-origin: 0 0; }
+.bezel { position: absolute; left: 0; top: 0; width: 900px; height: 600px; border-radius: 34px;
+  background: linear-gradient(180deg, #f8f8f8 0%, #e6e6e6 100%); border: 1px solid #d4d4d4;
+  box-shadow: 0 1px 0 #fff inset, 0 30px 60px -30px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.08); }
+.glass { position: absolute; left: 50px; top: 40px; width: 800px; height: 520px; background: #000; border-radius: 24px; padding: 8px; }
+.screen { position: relative; width: 784px; height: 504px; border-radius: 16px; overflow: hidden; background: #000; color: #f5f5f7;
+  font-family: var(--sys); -webkit-font-smoothing: antialiased; isolation: isolate; user-select: none; }
+.side { position: absolute; left: 900px; top: 459px; width: 4px; height: 96px; padding: 0; border: 0; border-radius: 0 3px 3px 0;
+  background: linear-gradient(90deg, #cfcfcf, #e2e2e2); box-shadow: 1px 0 0 #bdbdbd; touch-action: none; }
+.side::before { content: ""; position: absolute; inset: -8px -16px -8px -10px; }
+.side.down { transform: translateX(-2px); background: #bdbdbd; }
+.side:focus-visible { outline: 2px solid #0a84ff; outline-offset: 4px; }
+.side.want::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: #ff6a00; animation: breathe 1.6s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: 0.25; } }
+
+/* ---------- Screen primitives ---------- */
+.fill { position: absolute; inset: 0; }
+.tnum { font-variant-numeric: tabular-nums; }
+.in { animation: materialize var(--spring-ms, 450ms) var(--spring, ease) both; }
+.in-2 { animation-delay: 60ms; } .in-3 { animation-delay: 120ms; }
+@keyframes materialize { from { opacity: 0; transform: translateY(10px) scale(0.985); filter: blur(6px); } }
+.screen-root { --ink: #fff; transition: --c1 500ms ease, --c2 500ms ease; }
+.screen-root.on-fire { --ink: #000; }
+.status { position: absolute; top: 0; left: 0; right: 0; height: 38px; padding: 0 22px; display: flex; align-items: center; justify-content: space-between;
+  font: 600 13px/1 var(--sys); color: var(--ink); z-index: 8; pointer-events: none; transition: color 300ms ease; }
+.status span { display: inline-flex; align-items: center; gap: 6px; }
+.batt { width: 22px; height: 11px; border: 1px solid currentColor; border-radius: 3.5px; padding: 1px; opacity: 0.8; }
+.batt i { display: block; height: 100%; width: 82%; background: currentColor; border-radius: 2px; }
+.batt.charge i { background: #34d17a; }
+.btn { border: 0; border-radius: 999px; padding: 11px 20px; font: 600 15px/1 var(--sys); letter-spacing: -0.01em; background: #fff; color: #000;
+  transition: transform 100ms ease-out, opacity 100ms ease-out; }
+.btn:active { transform: scale(0.96); opacity: 0.85; }
+.btn.ghost { background: rgba(255,255,255,0.1); color: #fff; }
+.btn.pri { background: var(--c2); color: #000; }
+.btn.sm { padding: 7px 12px; font-size: 13px; }
+.on-fire .btn.ghost { background: rgba(0,0,0,0.12); color: #000; }
+.mute { color: rgba(235,235,245,0.58); }
+.label { font: 600 12px/1.2 var(--sys); letter-spacing: 0.01em; color: rgba(235,235,245,0.58); }
+.say { font: 600 34px/1.1 var(--sys-display); letter-spacing: -0.025em; margin: 0; text-wrap: balance; }
+.h1 { font: 600 30px/1.1 var(--sys-display); letter-spacing: -0.025em; margin: 0; }
+.acc { color: var(--c1); }
+.card { border-radius: 20px; background: #111113; padding: 16px 18px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--sys); padding: 5px 9px; border-radius: 999px; background: rgba(255,255,255,0.08); color: rgba(235,235,245,0.75); white-space: nowrap; }
+.chip.c { background: color-mix(in srgb, var(--c2) 18%, transparent); color: var(--c1); }
+.chip.warn { background: rgba(255,106,0,0.16); color: #ff9a4d; }
+.chip.ok { background: rgba(52,209,122,0.16); color: #7fe0a8; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.content { z-index: 5; pointer-events: none; }
+.content * { pointer-events: auto; }
+.on-fire .say, .on-fire .h1, .on-fire .acc { color: #000; }
+.on-fire .mute, .on-fire .label { color: rgba(0,0,0,0.66); }
+.press-bar { position: absolute; right: 0; top: 406px; height: 98px; width: 5px; border-radius: 4px 0 0 4px; background: #000; animation: breathe 1.4s ease-in-out infinite; z-index: 6; }
+.list-row { display: flex; gap: 14px; align-items: center; padding: 12px 0; border-top: 0.5px solid rgba(255,255,255,0.1); }
+.check { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.3); flex: none; display: grid; place-items: center; color: #000; }
+.check.on { background: var(--c2); border-color: var(--c2); }
+.fade-bottom { -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent); mask-image: linear-gradient(to bottom, #000 75%, transparent); }
+.seg-mini { display: flex; padding: 3px; border-radius: 12px; background: rgba(255,255,255,0.08); }
+.seg-mini span { flex: 1; text-align: center; padding: 8px 6px; border-radius: 9px; font-size: 13.5px; font-weight: 500; color: rgba(235,235,245,0.6); }
+.seg-mini span.on { background: #2c2c2e; color: #fff; }
+.set-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 0; font-size: 15px; }
+.set-row + .set-row { border-top: 0.5px solid rgba(255,255,255,0.1); }
+.perm { border-radius: 22px; background: #111113; padding: 18px; display: flex; flex-direction: column; gap: 8px; border: 2px solid transparent; }
+.perm.on { border-color: var(--c2); }
+
+/* ---------- The agent: flat circle, plain eyes ---------- */
+.ag-pos { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 4; will-change: transform; }
+.ag-squash { position: absolute; left: -52px; top: -52px; width: 104px; height: 104px; touch-action: none; cursor: grab; }
+.ag-squash:active { cursor: grabbing; }
+.ag-circle, .ag-eyes { position: absolute; inset: 0; transform-origin: 52px 52px; }
+.ag-circle { transition: transform var(--spring-ms) var(--spring); }
+.ag-eyes { transition: transform var(--bounce-ms) var(--bounce); pointer-events: none; }
+.ball { position: relative; width: 104px; height: 104px; border-radius: 50%; background: var(--c2); }
+.ball.talk { animation: squish 420ms ease-in-out infinite alternate; }
+@keyframes squish { to { transform: scale(1.04, 0.96); } }
+.eyes { position: absolute; left: 50%; top: 40%; width: 0; height: 0; transition: transform var(--bounce-ms) var(--bounce); }
+.eyes-in { position: absolute; }
+.scan .eyes-in { animation: scan 1.4s ease-in-out infinite alternate; }
+.talk-eyes .eyes-in { animation: blinkTalk 420ms ease-in-out infinite alternate; }
+@keyframes scan { from { transform: translateX(-4px); } to { transform: translateX(5px); } }
+@keyframes blinkTalk { to { transform: scaleY(0.88); } }
+.blink { position: absolute; animation: blink 5s infinite; }
+@keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
+.pill { position: absolute; top: -13px; width: 10px; height: 26px; border-radius: 6px; background: #fff; transition: transform var(--bounce-ms) var(--bounce), opacity 160ms ease; }
+.pill.l { left: -14px; } .pill.r { left: 6px; }
+.arc { position: absolute; top: -8px; width: 18px; height: 18px; border: 3.5px solid transparent; border-top-color: #fff; border-radius: 50%; opacity: 0; transition: opacity 160ms ease; }
+.arc.l { left: -20px; } .arc.r { left: 4px; }
+.happy .pill { opacity: 0; } .happy .arc { opacity: 1; }
+.ripple { position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--c2); animation: ripple 2s ease-out infinite; pointer-events: none; }
+.ripple.two { animation-delay: 1s; }
+@keyframes ripple { from { transform: scale(1); opacity: 0.6; } to { transform: scale(1.9); opacity: 0; } }
+.orbit { position: absolute; left: 52px; top: 52px; width: 0; height: 0; animation: spin 8s linear infinite; }
+.orbit i { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.85); }
+.orbit i.now { background: #ff6a00; animation: breathe 1.2s ease-in-out infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.burst i { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--c2); animation: burst 900ms var(--spring, ease-out) forwards; }
+@keyframes burst { from { transform: rotate(var(--a)) translateX(50px) scale(1); opacity: 1; } to { transform: rotate(var(--a)) translateX(170px) scale(0.4); opacity: 0; } }
+.zz { position: absolute; right: -12px; top: -16px; font: 700 15px var(--rounded); color: var(--c1); animation: zz 2.4s ease-in-out infinite; }
+@keyframes zz { 0% { transform: translate(0, 6px); opacity: 0; } 40% { opacity: 1; } 100% { transform: translate(10px, -14px); opacity: 0; } }
+.hop { animation: hop var(--bounce-ms) var(--bounce) both; }
+@keyframes hop { from { transform: translateY(-36px) scale(0.94, 1.06); } }
+.bloom { position: absolute; left: -300px; top: -300px; width: 600px; height: 600px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--c2) 26%, transparent), transparent); transition: transform var(--bounce-ms) var(--bounce), opacity 300ms ease; }
+
+/* ---------- Fire (Ember mesh), grown out of the circle ---------- */
+.fire { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; opacity: 0;
+  transition: clip-path 650ms var(--spring, ease), opacity 180ms ease 470ms;
+  background:
+    radial-gradient(55% 60% at 18% 85%, #ff2d00 0%, transparent 70%),
+    radial-gradient(50% 55% at 88% 12%, #ffb300 0%, transparent 70%),
+    radial-gradient(60% 55% at 62% 105%, #ff4800 0%, transparent 70%),
+    radial-gradient(45% 50% at 40% 20%, #ff9a1a 0%, transparent 70%),
+    linear-gradient(to top, #ff5200, #ff8c1a); }
+.fire.on { opacity: 1; transition: clip-path 650ms var(--spring, ease), opacity 60ms ease; }
+.fire i { position: absolute; bottom: -150px; width: 280px; height: 280px; border-radius: 50%; filter: blur(55px); opacity: 0.7; animation: flame 3.4s ease-in-out infinite alternate; }
+@keyframes flame { to { transform: translateY(-130px) scale(1.2); opacity: 0.3; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+  .in { filter: none; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useLayoutEffect, createContext, useContext } = React;
+
+/* ---------- Springs (Apple damping + response) ---------- */
+function springCurve(damping, response, n = 60) {
+  const w = (2 * Math.PI) / response;
+  const f = t => {
+    if (damping >= 1) return 1 - (1 + w * t) * Math.exp(-w * t);
+    const wd = w * Math.sqrt(1 - damping * damping);
+    return 1 - Math.exp(-damping * w * t) * (Math.cos(wd * t) + ((damping * w) / wd) * Math.sin(wd * t));
+  };
+  let T = 0.1;
+  while (T < 3) {
+    let ok = true;
+    for (let t = T; t < T + 0.25; t += 0.01) if (Math.abs(1 - f(t)) > 0.002) { ok = false; break; }
+    if (ok) break; T += 0.02;
+  }
+  const pts = [];
+  for (let i = 0; i <= n; i++) pts.push(i === n ? 1 : +f((T * i) / n).toFixed(4));
+  return { css: `linear(${pts.join(", ")})`, ms: `${Math.round(T * 1000)}ms` };
+}
+const crit = springCurve(1, 0.45), bounce = springCurve(0.75, 0.45);
+const rs = document.documentElement.style;
+rs.setProperty("--spring", crit.css); rs.setProperty("--spring-ms", crit.ms);
+rs.setProperty("--bounce", bounce.css); rs.setProperty("--bounce-ms", bounce.ms);
+
+function runSpring({ from, to, velocity = 0, damping = 1, response = 0.4, onUpdate }) {
+  const k = Math.pow((2 * Math.PI) / response, 2), c = (4 * Math.PI * damping) / response;
+  let x = from, v = velocity, last = performance.now(), raf;
+  const tick = now => {
+    const dt = Math.min(0.064, (now - last) / 1000); last = now;
+    const h = dt / 8;
+    for (let i = 0; i < 8; i++) { const a = -k * (x - to) - c * v; v += a * h; x += v * h; }
+    if (Math.abs(v) < 4 && Math.abs(x - to) < 0.4) { onUpdate(to, 0); return; }
+    onUpdate(x, v); raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+  return { stop: () => cancelAnimationFrame(raf) };
+}
+const rubberband = (over, dim, c = 0.55) => (over * dim * c) / (dim + c * Math.abs(over));
+const haptic = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
+
+/* ---------- Palette and eyes ---------- */
+const PAL = {
+  idle: ["#8cc4ff", "#4a9dff"], listen: ["#8cc4ff", "#4a9dff"], happy: ["#ffa8d3", "#ff6eb4"], think: ["#c4b1ff", "#9b7bff"],
+  warn: ["#ffa040", "#ff6a00"], ok: ["#8be8b0", "#34d17a"], sleep: ["#b0abff", "#7a73f0"], offline: ["#d1d1d6", "#8e8e93"],
+};
+const EYES = {
+  idle: { g: [6, -2], sy: 1, rot: -12 }, listen: { g: [0, 0], sy: 1.12, rot: -6 }, happy: { g: [0, -2], sy: 1, rot: 0 },
+  think: { g: [-8, -9], sy: 0.9, rot: -16 }, warn: { g: [6, 4], sy: 1, rot: -4 }, closed: { g: [0, 8], sy: 0.16, rot: 0 },
+  sad: { g: [0, 9], sy: 0.72, rot: [16, -16] }, look: { g: [10, 0], sy: 1, rot: -8 },
+};
+
+/* ---------- Shared clock ---------- */
+const Clock = createContext({ focus: 1122, limitMin: 48 });
+function useTicker() {
+  const [n, setN] = useState(0);
+  useEffect(() => { const id = setInterval(() => setN(x => x + 1), 1000); return () => clearInterval(id); }, []);
+  return { focus: Math.max(0, 18 * 60 + 42 - n), limitMin: Math.ceil(Math.max(0, 47 * 60 + 12 - n) / 60) };
+}
+const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+const I = {
+  mail: (s = 18) => <svg width={s} height={s} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><rect x="2.5" y="4.5" width="15" height="11" rx="2.5" /><path d="m3.5 6 6.5 5 6.5-5" /></svg>,
+  laptop: (s = 18) => <svg width={s} height={s} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><rect x="4" y="4.5" width="12" height="8.5" rx="1.5" /><path d="M2 15.5h16" strokeLinecap="round" /></svg>,
+  arrow: (s = 16) => <svg width={s} height={s} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>,
+  check: (s = 12) => <svg width={s} height={s} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 6.2 5 8.5l4.5-5" /></svg>,
+  chev: (s = 12) => <svg width={s} height={s} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m4.5 3 3 3-3 3" /></svg>,
+  clip: (s = 14) => <svg width={s} height={s} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M10.5 4.5 5.8 9.2a1.5 1.5 0 0 0 2.1 2.1l5-5a3 3 0 0 0-4.2-4.2l-5 5a4.5 4.5 0 0 0 6.4 6.4l4-4" /></svg>,
+};
+
+/* ---------- Device shell from Figma; side button = approval press ---------- */
+function Device({ children, onPress, want }) {
+  const wrap = useRef(null);
+  const [scale, setScale] = useState(1), [down, setDown] = useState(false);
+  useEffect(() => {
+    const ro = new ResizeObserver(([e]) => setScale(Math.min(1, e.contentRect.width / 904)));
+    ro.observe(wrap.current); return () => ro.disconnect();
+  }, []);
+  const press = () => { setDown(true); haptic(18); onPress && onPress(); };
+  return (
+    <div className="fit" ref={wrap} style={{ height: 600 * scale }}>
+      <div className="device" style={{ transform: `scale(${scale})` }}>
+        <div className="bezel"><div className="glass"><div className="screen">{children}</div></div></div>
+        <button className={"side" + (down ? " down" : "") + (want ? " want" : "")} aria-label="Approve button"
+          onPointerDown={press} onPointerUp={() => setDown(false)} onPointerLeave={() => setDown(false)}
+          onKeyDown={e => (e.key === "Enter" || e.key === " ") && press()} onKeyUp={() => setDown(false)} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Flick: X/Y springs, elastic leash, velocity handoff, squash from speed ---------- */
+function useFlick(home, enabled) {
+  const pos = useRef(null), squash = useRef(null), st = useRef({ x: home[0], y: home[1], vx: 0, vy: 0 }), sp = useRef({}), drag = useRef(null);
+  const stop = () => { sp.current.x && sp.current.x.stop(); sp.current.y && sp.current.y.stop(); };
+  const apply = () => {
+    const s = st.current; if (!pos.current) return;
+    pos.current.style.transform = `translate(${s.x}px, ${s.y}px)`;
+    const v = Math.hypot(s.vx, s.vy), k = Math.min(0.18, v / 6000), a = (Math.atan2(s.vy, s.vx) * 180) / Math.PI;
+    squash.current.style.transform = `rotate(${a}deg) scale(${1 + k}, ${1 - k}) rotate(${-a}deg)`;
+  };
+  const springTo = (damping, vx = 0, vy = 0) => {
+    stop();
+    sp.current.x = runSpring({ from: st.current.x, to: home[0], velocity: vx, damping, response: 0.5, onUpdate: (x, v) => { st.current.x = x; st.current.vx = v; apply(); } });
+    sp.current.y = runSpring({ from: st.current.y, to: home[1], velocity: vy, damping, response: 0.5, onUpdate: (y, v) => { st.current.y = y; st.current.vy = v; apply(); } });
+  };
+  useLayoutEffect(apply, []);
+  useEffect(() => { springTo(0.85, st.current.vx, st.current.vy); }, [home[0], home[1]]);
+  useEffect(() => stop, []);
+  const local = e => {
+    const r = pos.current.closest(".screen").getBoundingClientRect(), k = r.width / 784;
+    return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k };
+  };
+  if (!enabled) return { pos, squash, handlers: {} };
+  return { pos, squash, handlers: {
+    onPointerDown: e => {
+      stop(); e.currentTarget.setPointerCapture(e.pointerId); haptic(8);
+      const p = local(e);
+      drag.current = { ox: p.x - st.current.x, oy: p.y - st.current.y, hist: [{ ...p, t: performance.now() }] };
+    },
+    onPointerMove: e => {
+      const d = drag.current; if (!d) return;
+      const p = local(e), rx = p.x - d.ox - home[0], ry = p.y - d.oy - home[1];
+      const h = d.hist; h.push({ ...p, t: performance.now() }); if (h.length > 6) h.shift();
+      const dt = (h[h.length - 1].t - h[0].t) / 1000 || 1;
+      st.current = { x: home[0] + Math.sign(rx) * rubberband(Math.abs(rx), 420), y: home[1] + Math.sign(ry) * rubberband(Math.abs(ry), 420),
+        vx: (h[h.length - 1].x - h[0].x) / dt, vy: (h[h.length - 1].y - h[0].y) / dt };
+      apply();
+    },
+    onPointerUp: () => { if (!drag.current) return; drag.current = null; springTo(0.5, st.current.vx, st.current.vy); },
+    onPointerCancel: () => { drag.current = null; springTo(0.8); },
+  } };
+}
+
+/* ---------- The agent ---------- */
+function Agent({ at, eyes = "idle", eyesOnly = false, fx = [], k, z }) {
+  const { pos, squash, handlers } = useFlick(at, !eyesOnly);
+  const e = EYES[eyes];
+  const rot = side => (Array.isArray(e.rot) ? e.rot[side === "l" ? 0 : 1] : e.rot);
+  const pill = side => ({ transform: `rotate(${rot(side)}deg) translateY(${side === "l" ? 2 : 0}px) scaleY(${e.sy})` });
+  const has = x => fx.includes(x);
+  return (
+    <div className="ag-pos" ref={pos} style={z ? { zIndex: z } : null}>
+      <div className="bloom" style={{ transform: `scale(${0.45 + at[2] * 0.45})`, opacity: eyesOnly ? 0 : 1 }} />
+      {has("burst") && <div className="burst" key={"b" + k}>{Array.from({ length: 10 }, (_, i) => <i key={i} style={{ "--a": `${i * 36}deg` }} />)}</div>}
+      <div className="ag-squash" ref={squash} {...handlers}>
+        <div className="ag-circle" style={{ transform: `scale(${eyesOnly ? 0 : at[2]})` }}>
+          {has("orbit") && <div className="orbit">{[0, 1, 2, 3, 4].map(i => <i key={i} className={i === 4 ? "now" : ""} style={{ transform: `rotate(${i * 72}deg) translateX(82px)` }} />)}</div>}
+          <div key={"h" + k} className={has("hop") ? "hop" : ""}>
+            <div className={"ball" + (has("talk") ? " talk" : "")}>
+              {has("talk") && <><i className="ripple" /><i className="ripple two" /></>}
+              {has("zz") && <span className="zz">z</span>}
+            </div>
+          </div>
+        </div>
+        <div className={"ag-eyes" + (eyes === "think" ? " scan" : "") + (has("talk") ? " talk-eyes" : "") + (eyes === "happy" ? " happy" : "")}
+          style={{ transform: `scale(${eyesOnly ? 3.2 : at[2]})` }}>
+          <div className="eyes" style={{ transform: `translate(${e.g[0]}px, ${e.g[1]}px)` }}>
+            <div className="eyes-in"><div className="blink">
+              <i className="pill l" style={pill("l")} /><i className="pill r" style={pill("r")} />
+              <i className="arc l" /><i className="arc r" />
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Frame({ color, docked, offline, onFire, children }) {
+  const c = PAL[color];
+  return (
+    <div className={"fill screen-root" + (onFire ? " on-fire" : "")} style={{ "--c1": c[0], "--c2": c[1] }}>
+      <div className="status">
+        <span className="tnum">10:42</span>
+        <span>{offline ? "Offline" : docked ? "Docked" : "82%"} <span className={"batt" + (docked ? " charge" : "")}><i /></span></span>
+      </div>
+      {children}
+    </div>
+  );
+}
+const Content = ({ children }) => <div className="fill content">{children}</div>;
+
+/* ================= Screens ================= */
+
+function HomeS() {
+  return <Frame color="idle">
+    <Agent at={[392, 186, 1.5]} eyes="idle" />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 0, right: 0, bottom: 64, textAlign: "center" }}>
+        <p className="say" style={{ fontSize: 30 }}>Hold Talk and just say it.</p>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 14 }}>
+          <span className="chip c"><i className="dot" />1 agent working</span>
+          <span className="chip">3 tasks today</span>
+          <span className="chip">Focus 2 of 4</span>
+        </div>
+      </div>
+    </Content>
+  </Frame>;
+}
+
+function DumpS() {
+  return <Frame color="listen">
+    <Agent at={[230, 262, 1.7]} eyes="listen" fx={["talk"]} />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 430, top: 112, width: 320 }}>
+        <div className="label acc" style={{ fontSize: 14 }}>Listening</div>
+        <p style={{ margin: "10px 0 0", font: "500 25px/1.32 var(--sys-display)", letterSpacing: "-0.02em" }}>okay so before Sunday I need to send Jonas the pitch deck, and my screenshots folder is a mess, clean it up but keep<span style={{ opacity: 0.4 }}> the ones from this week…</span></p>
+      </div>
+      <span className="label" style={{ position: "absolute", left: 430, bottom: 30 }}>Let go of Talk to save</span>
+    </Content>
+  </Frame>;
+}
+
+function NoteS() {
+  const tasks = [["mail", "Send pitch deck to Jonas", "Mail agent, asks before it sends"], ["laptop", "Clean up Screenshots folder", "PC agent on your MacBook"]];
+  return <Frame color="happy">
+    <Agent at={[100, 128, 0.95]} eyes="happy" />
+    <Content>
+      <div className="label" style={{ position: "absolute", left: 40, top: 204, width: 120, textAlign: "center" }}>Flick me</div>
+      <div style={{ position: "absolute", left: 200, right: 34, top: 64 }}>
+        <p className="say in" style={{ fontSize: 36 }}>Saved. <span className="acc">Two tasks</span> in there.</p>
+        <div className="in in-2" style={{ display: "grid", gap: 10, marginTop: 20 }}>
+          {tasks.map(([ic, t, m]) => <div className="card" key={t} style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <span className="acc">{I[ic](20)}</span>
+            <div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{t}</div><div className="mute" style={{ fontSize: 13 }}>{m}</div></div>
+          </div>)}
+        </div>
+        <div className="in in-3" style={{ display: "flex", gap: 10, marginTop: 18 }}>
+          <button className="btn pri">Do both</button>
+          <button className="btn ghost">Keep as todos</button>
+        </div>
+      </div>
+    </Content>
+  </Frame>;
+}
+
+function AgentS() {
+  return <Frame color="think">
+    <Agent at={[392, 176, 1.1]} eyes="think" fx={["orbit"]} />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 0, right: 0, bottom: 50, textAlign: "center" }}>
+        <p className="say" style={{ fontSize: 30 }}>Tidying your <span className="acc">Screenshots</span>…</p>
+        <p className="mute" style={{ margin: "8px 0 0", fontSize: 16 }}>4 of 5 done · moved 167 to Archive, kept 31 from this week</p>
+      </div>
+    </Content>
+  </Frame>;
+}
+
+/* Approval screens: the circle grows into a mesh-gradient fire and only the eyes stay. */
+const PRE = [392, 176, 1.1], EYES_AT = [590, 236, 1], DONE = [392, 196, 1.3];
+function FireFrame({ phase, children, done }) {
+  const fire = phase === "fire";
+  const clip = fire ? `circle(900px at ${EYES_AT[0]}px ${EYES_AT[1]}px)`
+    : phase === "pre" ? `circle(${52 * PRE[2]}px at ${PRE[0]}px ${PRE[1]}px)` : `circle(${52 * DONE[2]}px at ${DONE[0]}px ${DONE[1]}px)`;
+  const at = fire ? EYES_AT : phase === "pre" ? PRE : DONE;
+  const eyes = fire ? "warn" : phase === "pre" ? "think" : "happy";
+  return <Frame color={fire ? "warn" : phase === "pre" ? "think" : "ok"} onFire={fire}>
+    <div className={"fire" + (fire ? " on" : "")} style={{ clipPath: clip, WebkitClipPath: clip }}>
+      {[["-40px", "#ffcf33", "0s"], ["180px", "#ff2d00", "0.8s"], ["400px", "#ffb000", "1.6s"], ["600px", "#ff3d00", "0.4s"]].map(([l, b, d], i) => <i key={i} style={{ left: l, background: b, animationDelay: d }} />)}
+    </div>
+    <Agent at={at} eyes={eyes} eyesOnly={fire} fx={phase === "done" ? ["hop", "burst"] : phase === "pre" ? ["orbit"] : []} k={phase} />
+    <Content>
+      {fire && <><div className="in" style={{ position: "absolute", left: 40, top: 0, bottom: 0, width: 430, display: "flex", flexDirection: "column", justifyContent: "center", animationDelay: "160ms" }}>{children}</div><div className="press-bar" /></>}
+      {phase === "done" && <div className="in" style={{ position: "absolute", left: 0, right: 0, bottom: 74, textAlign: "center" }}>{done}</div>}
+    </Content>
+  </Frame>;
+}
+
+function DeleteS({ phase }) {
+  return <FireFrame phase={phase} done={<><p className="say">Thanks! <span className="acc">All clean.</span></p><p className="mute" style={{ margin: "8px 0 0", fontSize: 16 }}>16 duplicates deleted, 48.2 MB back.</p></>}>
+    <p className="say" style={{ fontSize: 48 }}>Can I delete 16 files?</p>
+    <p className="mute" style={{ margin: "12px 0 22px", fontSize: 16, lineHeight: 1.45 }}>Duplicates in Screenshots on your MacBook, 48.2 MB. I always ask before deleting.</p>
+    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <span className="say" style={{ fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>Press the side button {I.arrow()}</span>
+      <button className="btn ghost sm">Not now</button>
+    </div>
+  </FireFrame>;
+}
+
+function SendS({ phase }) {
+  return <FireFrame phase={phase} done={<><p className="say">Sent to <span className="acc">Jonas</span>.</p><p className="mute" style={{ margin: "8px 0 0", fontSize: 16 }}>Pitch deck delivered at 10:51.</p></>}>
+    <p className="say" style={{ fontSize: 42 }}>Send this to Jonas?</p>
+    <div style={{ margin: "16px 0 18px", padding: "14px 16px", borderRadius: 18, background: "rgba(0,0,0,0.12)", color: "#000", fontSize: 14.5, lineHeight: 1.5 }}>
+      <div><span style={{ opacity: 0.6 }}>Subject </span><b>Pitch deck for Sunday</b></div>
+      <div style={{ opacity: 0.75 }}>Hey Jonas, here’s the latest deck for Sunday. Shout if anything looks off.</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontWeight: 600 }}>{I.clip()} Pitch-v7.pdf · 4.1 MB</div>
+    </div>
+    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <span className="say" style={{ fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>Sending leaves your machines {I.arrow()}</span>
+      <button className="btn ghost sm">Edit first</button>
+    </div>
+  </FireFrame>;
+}
+
+function CantReachS() {
+  return <Frame color="offline">
+    <Agent at={[196, 246, 1.5]} eyes="sad" />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 370, right: 40, top: 0, bottom: 0, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <p className="say" style={{ fontSize: 34 }}>I can’t reach your MacBook.</p>
+        <p className="mute" style={{ margin: "10px 0 18px", fontSize: 16, lineHeight: 1.45 }}>It’s offline on Tailscale. I kept the task and I’ll try again as soon as it’s back.</p>
+        <div className="card" style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 18 }}>
+          <span className="mute">{I.laptop(20)}</span>
+          <div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>Clean up Screenshots folder</div><div className="mute" style={{ fontSize: 13 }}>PC agent · paused</div></div>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}><button className="btn">Try again</button><button className="btn ghost">Keep as todo</button></div>
+      </div>
+    </Content>
+  </Frame>;
+}
+
+function NotesS() {
+  const notes = [
+    ["Before Sunday I need to send Jonas the pitch deck. And my screenshots folder is a mess…", "10:42", <span className="chip c">2 tasks</span>],
+    ["Idea: the dock could show a tiny ring when an agent is busy", "09:15", <span className="chip">Cloud transcript</span>],
+    ["Call the venue about the projector adapter", "Yesterday", <span className="chip warn"><i className="dot" />On device, re-checks when online</span>],
+    ["Rename the demo branch before we record", "Yesterday", <span className="chip">You edited this, kept your version</span>],
+    ["Check the 5000 mAh cell fits the shell", "Tue", <span className="chip">Cloud transcript</span>],
+  ];
+  return <Frame color="idle">
+    <Agent at={[716, 76, 0.5]} eyes="idle" />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 40, top: 54 }}><p className="h1">Notes</p><div className="mute" style={{ fontSize: 14 }}>Every dump, saved first</div></div>
+      <div className="in in-2 fade-bottom" style={{ position: "absolute", left: 40, right: 40, top: 126, bottom: 0 }}>
+        {notes.map(([t, time, chip]) => <div className="list-row" key={t} style={{ display: "block" }}>
+          <div style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t}</div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 6 }}><span className="mute" style={{ fontSize: 13 }}>{time}</span>{chip}</div>
+        </div>)}
+      </div>
+    </Content>
+  </Frame>;
+}
+
+function OfflineS() {
+  return <Frame color="offline" offline>
+    <Agent at={[230, 262, 1.7]} eyes="listen" fx={["talk"]} />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 430, top: 104, width: 320 }}>
+        <div className="label" style={{ fontSize: 14 }}>Listening · on device</div>
+        <p style={{ margin: "10px 0 0", font: "500 25px/1.32 var(--sys-display)", letterSpacing: "-0.02em" }}>remind me to call the venue about the projector<span style={{ opacity: 0.4 }}> adapter…</span></p>
+        <p className="mute" style={{ margin: "22px 0 0", fontSize: 14.5, lineHeight: 1.45 }}>No connection. I’ll save this now and re-check it with the cloud once you’re back, unless you edit it first.</p>
+      </div>
+    </Content>
+  </Frame>;
+}
+
+function TodoS() {
+  const rows = [
+    { t: "Clean up Screenshots folder", done: true, who: <span className="chip ok">PC agent · done</span> },
+    { t: "Send pitch deck to Jonas", who: <span className="chip warn"><i className="dot" />Mail agent · waiting for your press</span> },
+    { t: "Record backup demo video", who: <button className="btn ghost sm">Hand to agent</button> },
+    { t: "Export dock render", who: <span className="chip">You</span> },
+  ];
+  return <Frame color="idle">
+    <Agent at={[716, 76, 0.5]} eyes="idle" />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 40, top: 54 }}><p className="h1">Today</p><div className="mute" style={{ fontSize: 14 }}>4 tasks · 1 done</div></div>
+      <div className="in in-2" style={{ position: "absolute", left: 40, right: 40, top: 130 }}>
+        {rows.map(r => <div className="list-row" key={r.t}>
+          <span className={"check" + (r.done ? " on" : "")}>{r.done && I.check(12)}</span>
+          <span style={{ flex: 1, fontSize: 16, color: r.done ? "rgba(235,235,245,0.4)" : undefined, textDecoration: r.done ? "line-through" : "none" }}>{r.t}</span>
+          {r.who}
+        </div>)}
+      </div>
+      <div className="label" style={{ position: "absolute", left: 40, bottom: 26 }}>Our own list · Todoist coming soon</div>
+    </Content>
+  </Frame>;
+}
+
+function FocusS() {
+  const { focus } = useContext(Clock), pct = focus / 1500, r = 104, L = 2 * Math.PI * r;
+  return <Frame color="sleep">
+    <svg width="240" height="240" style={{ position: "absolute", left: 392 - 120, top: 176 - 120, transform: "rotate(-90deg)", zIndex: 3 }}>
+      <circle cx="120" cy="120" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
+      <circle cx="120" cy="120" r={r} fill="none" stroke="var(--c2)" strokeWidth="5" strokeLinecap="round" strokeDasharray={L} strokeDashoffset={L * (1 - pct)} />
+    </svg>
+    <Agent at={[392, 176, 1.25]} eyes="closed" />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 0, right: 0, bottom: 40, textAlign: "center" }}>
+        <div className="tnum" style={{ font: "600 64px/1 var(--rounded)", letterSpacing: "-0.03em" }}>{mmss(focus)}</div>
+        <div className="mute" style={{ marginTop: 8, fontSize: 15 }}>Focus 2 of 4 · I’ll hold everything that isn’t urgent</div>
+      </div>
+      <button className="btn ghost sm" style={{ position: "absolute", right: 24, bottom: 24 }}>Pause</button>
+    </Content>
+  </Frame>;
+}
+
+function DockS() {
+  const { focus, limitMin } = useContext(Clock);
+  const act = [["PC agent", "Deleted 16 duplicates", "now"], ["Mail agent", "Drafted email to Jonas", "2m"], ["Notes", "Saved a note", "4m"]];
+  return <Frame color="sleep" docked>
+    <Content>
+      <div style={{ position: "absolute", inset: "50px 20px 20px", display: "grid", gridTemplateColumns: "1.15fr 1fr", gridTemplateRows: "1fr 1fr", gap: 12 }}>
+        <div className="card in" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div className="label acc">Focus · 2 of 4</div>
+          <div className="tnum" style={{ font: "600 88px/0.9 var(--rounded)", letterSpacing: "-0.04em" }}>{mmss(focus)}</div>
+        </div>
+        <div className="card in in-2">
+          <div className="label">Today</div>
+          {["Send pitch deck to Jonas", "Record backup demo video", "Export dock render"].map(t => <div key={t} style={{ fontSize: 14.5, padding: "5px 0" }}>{t}</div>)}
+        </div>
+        <div className="card in in-2">
+          <div className="label">Claude limits reset in</div>
+          <div className="tnum acc" style={{ font: "600 44px/1.15 var(--rounded)" }}>{limitMin} min</div>
+        </div>
+        <div className="card in in-3">
+          <div className="label" style={{ marginBottom: 2 }}>Agents</div>
+          {act.map(([w, t, a]) => <div key={t} style={{ display: "flex", gap: 8, fontSize: 14, padding: "4px 0" }}><span style={{ flex: 1 }}>{t}</span><span className="mute">{w} · {a}</span></div>)}
+        </div>
+      </div>
+    </Content>
+    <Agent at={[376, 92, 0.42]} eyes="closed" fx={["zz"]} z={6} />
+  </Frame>;
+}
+
+function LimitsS() {
+  return <Frame color="ok" docked>
+    <Agent at={[392, 170, 1.4]} eyes="happy" fx={["hop", "burst"]} />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 0, right: 0, bottom: 52, textAlign: "center" }}>
+        <p className="say">Claude limits are <span className="acc">back</span>.</p>
+        <p className="mute" style={{ margin: "8px 0 18px", fontSize: 16 }}>Fresh window until 15:42. Start a focus session?</p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}><button className="btn pri">Start focus</button><button className="btn ghost">Later</button></div>
+      </div>
+    </Content>
+  </Frame>;
+}
+
+function SettingsS() {
+  return <Frame color="idle">
+    <Agent at={[716, 76, 0.5]} eyes="idle" />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 30, top: 54 }}><p className="h1">Settings</p></div>
+      <div className="in in-2" style={{ position: "absolute", left: 30, right: 30, top: 112, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
+          <div><div className="label" style={{ margin: "0 0 6px 4px" }}>AI provider</div>
+            <div className="card" style={{ padding: "4px 16px" }}>
+              <div className="set-row"><span>Anthropic</span><span className="mute tnum">sk-ant-…4f2a</span></div>
+              <div className="set-row"><span>Your key</span><span className="chip ok">Connected</span></div>
+            </div></div>
+          <div><div className="label" style={{ margin: "0 0 6px 4px" }}>Where I run</div>
+            <div className="seg-mini"><span className="on">Our cloud</span><span>Own VM</span><span>Self-hosted</span></div>
+            <div className="mute" style={{ fontSize: 13, margin: "8px 4px 0" }}>Switch any time. You can host all of it yourself.</div></div>
+        </div>
+        <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
+          <div><div className="label" style={{ margin: "0 0 6px 4px" }}>Permission mode</div>
+            <div className="card" style={{ padding: "4px 16px" }}><div className="set-row"><span>Auto</span><span className="mute" style={{ display: "flex", alignItems: "center", gap: 6 }}>Asks for risky actions {I.chev()}</span></div></div></div>
+          <div><div className="label" style={{ margin: "0 0 6px 4px" }}>Connected devices</div>
+            <div className="card" style={{ padding: "4px 16px" }}>
+              <div className="set-row"><span>MacBook Pro</span><span className="chip ok"><i className="dot" />Online · Tailscale</span></div>
+              <div className="set-row"><span>Studio PC</span><span className="chip"><i className="dot" />Offline</span></div>
+              <div className="set-row"><span className="acc">Add a machine</span><span className="mute">{I.chev()}</span></div>
+            </div></div>
+        </div>
+      </div>
+    </Content>
+  </Frame>;
+}
+
+function PermissionS() {
+  const modes = [
+    ["Manual", "Every action waits for your press.", <span className="chip">Most control</span>],
+    ["Auto", "I decide when to ask. The risky ones always ask.", <span className="chip c">Default</span>],
+    ["Full", "Runs everything without asking, like Claude Code.", <span className="chip warn">Your sandbox or VM only</span>],
+  ];
+  return <Frame color="idle">
+    <Agent at={[84, 92, 0.6]} eyes="look" />
+    <Content>
+      <div className="in" style={{ position: "absolute", left: 140, top: 62 }}><p className="h1">Permission mode</p><div className="mute" style={{ fontSize: 14 }}>How much I do before asking you</div></div>
+      <div className="in in-2" style={{ position: "absolute", left: 30, right: 30, top: 164, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        {modes.map(([n, d, chip]) => <div key={n} className={"perm" + (n === "Auto" ? " on" : "")}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><b style={{ fontSize: 20, letterSpacing: "-0.02em" }}>{n}</b>{n === "Auto" && <span className="check on">{I.check(12)}</span>}</div>
+          <div className="mute" style={{ fontSize: 14, lineHeight: 1.4, minHeight: 60 }}>{d}</div>
+          <div>{chip}</div>
+        </div>)}
+      </div>
+      <div className="in in-3" style={{ position: "absolute", left: 30, right: 30, bottom: 30 }}>
+        <div className="label" style={{ marginBottom: 8 }}>Always needs your press, except in Full</div>
+        <div style={{ display: "flex", gap: 8 }}>{["Send", "Delete", "Pay", "Leaving your machines"].map(x => <span key={x} className="chip warn">{x}</span>)}</div>
+      </div>
+    </Content>
+  </Frame>;
+}
+
+/* ---------- Gallery ---------- */
+const SECTIONS = [
+  { title: "Core flow", src: "docs/DEMO.md", items: [
+    { title: "Home", note: "Handheld and idle. One thing to do: hold Talk.", C: HomeS },
+    { title: "Dump", note: "Speak a raw thought. It’s saved as a note the moment you let go.", C: DumpS },
+    { title: "Note + Suggestion", note: "The note is saved, then the Device suggests tasks. One press accepts.", C: NoteS },
+    { title: "Task agent working", note: "The PC agent works on the laptop over Tailscale. Steps orbit the circle.", C: AgentS },
+    { title: "Approval press · delete", note: "A risky action. The circle grows into fire, only the eyes stay. Press the side button.", C: DeleteS, fire: true },
+  ] },
+  { title: "Risky actions", src: "docs/adr/0004 · 0006", items: [
+    { title: "Approval press · send", note: "Sending leaves your machines, so it always asks, with a preview of what goes out.", C: SendS, fire: true },
+    { title: "Can’t reach a machine", note: "The PC agent is offline. The task is kept, not lost.", C: CantReachS },
+  ] },
+  { title: "Notes", src: "docs/APPS.md · adr/0005", items: [
+    { title: "Notes", note: "Every dump, with where its transcript came from. Edited notes are never overwritten.", C: NotesS },
+    { title: "Offline dump", note: "No connection: transcribed on the Device, re-checked with the cloud later.", C: OfflineS },
+  ] },
+  { title: "Tasks", src: "docs/APPS.md", items: [
+    { title: "Today", note: "Each task is a plain todo or handed to an agent. One integration for now.", C: TodoS },
+  ] },
+  { title: "Focus and Dock", src: "docs/APPS.md · SHAPE.md", items: [
+    { title: "Focus timer", note: "The agent closes its eyes while you focus.", C: FocusS },
+    { title: "Dock mode", note: "Companion screen: focus, today’s tasks, Claude limits, agent activity.", C: DockS },
+    { title: "Claude limits reset", note: "The fun hook for builders: it tells you the moment you’re back.", C: LimitsS },
+  ] },
+  { title: "Settings", src: "docs/APPS.md · STACK.md", items: [
+    { title: "Settings", note: "Your own key, where the server runs, permission mode, connected devices.", C: SettingsS },
+    { title: "Permission mode", note: "Manual, Auto or Full. Hard rules sit on top of Manual and Auto.", C: PermissionS },
+  ] },
+];
+
+function Card({ item }) {
+  const ref = useRef(null), timers = useRef([]);
+  const [phase, setPhase] = useState(item.fire ? "pre" : null);
+  const later = (fn, ms) => timers.current.push(setTimeout(fn, ms));
+  useEffect(() => {
+    if (!item.fire) return;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { later(() => setPhase(p => (p === "pre" ? "fire" : p)), 600); io.disconnect(); } }, { threshold: 0.5 });
+    io.observe(ref.current);
+    return () => { io.disconnect(); timers.current.forEach(clearTimeout); };
+  }, []);
+  const onPress = () => setPhase(p => (p === "fire" ? "done" : p));
+  const replay = () => { setPhase("pre"); later(() => setPhase("fire"), 500); };
+  const C = item.C;
+  return (
+    <figure ref={ref}>
+      <Device onPress={onPress} want={phase === "fire"}><C phase={phase} /></Device>
+      <figcaption>
+        <div><b>{item.title}</b><p>{item.note}</p></div>
+        {item.fire && <button className="replay" onClick={replay}>{phase === "done" ? "Replay" : "Restart"}</button>}
+      </figcaption>
+    </figure>
+  );
+}
+
+function App() {
+  const clock = useTicker();
+  return (
+    <Clock.Provider value={clock}>
+      <div className="page">
+        <header className="page-head">
+          <h1>Device screens</h1>
+          <p>Direction B with Ember’s fire for approvals, applied to every screen in the docs. Drag the circle. On the orange screens, press the side button.</p>
+          <ul className="decided">
+            <li>Black background</li><li>Flat circle with eyes</li><li>No gloss, no glow</li><li>Colour per mood</li><li>The circle grows into fire for risky actions</li><li>Mesh-gradient fire</li><li>Eyes only for decisions</li>
+          </ul>
+        </header>
+        {SECTIONS.map(s => <section className="section" key={s.title}>
+          <div className="section-head"><h2>{s.title}</h2><span>{s.src}</span></div>
+          <div className="gallery">{s.items.map(it => <Card key={it.title} item={it} />)}</div>
+        </section>)}
+      </div>
+    </Clock.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
