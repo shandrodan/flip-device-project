@@ -1,0 +1,20 @@
+# Server + Device on one box:  docker compose -f docker/compose.yml up --build
+# Then open http://localhost:5173 (Device) and http://localhost:5173/dock (Dock).
+services:
+  server:
+    build: { context: .., dockerfile: docker/server.Dockerfile }
+    env_file: { path: ../.env, required: false }
+    environment:
+      PC_AGENTS: ${PC_AGENTS:-This computer=ws://host.docker.internal:7077}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["8787:8787"]
+    volumes: [flip-data:/data]
+  device:
+    build: { context: .., dockerfile: docker/device.Dockerfile }
+    environment: { SERVER_URL: "http://server:8787" }
+    ports: ["5173:5173"]
+    mem_limit: 512m
+    cpus: 1
+    depends_on: [server]
+volumes:
+  flip-data:
