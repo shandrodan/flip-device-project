@@ -14,7 +14,7 @@ import { TaskView } from "./screens/TaskView";
 import { Notes } from "./screens/Notes";
 import { NoteView } from "./screens/NoteView";
 import { Todo } from "./screens/Todo";
-import { Agents, AgentView, Create } from "./screens/Agents";
+import { Agents, AgentView, AppAgentManager, Create } from "./screens/Agents";
 import { Focus } from "./screens/Focus";
 import { Settings } from "./screens/Settings";
 import { Dock } from "./screens/Dock";
@@ -45,6 +45,8 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   // Server events: notices become toasts; a synced offline note takes over its local route.
   useEffect(() => net.on(m => {
     if (m.type === "notice") toast(m.text);
+    if (m.type === "error") toast(m.message);
+    if (m.type === "voice.rejected") toast(m.reason);
     if (m.type === "note.saved" && m.localId) setStack(s => s.map(r => (r.name === "suggest" && r.noteId === "local:" + m.localId ? { name: "suggest", noteId: m.note.id } : r)));
     if (m.type === "agent.created") setStack(s => [...s.filter(r => r.name !== "create"), { name: "agent", agentId: m.agentId }]);
   }), []);
@@ -111,7 +113,8 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   else if (route?.name === "task") screen = <TaskView key={route.taskId} id={route.taskId} />;
   else if (route?.name === "note") screen = <NoteView key={route.noteId} id={route.noteId} />;
   else if (route?.name === "agent") screen = <AgentView key={route.agentId} id={route.agentId} />;
-  else if (route?.name === "create") screen = <Create />;
+  else if (route?.name === "appAgents") screen = <AppAgentManager key={route.app} app={route.app} />;
+  else if (route?.name === "create") screen = <Create app={route.app} />;
   else if (fn === "home") screen = <Home />;
   else if (fn === "notes") screen = <Notes />;
   else if (fn === "todo") screen = <Todo />;

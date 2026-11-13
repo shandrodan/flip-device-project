@@ -4,14 +4,14 @@
 // shrinking toward the edges. The in-app wheel walks every cell left to right, row by row.
 // The D-pad moves left/right in that order and up/down to the nearest cell. A opens it.
 import { useState, type ReactNode } from "react";
-import type { Agent } from "@app/protocol";
+import type { Agent, AppId } from "@app/protocol";
 import { Bot } from "../../bot/Bot";
 import { useControls, step } from "../../input/controls";
-import { useApp, useTalkTarget, FN_LABEL, type Fn } from "../context";
+import { useApp, useTalkTarget, FN_LABEL } from "../context";
 import { ACTIVE, AgentBot, Ico, moodFor } from "../ui";
 import { CommandCenter } from "../CommandCenter";
 
-const APPS: { fn: Fn; icon: ReactNode; about: string }[] = [
+const APPS: { fn: AppId; icon: ReactNode; about: string }[] = [
   { fn: "notes", icon: Ico.notes, about: "Talk, and the agent files it in the right note" },
   { fn: "todo", icon: Ico.tasks, about: "Today’s tasks" },
   { fn: "agents", icon: Ico.agents, about: "What every bot is doing" },
@@ -20,7 +20,7 @@ const APPS: { fn: Fn; icon: ReactNode; about: string }[] = [
 ];
 
 type Cell =
-  | { kind: "app"; fn: Fn; icon: ReactNode; about: string }
+  | { kind: "app"; fn: AppId; icon: ReactNode; about: string }
   | { kind: "bot"; agent: Agent }
   | { kind: "new" };
 
@@ -54,7 +54,7 @@ function vertical(i: number, dir: 1 | -1, count: number) {
 
 export function Home() {
   const { snap, push, go, online } = useApp();
-  useTalkTarget({ kind: "note" }, []);
+  useTalkTarget({ kind: "main" }, []);
   const active = snap.tasks.filter(t => t.agentId && ACTIVE.includes(t.status));
   const waiting = active.filter(t => ["held", "paused", "awaiting-approval"].includes(t.status));
   const running = active.filter(t => t.status === "running");
@@ -89,13 +89,14 @@ export function Home() {
       else push({ name: "create" });
       return true;
     }
+    if (e.c === "d" && cur.kind === "app") { push({ name: "appAgents", app: cur.fn }); return true; }
     if (e.c === "d" && pending) { push({ name: "suggest", noteId: pending.id }); return true; }
     // C opens the command center. Only Home does this; apps leave C to themselves.
     if (e.c === "c") { setCc(true); return true; }
     return false;
   }, {
     a: cur.kind === "new" ? "New bot" : "Open",
-    d: pending ? "Suggestions" : undefined,
+    d: cur.kind === "app" ? "Manage agents" : pending ? "Suggestions" : undefined,
     c: "Command center",
     wheel: "Browse",
     dpad: "Browse",
@@ -106,14 +107,14 @@ export function Home() {
   const first = running[0], ag = first && snap.agents.find(a => a.id === first.agentId);
   const line = first ? `${ag?.name ?? "An agent"} is on it: ${first.title.charAt(0).toLowerCase() + first.title.slice(1)}`
     : waiting.length ? `${waiting.length} task${waiting.length > 1 ? "s" : ""} need${waiting.length > 1 ? "" : "s"} you`
-    : "Hold the mic and just say it.";
+    : "Hold the mic to talk to Main agent.";
 
   // Columns stay put (the comb is centred in its area); only rows scroll, so the selected row
   // sits in the middle and every row is always seen whole.
   const me = place(i);
 
   const name = cur.kind === "app" ? FN_LABEL[cur.fn] : cur.kind === "bot" ? cur.agent.name : "New bot";
-  const about = cur.kind === "app" ? cur.about
+  const about = cur.kind === "app" ? `${cur.about} · ${snap.appAgents[cur.fn].map(id => snap.agents.find(agent => agent.id === id)?.name ?? "Unavailable").join(", ")}`
     : cur.kind === "bot" ? (() => { const w = workOf(cur.agent.id); return w ? (w.status === "running" ? "Working: " : "Waiting: ") + w.title : cur.agent.role; })()
     : "Your main agent builds it from what you say";
 

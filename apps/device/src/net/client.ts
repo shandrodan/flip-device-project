@@ -2,14 +2,17 @@
 // Offline-first notes (ADR 0005): a dump made offline is kept here and synced when back.
 import { useSyncExternalStore } from "react";
 import {
+  APP_IDS,
   PROTOCOL_VERSION,
   parseServerMessage,
   type ClientKind,
   type DeviceMessage,
   type DeviceMode,
   type Note,
+  type VoiceTarget,
   type ServerMessage,
   type Snapshot,
+  type AppId,
 } from "@app/protocol";
 
 export type Conn = "connecting" | "online" | "offline";
@@ -27,6 +30,8 @@ export interface OfflineNote {
 
 type Listener = (m: ServerMessage) => void;
 const OFFLINE_KEY = "flip-offline-notes";
+const OFFLINE_MESSAGES_KEY = "flip-offline-agent-messages";
+type OfflineAgentMessage = { requestId: string; target: Extract<VoiceTarget, { kind: "main" | "agent" | "app" }>; text: string; audio?: string; mime?: string };
 
 function store<T>(key: string, fallback: T): T {
   try {
@@ -44,6 +49,17 @@ function persist(key: string, value: unknown) {
   }
 }
 
+const DEFAULT_APP_OWNERS: Record<AppId, string> = {
+  notes: "app_notes", todo: "app_todo", focus: "app_focus", agents: "app_agents", settings: "app_settings",
+};
+function withAppAgents(snapshot: Snapshot | null): Snapshot | null {
+  if (!snapshot) return null;
+  const saved = (snapshot as Partial<Snapshot> & { appOwners?: Partial<Record<AppId, string>> }).appAgents;
+  const legacy = (snapshot as Snapshot & { appOwners?: Partial<Record<AppId, string>> }).appOwners;
+  const appAgents = Object.fromEntries(APP_IDS.map(app => [app, Array.isArray(saved?.[app]) && saved[app].length ? saved[app] : [legacy?.[app] ?? DEFAULT_APP_OWNERS[app]]])) as Record<AppId, string[]>;
+  return { ...snapshot, appAgents };
+}
+
 function serverUrl() {
   const q = new URLSearchParams(location.search).get("server");
   if (q) return q.replace(/^http/, "ws").replace(/\/?$/, q.endsWith("/ws") ? "" : "/ws");
@@ -54,13 +70,14 @@ function serverUrl() {
 
 class Net {
   /** Last snapshot, cached so the Device still works after a reboot while offline. */
-  snap: Snapshot | null = store<Snapshot | null>("flip-last-snapshot", null);
+  snap: Snapshot | null = withAppAgents(store<Snapshot | null>("flip-last-snapshot", null));
   private snapSaved = 0;
   conn: Conn = "connecting";
   /** Simulated network loss from the dev panel. */
   forcedOffline = false;
   mode: DeviceMode = "handheld";
   offlineNotes: OfflineNote[] = store(OFFLINE_KEY, []);
+  offlineAgentMessages: OfflineAgentMessage[] = store(OFFLINE_MESSAGES_KEY, []);
   version = 0;
   private ws: WebSocket | null = null;
   private subs = new Set<() => void>();
@@ -115,11 +132,13 @@ class Net {
         this.flushOffline();
       }
       if (m.type === "snapshot") {
-        this.snap = m.snapshot;
+        this.snap = withAppAgents(m.snapshot);
         if (Date.now() - this.snapSaved > 5000) { this.snapSaved = Date.now(); persist("flip-last-snapshot", m.snapshot); }
       }
       if (m.type === "pong") this.lastPong = Date.now() - m.t;
       if (m.type === "note.saved" && m.localId) this.dropOffline(m.localId);
+      if (m.type === "voice.accepted") this.dropOfflineAgentMessage(m.streamId);
+      if (m.type === "voice.rejected") this.dropOfflineAgentMessage(m.streamId);
       for (const l of this.listeners) l(m);
       this.bump();
     };
@@ -193,6 +212,17 @@ class Net {
     this.bump();
   }
 
+  saveOfflineAgentMessage(message: OfflineAgentMessage) {
+    this.offlineAgentMessages = [...this.offlineAgentMessages.filter(item => item.requestId !== message.requestId), message];
+    persist(OFFLINE_MESSAGES_KEY, this.offlineAgentMessages);
+    this.bump();
+  }
+
+  private dropOfflineAgentMessage(requestId: string) {
+    this.offlineAgentMessages = this.offlineAgentMessages.filter(message => message.requestId !== requestId);
+    persist(OFFLINE_MESSAGES_KEY, this.offlineAgentMessages);
+  }
+
   private dropOffline(localId: string) {
     this.offlineNotes = this.offlineNotes.filter(n => n.localId !== localId);
     persist(OFFLINE_KEY, this.offlineNotes);
@@ -200,6 +230,7 @@ class Net {
 
   private flushOffline() {
     for (const n of [...this.offlineNotes].reverse()) this.sendRaw({ type: "note.sync", note: n });
+    for (const message of this.offlineAgentMessages) this.sendRaw({ type: "voice.message", ...message });
   }
 }
 

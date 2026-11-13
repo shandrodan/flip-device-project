@@ -37,11 +37,11 @@ export function useTick(ms = 1000) {
   useEffect(() => { const id = setInterval(() => set(x => x + 1), ms); return () => clearInterval(id); }, [ms]);
 }
 
-export const ACTIVE = ["running", "awaiting-approval", "held", "paused"];
+export const ACTIVE = ["queued", "running", "waiting", "awaiting-approval", "held", "paused"];
 
 export function moodFor(t: Task | undefined): BotState {
   if (!t) return "idle";
-  return ({ running: "think", "awaiting-approval": "warn", held: "wide", paused: "sad", failed: "sad", done: "happy" } as Record<string, BotState>)[t.status] || "idle";
+  return ({ queued: "wide", running: "think", waiting: "wide", "awaiting-approval": "warn", held: "wide", paused: "sad", failed: "sad", done: "happy" } as Record<string, BotState>)[t.status] || "idle";
 }
 
 export const AgentBot = ({ agent, size, state = "idle", fps, morphFrom, eyesOnly }: { agent: Agent; size: number; state?: BotState; fps?: number; morphFrom?: Agent["shape"]; eyesOnly?: boolean }) => (
@@ -53,6 +53,8 @@ export function statusChip(t: Task, snap: Snapshot) {
   switch (t.status) {
     case "done": return <span className="chip ok">{ag ? who + " · done" : "Done"}</span>;
     case "running": return <span className="chip blue"><i className="dot" />{who} · working</span>;
+    case "queued": return <span className="chip blue"><i className="dot" />{who} · queued</span>;
+    case "waiting": return <span className="chip blue"><i className="dot" />{who} · waiting for Task agents</span>;
     case "awaiting-approval":
     case "held": return <span className="chip warn"><i className="dot" />{who} · waiting for your press</span>;
     case "paused": return <span className="chip"><i className="dot" />{who} · paused</span>;

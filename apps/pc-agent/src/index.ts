@@ -61,7 +61,8 @@ function expand(p: string) {
   return path.resolve(p);
 }
 
-const short = (p: string) => (p.startsWith(HOME) ? "~" + p.slice(HOME.length) : p);
+const short = (p: string) => p === HOME ? "~" : p.startsWith(HOME + path.sep)
+  ? "~/" + p.slice(HOME.length + 1).split(path.sep).join("/") : p;
 
 /** Resolve a path and refuse anything outside the allowed roots (symlinks included). */
 async function inRoots(p: unknown, { mustExist = true } = {}): Promise<string> {
