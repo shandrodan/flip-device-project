@@ -8,7 +8,6 @@ import { transcribe } from "./voice.js";
 import { suggestTasks } from "./suggest.js";
 import { routeDump } from "./route.js";
 import { acceptVoiceMessage } from "./agents/coordination.js";
-import { startTask } from "./agents/runner.js";
 
 interface Stream {
   mime: string;

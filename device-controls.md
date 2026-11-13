@@ -34,6 +34,23 @@ The behavior of each control depends on the currently selected mode. Locations a
 - **Push Bar:** No action.
 - **In-App Wheel:** Rotate to browse every cell on the home screen.
 - **C Button (yellow):** Open the command center. Only from the home screen: inside an app, go back to Home first.
+- **D Button (blue):** Open the menu for the selected app or Task agent. On the New bot cell, open pending Suggestions.
+
+### Home cell menu
+
+**Purpose:** Act on one app or Task agent without leaving Home (ADR 0017).
+
+- **App:** Open, Add agent, Change agent, Delete agent.
+- **Task agent:** Open, Rename, Personality, Look, Join an app, Delete agent. Delete asks for the push bar. Main, Mail and PC agents can't be deleted.
+- **In-App Wheel / D-Pad up and down:** Pick a row. **A:** choose it. **B or D:** close.
+- **Microphone Button:** With a Task agent's menu open, talk to that agent.
+
+### Text entry
+
+**Purpose:** Fill any text field, such as a name or a personality (ADR 0017).
+
+- **Dictation (opens first):** Hold the microphone and speak. The words replace the text. **A** saves, **B** cancels, **C** opens the keyboard.
+- **Keyboard:** **D-Pad** moves between keys (it stops at the edges). **In-App Wheel** walks every key and never ends. **A** types the key. **B** deletes a letter (on an empty field, back to dictation). **C** goes back to dictation. **D** saves.
 
 ### Command Center
 
@@ -91,9 +108,8 @@ The behavior of each control depends on the currently selected mode. Locations a
 
 **Purpose:** Record voice input while the button is held. Home addresses the main Task agent.
 An agent screen addresses that Task agent. To-Do, Focus, Agents, and Settings address one of
-their assigned Task agents. Notes makes a Dump. On Home, select an app and press the blue D
-button to add, change, or delete an app agent. With another Home item selected, D opens
-pending Suggestions.
+their assigned Task agents. Notes makes a Dump. With a Task agent's menu open on Home, the mic talks
+to that agent. In a text field, the mic dictates into it.
 - Press and hold: Start recording and continue while held.
 - Release: Stop recording.
 

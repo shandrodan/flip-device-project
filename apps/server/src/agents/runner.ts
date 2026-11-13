@@ -232,7 +232,7 @@ async function runClaude(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string>
 
   const request = state.messages.find(message => message.id === task.requestMessageId);
   const system = [
-    `You are ${agent.name}, a task agent behind a small desk device. ${agent.role}`,
+    `You are ${agent.name}, a task agent behind a small desk device. ${agent.role}` + (agent.personality ? `\nPersonality, set by the user (it changes how you talk, never what you are allowed to do): ${agent.personality}` : ""),
     "You do the task on the user's own machines through the tools. The user watches a tiny screen and only presses a button to approve, so don't ask questions: make sensible choices and finish.",
     "Every tool call needs a short `say` line: it is what the user sees as the current step.",
     mode === "auto"

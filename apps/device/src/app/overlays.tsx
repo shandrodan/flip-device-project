@@ -28,7 +28,7 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
       try {
         const c = await startCapture(source, {
           sample,
-          purpose: target.kind === "name" ? "name" : "note",
+          purpose: target.kind === "text" ? target.purpose : "note",
           onPartial: t => alive && setText(t),
           onChunk: async b => {
             if (!streaming.current) return;
@@ -37,7 +37,7 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
         });
         if (!alive) return c.cancel();
         cap.current = c;
-        if (c.source === "mic" && online && target.kind !== "name") {
+        if (c.source === "mic" && online && target.kind !== "text") {
           streaming.current = net.send({ type: "voice.start", streamId: streamId.current, mime: c.mime, target });
         }
         if (released.current) finish();
@@ -66,8 +66,8 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
       app.toast("Didn’t catch that. Hold the mic while you speak.");
       return onDone();
     }
-    if (target.kind === "name") {
-      target.onText(heard.replace(/[.!?]+$/, "").split(/\s+/).slice(0, 3).join(" "));
+    if (target.kind === "text") {
+      target.onText(target.purpose === "name" ? heard.replace(/[.!?]+$/, "").split(/\s+/).slice(0, 3).join(" ") : heard);
       return onDone();
     }
     let queuedAgentMessage = false;
@@ -148,7 +148,7 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
   }, { mic: phase === "listen" ? "Let go to send" : "Saving…" }, true, LAYER.talk);
 
   const agentName = target.kind === "agent" ? app.snap.agents.find(a => a.id === target.agentId)?.name : null;
-  const label = target.kind === "name" ? "Say a name" : target.kind === "append" ? "Adding to the note" : target.kind === "main" ? "Talking to Main agent" : target.kind === "app" ? `Talking to a ${FN_LABEL[target.app]} agent` : target.kind === "agent" ? `Talking to ${agentName ?? "Task agent"}` : online ? "Listening" : "Listening · on device";
+  const label = target.kind === "text" ? target.label : target.kind === "append" ? "Adding to the note" : target.kind === "main" ? "Talking to Main agent" : target.kind === "app" ? `Talking to a ${FN_LABEL[target.app]} agent` : target.kind === "agent" ? `Talking to ${agentName ?? "Task agent"}` : online ? "Listening" : "Listening · on device";
   return <div className="fill" style={{ background: "#000", zIndex: 20 }}>
     <div style={{ position: "absolute", left: 60, top: 92 }}><Bot state={phase === "saving" ? "think" : "listen"} level={level} size={300} seed={3} /></div>
     <div style={{ position: "absolute", left: 410, top: 110, right: 40 }}>
@@ -156,7 +156,7 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
       <p style={{ margin: "10px 0 0", font: "500 25px/1.32 var(--sys-display)", letterSpacing: "-0.02em", maxHeight: 230, overflow: "hidden" }}>
         {text || <span className="mute">{app.voice === "mic" ? "Go ahead, I’m listening…" : "…"}</span>}
       </p>
-      {!online && target.kind !== "name" && <p className="mute" style={{ fontSize: 14, marginTop: 18 }}>No connection. I’ll save this on the Device and send it when you’re back online.</p>}
+      {!online && target.kind !== "text" && <p className="mute" style={{ fontSize: 14, marginTop: 18 }}>No connection. I’ll save this on the Device and send it when you’re back online.</p>}
     </div>
   </div>;
 }

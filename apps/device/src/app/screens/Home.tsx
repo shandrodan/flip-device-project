@@ -5,6 +5,7 @@
 // The D-pad moves left/right in that order and up/down to the nearest cell. A opens it.
 // An app that has its own bots sits fused to them (two circles merged with a neck), so you see
 // at a glance which bot belongs to which app. Each circle is still its own cell.
+// Blue D on an app or a bot opens its menu over the left column (ADR 0017).
 import { useState, type ReactNode } from "react";
 import type { Agent, AppId } from "@app/protocol";
 import { Bot } from "../../bot/Bot";
@@ -12,6 +13,7 @@ import { useControls, step } from "../../input/controls";
 import { useApp, useTalkTarget, FN_LABEL } from "../context";
 import { ACTIVE, AgentBot, Ico, moodFor } from "../ui";
 import { CommandCenter } from "../CommandCenter";
+import { CellMenu } from "../CellMenu";
 
 const APPS: { fn: AppId; icon: ReactNode; about: string }[] = [
   { fn: "notes", icon: Ico.notes, about: "Talk, and the agent files it in the right note" },
@@ -21,7 +23,8 @@ const APPS: { fn: AppId; icon: ReactNode; about: string }[] = [
   { fn: "settings", icon: Ico.settings, about: "Keys, machines, modes" },
 ];
 
-/** Bots that belong to an app. They sit fused to it on the comb instead of with the other bots. */
+/** Bots that belong to an app besides its assigned Task agents (snapshot.appAgents). All of them
+ *  sit fused to the app on the comb instead of with the other bots. */
 const APP_BOTS: Partial<Record<AppId, string[]>> = {
   notes: ["main"], // the main agent hears every dump and files it in the right note
 };
@@ -29,7 +32,9 @@ const APP_BOTS: Partial<Record<AppId, string[]>> = {
 type Cell =
   | { kind: "app"; fn: AppId; icon: ReactNode; about: string }
   | { kind: "bot"; agent: Agent }
-  | { kind: "new" };
+  | { kind: "new" }
+  /** An empty slot at the end of a row, left so a fused unit starts on the next row whole. */
+  | { kind: "gap" };
 
 // Survives leaving Home, so B brings you back to the cell you opened.
 let lastSel = 0;
@@ -54,13 +59,20 @@ function rowLeft(k: number) {
   return rem < SHORT ? SHORT - rem : PAIR - rem;
 }
 /** Lay out units (an app with its bots, or a lone cell) in order, but never split a fused unit
- *  across rows: if one doesn't fit, the next lone cell that fits fills the row first. */
+ *  across rows: if one doesn't fit, the next lone cell that fits fills the row first. If nothing
+ *  fits, the rest of the row stays empty and the unit starts the next row. Only a unit longer
+ *  than a whole row is split. */
 function arrange(units: Cell[][]) {
   const out: Cell[][] = [], queue = [...units];
   let k = 0;
   while (queue.length) {
-    const left = rowLeft(k);
+    const left = rowLeft(k), fresh = left === (k % PAIR < SHORT ? SHORT : LONG);
     let j = queue.findIndex(u => u.length <= left);
+    if (j < 0 && !fresh) {
+      for (let n = 0; n < left; n++) out.push([{ kind: "gap" }]);
+      k += left;
+      continue;
+    }
     if (j < 0) j = 0;
     const [u] = queue.splice(j, 1);
     out.push(u);
@@ -70,12 +82,12 @@ function arrange(units: Cell[][]) {
 }
 
 /** D-pad up/down: the nearest cell in the row above or below (left one on a tie). */
-function vertical(i: number, dir: 1 | -1, count: number) {
+function vertical(i: number, dir: 1 | -1, count: number, skip: (k: number) => boolean) {
   const me = place(i);
   let best = -1, bestDx = Infinity;
   for (let k = 0; k < count; k++) {
     const p = place(k);
-    if (p.row !== me.row + dir) continue;
+    if (p.row !== me.row + dir || skip(k)) continue;
     const dx = Math.abs(p.x - me.x);
     if (dx < bestDx - 0.5) { best = k; bestDx = dx; }
   }
@@ -93,11 +105,14 @@ export function Home() {
 
   // Apps first (each fused with its own bots), then the other bots, then the cell that makes
   // a new bot. group[k] is the index of the fused unit cell k belongs to.
-  const linked = new Set(Object.values(APP_BOTS).flat());
+  // An app's bots: the fixed ones above, then every Task agent assigned to it, so adding an
+  // agent to an app on the Device links it on the comb straight away.
+  const botsOf = (fn: AppId) => [...new Set([...(APP_BOTS[fn] ?? []), ...snap.appAgents[fn]])];
+  const linked = new Set(APPS.flatMap(a => botsOf(a.fn)));
   const units = arrange([
     ...APPS.map(a => [
       { kind: "app" as const, ...a },
-      ...(APP_BOTS[a.fn] ?? []).flatMap(id => snap.agents.filter(g => g.id === id)).map(agent => ({ kind: "bot" as const, agent })),
+      ...botsOf(a.fn).flatMap(id => snap.agents.filter(g => g.id === id)).map(agent => ({ kind: "bot" as const, agent })),
     ]),
     ...snap.agents.filter(g => !linked.has(g.id)).map(agent => [{ kind: "bot" as const, agent }]),
   ]);
@@ -105,20 +120,28 @@ export function Home() {
   const cells: Cell[] = units.flat();
   const group = units.flatMap((u, n) => u.map(() => n));
   const [cc, setCc] = useState(false);
+  // The open cell menu, by cell key, so it follows the cell if the comb reorders.
+  const [menu, setMenu] = useState<string | null>(null);
   const [sel, setSelState] = useState(lastSel);
   const setSel = (n: number) => { lastSel = n; setSelState(n); };
-  const i = Math.min(sel, cells.length - 1);
-  const cur = cells[i];
+  const gap = (k: number) => cells[k]?.kind === "gap";
+  // Gaps are never selected (and never sit last, where the New bot cell is).
+  let i = Math.min(sel, cells.length - 1);
+  while (gap(i)) i++;
+  const cur = cells[i] as Exclude<Cell, { kind: "gap" }>;
 
   const workOf = (id: string) => active.find(t => t.agentId === id);
+  const keyOf = (c: Cell, k = 0) => c.kind === "bot" ? c.agent.id : c.kind === "app" ? c.fn : c.kind === "gap" ? "gap" + k : "new";
+  const menuCell = menu ? cells.find((c): c is Extract<Cell, { kind: "app" | "bot" }> => (c.kind === "app" || c.kind === "bot") && keyOf(c) === menu) : undefined;
 
   useControls(e => {
     if (e.c === "up" || e.c === "down") {
-      const v = vertical(i, e.c === "up" ? -1 : 1, cells.length);
+      const v = vertical(i, e.c === "up" ? -1 : 1, cells.length, gap);
       if (v !== null) setSel(v);
       return true;
     }
-    const n = step(i, e, cells.length, { dpad: "horizontal" });
+    let n = step(i, e, cells.length, { dpad: "horizontal" });
+    while (n !== null && gap(n)) n = step(n, e, cells.length, { dpad: "horizontal" });
     if (n !== null) { setSel(n); return true; }
     if (e.c === "a") {
       if (cur.kind === "app") go(cur.fn);
@@ -126,14 +149,14 @@ export function Home() {
       else push({ name: "create" });
       return true;
     }
-    if (e.c === "d" && cur.kind === "app") { push({ name: "appAgents", app: cur.fn }); return true; }
+    if (e.c === "d" && cur.kind !== "new") { setMenu(keyOf(cur)); return true; }
     if (e.c === "d" && pending) { push({ name: "suggest", noteId: pending.id }); return true; }
     // C opens the command center. Only Home does this; apps leave C to themselves.
     if (e.c === "c") { setCc(true); return true; }
     return false;
   }, {
     a: cur.kind === "new" ? "New bot" : "Open",
-    d: cur.kind === "app" ? "Manage agents" : pending ? "Suggestions" : undefined,
+    d: cur.kind !== "new" ? "Menu" : pending ? "Suggestions" : undefined,
     c: "Command center",
     wheel: "Browse",
     dpad: "Browse",
@@ -183,7 +206,7 @@ export function Home() {
       </div>
     </div>
 
-    <div className="comb-view in in-2">
+    <div className={"comb-view in in-2" + (menuCell ? " dim" : "")}>
       <svg className="goo-defs" aria-hidden>
         <filter id="goo"><feGaussianBlur in="SourceGraphic" stdDeviation="5" />
           <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -9" /></filter>
@@ -203,11 +226,12 @@ export function Home() {
         </div>;
       })}
       {cells.map((c, k) => {
+        if (c.kind === "gap") return null;
         const { x, y, scale, fade } = geo(k);
         const fused = units[group[k]].length > 1;
         const work = c.kind === "bot" ? workOf(c.agent.id) : undefined;
         const needs = (c.kind === "app" && c.fn === "todo" && waiting.length > 0) || (work && work.status !== "running");
-        return <div key={c.kind === "bot" ? c.agent.id : c.kind === "app" ? c.fn : "new"}
+        return <div key={keyOf(c)}
           className={"orb" + (k === i ? " sel" : "") + (c.kind === "new" ? " new" : "") + (c.kind === "app" ? " app" : "") + (fused ? " fused" : "") + (fused && group[k] === group[i] ? " lit" : "")}
           style={{ transform: `translate(${x - 42}px, ${y - 42}px) scale(${scale})`, opacity: fade, zIndex: k === i ? 2 : 1 }}>
           {c.kind === "app" ? <span className="orb-ico">{c.icon}</span>
@@ -224,6 +248,7 @@ export function Home() {
       {partners.length > 0 && <span className="home-link">Linked with {partners.join(" and ")}</span>}
     </div>
 
+    {menuCell && <CellMenu key={menu} cell={menuCell.kind === "app" ? { kind: "app", fn: menuCell.fn, icon: menuCell.icon } : menuCell} onClose={() => setMenu(null)} />}
     <CommandCenter open={cc} onClose={() => setCc(false)} />
   </div>;
 }

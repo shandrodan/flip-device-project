@@ -4,7 +4,7 @@ Built-in apps. Notes, To-Do, Focus, Agents, and Settings each have at least one 
 When another Task agent needs an app, the server sends a saved request to the assigned agent
 with the fewest active Tasks and waits for a reply. The server checks approvals before an
 agent changes app state.
-On Home, select an app and press the blue D button to add, change, or delete a Task agent.
+On Home, select an app and press the blue D button to add, change, or delete a Task agent. On a Task agent, D renames it and changes its personality or look (ADR 0017).
 One Task agent can belong to only one app. The last Task agent of an app cannot be deleted.
 The Dock reads other app state and has no assigned Task agent.
 
