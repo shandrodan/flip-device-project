@@ -171,6 +171,38 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 .hints.ink .g.g-wheel, .hints.ink .g.g-dpad { background: rgba(0,0,0,0.2); color: #000; }
 .hints .grow { flex: 1; }
 
+/* First-run guide: the same black screen, Bot, control colours and hint bar as the Device. */
+.onboarding { display: flex; align-items: center; background: #000; }
+.onboarding-copy { position: relative; z-index: 1; width: 405px; animation: materialize 320ms var(--ease) both; }
+.onboarding-step-label { color: rgba(235,235,245,0.48); letter-spacing: 0.12em; }
+.onboarding .say { margin-top: 20px; max-width: 390px; font-size: 39px; line-height: 1.08; }
+.onboarding-detail { max-width: 365px; margin: 18px 0 0; color: rgba(235,235,245,0.67); font-size: 17px; line-height: 1.43; }
+.onboarding-control { display: flex; flex-direction: column; gap: 5px; margin-top: 27px; padding-left: 14px; border-left: 3px solid var(--btn-a); font-size: 13px; }
+.onboarding-control-name { font-weight: 700; font-size: 11px; letter-spacing: 0.09em; }
+.onboarding-visual { position: absolute; top: 64px; right: 43px; width: 250px; height: 344px; display: flex; justify-content: center; align-items: center; animation: materialize 420ms var(--ease) both; }
+.onboarding-visual::before { content: ""; position: absolute; inset: 35px 0; border-radius: 35px; background: #111113; }
+.onboarding-visual > * { position: relative; }
+.onboarding-visual-mark { position: absolute; display: grid; place-items: center; width: 62px; height: 62px; border-radius: 50%; }
+.onboarding-mic { right: 15px; bottom: 27px; background: var(--btn-b); color: #fff; box-shadow: 0 0 0 9px #111113; }
+.onboarding-visual-1 { gap: 10px; }
+.onboarding-note { width: 98px; height: 124px; padding: 15px; border-radius: 13px; background: #fbd866; color: #3f2f00; transform: rotate(-7deg); }
+.onboarding-note span { font-size: 11px; font-weight: 800; letter-spacing: 0.09em; }
+.onboarding-note i { display: block; height: 4px; margin-top: 17px; border-radius: 3px; background: rgba(63,47,0,0.35); }
+.onboarding-note i + i { margin-top: 11px; }
+.onboarding-note i:last-child { width: 55%; }
+.onboarding-visual-arrow { color: rgba(235,235,245,0.48); }
+.onboarding-task { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 11px; width: 90px; height: 112px; border-radius: 18px; background: #2c2c2e; color: #fff; transform: rotate(7deg); }
+.onboarding-task span { font-size: 11px; font-weight: 800; letter-spacing: 0.09em; }
+.onboarding-approval-ring { display: grid; place-items: center; width: 175px; height: 175px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--push), 0 0 42px rgba(255,106,0,0.24); }
+.onboarding-push-mark { position: absolute; right: -3px; top: 110px; width: 10px; height: 95px; border-radius: 6px 0 0 6px; background: var(--push); }
+.onboarding-footer { position: absolute; left: 28px; bottom: 49px; display: flex; align-items: center; gap: 12px; font-size: 12px; }
+.onboarding-progress { display: flex; gap: 5px; }
+.onboarding-progress i { display: block; width: 19px; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.2); }
+.onboarding-progress i.active { background: #fff; }
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-copy, .onboarding-visual { animation-duration: 1ms; }
+}
+
 /* Home: the main agent on the left, apps and bots in one honeycomb on the right. */
 .home-main { position: absolute; left: 24px; top: 44px; width: 232px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .home-main .say { font-size: 22px; line-height: 1.18; }
