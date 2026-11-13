@@ -1,7 +1,16 @@
 {
   "name": "flip-device",
   "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "engines": { "node": ">=20" },
   "scripts": {
-    "dev": "pnpm --parallel --filter device --filter server dev"
+    "dev": "pnpm --parallel --filter device --filter server --filter pc-agent dev",
+    "dev:device": "pnpm --filter device dev",
+    "dev:server": "pnpm --filter server dev",
+    "dev:pc": "pnpm --filter pc-agent dev",
+    "build": "pnpm --filter device build",
+    "typecheck": "pnpm -r typecheck",
+    "test:e2e": "pnpm --filter server test:e2e"
   }
 }

@@ -12,18 +12,42 @@ Built at Unfair Weekend, Vilnius, Nov 2026.
 
 ## Run it
 
+Needs Node 20+ and pnpm 9 (`npm i -g pnpm@9`).
+
 ```bash
 pnpm install
-pnpm dev          # device app + server
+pnpm dev          # Device app + server + a PC agent on this computer
 ```
 
-PC agent (on the laptop that agents control):
+Open http://localhost:5173 for the Device twin, and http://localhost:5173/dock for the Dock screen.
+Hold the red mic (or Space), turn the wheels (Q/E, W/S), press A (K), B (L) and the push bar (Enter).
+
+Nothing else is required. With no keys, agents use a built-in planner and speech uses the browser.
+To go further, copy `.env.example` to `.env`, or open http://localhost:8787/setup to paste keys:
+
+| What | Where |
+| --- | --- |
+| Real agents (Claude, your own key) | `ANTHROPIC_API_KEY`, or the setup page |
+| Cloud speech to text | `STT_API_KEY` (OpenAI-compatible), or the setup page |
+| The laptop on the projector | run `PC_AGENT_TOKEN=… pnpm dev:pc` there, set `PC_AGENTS=Name=ws://<tailscale-ip>:7077` and the same token on the server |
+| Real email | `SMTP_URL`, `MAIL_FROM`, `CONTACTS` (otherwise mail lands in `~/Flip/Outbox` as an .eml) |
+
+Checks:
 
 ```bash
-pnpm --filter pc-agent dev
+pnpm typecheck
+pnpm test:e2e              # the whole demo flow against a throwaway home folder
+RUNS=20 pnpm test:e2e      # DEMO.md: "flow runs end to end 20 times in a row"
 ```
 
+Other views: `/?kiosk=1` is the screen alone (what a kiosk browser on the board shows). `?server=ws://host:8787` points the Device at another server.
+
 Device-side container demo: see [docker/README.md](docker/README.md).
+
+## What's real and what isn't
+
+- Real: the server, agents (Claude with a key, the planner without), approvals with the push bar, the PC agent doing file work and opening things on the laptop, offline notes and re-transcription, focus timer, the Claude Code limit window (read from Claude Code's logs on your machine), the dock screen.
+- Simulated: the hardware. The Device is a web app with drawn controls (ADR 0002). Scripted voice is a rehearsal aid, labelled as such in the panel.
 
 ## Team split
 
