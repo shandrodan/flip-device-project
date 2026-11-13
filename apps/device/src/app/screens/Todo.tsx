@@ -41,7 +41,7 @@ export function Todo() {
   return <div className="scr">
     <p className="h1 in">To-Do</p>
     <div className="mute in" style={{ fontSize: 14 }}>{open.length} open · {doneToday} done today</div>
-    <div className="scroll in in-2" style={{ position: "absolute", left: 14, right: 28, top: 104, bottom: 64 }}>
+    <div className="scroll in in-2" style={{ position: "absolute", left: 28, right: 28, top: 104, bottom: 64 }}>
       {open.map((t, k) => {
         const ag = snap.agents.find(a => a.id === t.agentId);
         return <div key={t.id} className={"row" + (k === i ? " sel" : "")} style={{ opacity: leaving === t.id ? 0 : 1, transform: leaving === t.id ? "translateX(30px)" : "none", transition: "opacity 240ms ease, transform 240ms var(--ease), background-color 150ms" }}>

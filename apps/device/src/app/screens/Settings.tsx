@@ -87,7 +87,7 @@ export function Settings() {
   return <div className="scr">
     <p className="h1 in">Settings</p>
     <div className="mute in" style={{ fontSize: 14 }}>Keys and machines are set from your laptop. This Device has no keyboard.</div>
-    <div className="scroll in in-2" style={{ position: "absolute", left: 14, right: 28, top: 104, bottom: 40 }}>
+    <div className="scroll in in-2" style={{ position: "absolute", left: 28, right: 28, top: 104, bottom: 40 }}>
       {rows.map((r, k) => <div key={r.key} className={"set-row" + (k === i ? " sel" : "")} style={{ display: "block" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}><span style={{ fontWeight: 500 }}>{r.label}</span>{r.value}</div>
         {r.hint && <div className="mute" style={{ fontSize: 12.5, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.hint}</div>}

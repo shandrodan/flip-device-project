@@ -34,7 +34,7 @@ export function Notes() {
   return <div className="scr">
     <p className="h1 in">Notes</p>
     <div className="mute in" style={{ fontSize: 14 }}>Every dump, saved first</div>
-    <div className="scroll in in-2" style={{ position: "absolute", left: 14, right: 28, top: 104, bottom: 40 }}>
+    <div className="scroll in in-2" style={{ position: "absolute", left: 28, right: 28, top: 104, bottom: 40 }}>
       {notes.map((n, k) => <div key={n.id} className={"row" + (k === i ? " sel" : "")} style={{ display: "block" }}>
         <div style={{ fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.text}</div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
@@ -94,7 +94,7 @@ export function NoteView({ id }: { id: string }) {
       {n.durationMs ? <span className="chip">{Math.max(1, Math.round(n.durationMs / 1000))}s</span> : null}
     </div>
     <div ref={box} className={"scroll" + (sel < 0 ? "" : "")} style={{ marginTop: 12, maxHeight: tasks.length ? 200 : 330, fontSize: 21, lineHeight: 1.42, letterSpacing: "-0.012em", whiteSpace: "pre-wrap" }}>{n.text}</div>
-    {tasks.length > 0 && <div style={{ position: "absolute", left: 14, right: 28, bottom: 42 }}>
+    {tasks.length > 0 && <div style={{ position: "absolute", left: 28, right: 28, bottom: 42 }}>
       <div className="label" style={{ margin: "0 0 4px 10px" }}>Tasks from this note</div>
       {tasks.map((t, k) => <div key={t.id} className={"row" + (k === sel ? " sel" : "")}><span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>{statusChip(t, snap)}</div>)}
     </div>}

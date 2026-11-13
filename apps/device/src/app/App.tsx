@@ -124,7 +124,7 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   return <Ctx.Provider value={ctx}>
     <div className="fill" style={{ ["--ink" as string]: fire ? "#000" : "#fff" }}>
       <div className="status">
-        <span style={{ paddingLeft: fullBleed ? 0 : 60 }}><Clock /></span>
+        <span><Clock /></span>
         <span>
           {!n.online && <><i className="off-dot" />Offline</>}
           {snap.focus.running && <span className="tnum">{snap.focus.kind === "break" ? "Break" : "Focus"} {Math.ceil(focusLeft / 60000)}m</span>}
@@ -132,13 +132,8 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
           <span className={"batt" + (docked ? " charge" : "")}><i /></span>
         </span>
       </div>
-      {!fullBleed && <nav className="rail" aria-label="Functions">
-        {fns.filter(f => f !== "settings").map(f => <div key={f} data-fn={f} className={"fn" + (fn === f ? " on" : "")}>{icons[f]}{f === "todo" && needs && <i className="badge" />}</div>)}
-        <div className="grow" />
-        {fns.includes("settings") && <div data-fn="settings" className={"fn" + (fn === "settings" ? " on" : "")}>{icons.settings}</div>}
-      </nav>}
       <div className={"main" + (fullBleed ? " full" : "")} data-fn={fn} data-route={route?.name ?? ""}>{screen}</div>
-      <HintBar ink={!!fire} rail={!fullBleed && !talk && !fire} />
+      <HintBar ink={!!fire} />
       {hud > 0 && <Hud fns={fns} fn={fn} icons={icons} />}
       {soft && !fire && <SoftApproval req={soft} />}
       <FireOverlay req={fire} onWant={() => {}} />

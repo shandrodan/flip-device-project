@@ -63,13 +63,13 @@ export const Glyph = ({ k }: { k: keyof Hints }) =>
   k === "dpad" ? <i className="g g-dpad">✛</i> :
   <i className={`g ${k}`}>{k.toUpperCase()}</i>;
 
-export function HintBar({ ink, rail }: { ink?: boolean; rail?: boolean }) {
+export function HintBar({ ink }: { ink?: boolean }) {
   const h = useActiveHints();
   const right: (keyof Hints)[] = ["push", "y", "x", "b", "a"];
   const item = (k: keyof Hints) => h[k] ? <span className="hint" key={k}><Glyph k={k} />{h[k]}</span> : null;
   // Wheel and D-pad often do the same thing: one label, two glyphs.
   const same = h.wheel && h.dpad && h.wheel === h.dpad;
-  return <div className={"hints" + (ink ? " ink" : "") + (rail ? " rail-on" : "")}>
+  return <div className={"hints" + (ink ? " ink" : "")}>
     {item("mic")}
     {same ? <span className="hint"><Glyph k="wheel" /><Glyph k="dpad" />{h.wheel}</span> : <>{item("wheel")}{item("dpad")}</>}
     <span className="grow" />{right.map(item)}
