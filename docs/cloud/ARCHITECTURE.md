@@ -44,6 +44,7 @@ Device iframe ──▶ serve.mjs /preview/ ──▶ server /preview/ ──▶
 | Process | Measured |
 | --- | --- |
 | OpenCode, idle | ~240 MB |
+| Headless Chromium for `build_screenshot`, one page open | ≤ 440 MB (summed RSS, shared pages counted twice). Starts on first screenshot, closes after a quiet minute |
 | Whole cloud side with a Vite dev server running (simulation) | ~740 MB of 8 GB |
 | `serve.mjs` on the Device | ~18 MB |
 | Kiosk Chromium on the Device | see the Pi VM's monitor (`pi-vm/relay.mjs`) |

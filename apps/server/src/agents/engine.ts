@@ -52,6 +52,25 @@ export function engineModel(): EngineModel | null {
 }
 
 /** The OpenCode binary itself. The `.bin` shim is a shell script that would leave the engine running when killed. */
+/** Whether the engine's model takes images, from ENGINE_VISION or OpenRouter's model list. */
+let vision: { ref: string; ok: boolean } | null = null;
+export function engineSeesImages() { return !!vision?.ok; }
+async function checkVision(model: EngineModel): Promise<boolean> {
+  const ref = `${model.providerID}/${model.modelID}`;
+  if (vision?.ref === ref) return vision.ok;
+  let ok = false;
+  if (process.env.ENGINE_VISION) ok = process.env.ENGINE_VISION !== "0";
+  else if (model.providerID === "anthropic") ok = true;
+  else if (model.providerID === "openrouter") {
+    try {
+      const list = await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(8_000) }).then(r => r.json()) as { data?: { id: string; architecture?: { input_modalities?: string[] } }[] };
+      ok = !!list.data?.find(m => m.id === model.modelID)?.architecture?.input_modalities?.includes("image");
+    } catch { ok = false; }
+  }
+  vision = { ref, ok };
+  return ok;
+}
+
 function binary() {
   const direct = path.join(SERVER_ROOT, "node_modules", "opencode-ai", "bin", "opencode.exe");
   if (process.platform !== "win32" && fs.existsSync(direct)) return direct;
@@ -70,7 +89,7 @@ function merge(base: Record<string, any>, extra: Record<string, any>): Record<st
   return out;
 }
 
-function engineConfig(model: EngineModel) {
+function engineConfig(model: EngineModel, sees = false) {
   const key = model.providerID === "openrouter" ? openRouterKey() : model.providerID === "anthropic" ? anthropicKey() : "";
   const ref = `${model.providerID}/${model.modelID}`;
   const base = {
@@ -80,7 +99,7 @@ function engineConfig(model: EngineModel) {
     model: ref,
     small_model: ref,
     // A model missing from OpenCode's catalog still runs: it is declared here.
-    provider: { [model.providerID]: { ...(key ? { options: { apiKey: key } } : {}), models: { [model.modelID]: { name: model.modelID } } } },
+    provider: { [model.providerID]: { ...(key ? { options: { apiKey: key } } : {}), models: { [model.modelID]: { name: model.modelID, ...(sees ? { attachment: true, modalities: { input: ["text", "image"], output: ["text"] } } : {}) } } } },
     // Flip's gate decides (the plugin's tool.execute.before hook). OpenCode never waits on its own prompt.
     permission: { edit: "allow", bash: "allow", webfetch: "allow", doom_loop: "allow", external_directory: "deny" },
     agent: {
@@ -119,7 +138,7 @@ export function engineHealth(): { engine: EngineStatus; engineRestarts: number; 
 }
 
 async function ensureEngine(model: EngineModel): Promise<string> {
-  const cfg = engineConfig(model);
+  const cfg = engineConfig(model, await checkVision(model));
   const key = crypto.createHash("sha256").update(JSON.stringify(cfg)).digest("hex");
   if (proc && baseUrl && runningKey === key) return baseUrl;
   if (starting?.key === key) return starting.promise;
@@ -248,7 +267,7 @@ interface Live {
 
 /** A repeated failing call first gets a nudge, then ends the Task. */
 const NUDGE_AFTER = 3, STOP_AFTER = 6;
-type CallResult = { output: string } | { error: string };
+type CallResult = { output: string; attachments?: { type: "file"; mime: string; url: string; filename?: string }[] } | { error: string };
 interface PendingCall { id: string; result: CallResult | null; promise: Promise<CallResult> }
 
 const live = new Map<string, Live>();
@@ -277,7 +296,10 @@ function runCall(sessionID: string, callID: string, name: string, args: unknown)
     try {
       ctx.step(String(input.say || def.name));
       const out = await def.run(ctx, input, callID);
-      return { output: out.text.slice(0, 15000) || "Done." };
+      const output = out.text.slice(0, 15000) || "Done.";
+      // An image (a Build screenshot) goes to the model as an attachment when it can see images.
+      if (out.image && engineSeesImages()) return { output, attachments: [{ type: "file", mime: out.image.mime, url: `data:${out.image.mime};base64,${out.image.base64}`, filename: `${name}.png` }] };
+      return { output };
     } catch (err) {
       if (err instanceof Cancelled || err instanceof MachineOffline) {
         session.fatal = err;

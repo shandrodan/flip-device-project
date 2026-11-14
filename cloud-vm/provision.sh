@@ -28,6 +28,10 @@ install -d -o flip -g flip /var/lib/flip/data /var/lib/flip/build
 rm -f /tmp/flip-secrets.json /tmp/flip.env
 cd "$APP"
 sudo -u flip -H pnpm install --filter server... --no-frozen-lockfile
+# Headless Chromium for build_screenshot (the agent looks at its own preview). Shared, read-only.
+export PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+(cd "$APP/apps/server" && node node_modules/playwright-core/cli.js install --with-deps --only-shell chromium)
+chmod -R a+rX /opt/ms-playwright
 
 mkdir -p /etc/flip
 # Loaded after .env, so these win. PUBLIC_URL is how the Device reaches the server: through its own
@@ -41,6 +45,7 @@ BUILD_HOST=server
 BUILD_DIR=/var/lib/flip/build
 PUBLIC_URL=${PUBLIC_URL:-http://localhost:5173}
 PC_AGENTS=${PC_AGENTS:-This computer=ws://127.0.0.1:7077}
+PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 ENV
 
 cat >/etc/systemd/system/flip-server.service <<UNIT

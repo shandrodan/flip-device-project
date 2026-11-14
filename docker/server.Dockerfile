@@ -12,6 +12,13 @@ COPY apps/server apps/server
 RUN --mount=type=secret,id=ca,required=false \
   if [ -s /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca npm_config_cafile=/run/secrets/ca; fi; \
   corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install --filter server... --no-frozen-lockfile
+# Headless Chromium for build_screenshot. Debian's mirrors over https: a TLS-only proxy refuses plain http.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN --mount=type=secret,id=ca,required=false \
+  if [ -s /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca; echo 'Acquire::https::CAInfo "/run/secrets/ca";' > /etc/apt/apt.conf.d/99flip-ca; fi; \
+  sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
+  cd apps/server && node node_modules/playwright-core/cli.js install --with-deps --only-shell chromium; \
+  rm -f /etc/apt/apt.conf.d/99flip-ca; rm -rf /var/lib/apt/lists/*
 ENV PORT=8787 DATA_DIR=/data HOSTING=self
 VOLUME /data
 EXPOSE 8787

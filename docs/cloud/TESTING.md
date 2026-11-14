@@ -31,6 +31,7 @@ Speaks real requests to real agents, presses every approval like a user, and che
 | engine-restart | OpenCode is killed, then Omni: write a note | the note exists, `/health` says `engine: "opencode"` and `engineRestarts ≥ 1` |
 | build-static | Build: one-page site "Flip Lemonade" with a click counter | `/preview/` serves it |
 | build-edit | Build: green button, add a tagline | edit in place, memory |
+| build-look | Build: make the button bigger and centred | button area +15 % or more and centred, measured in a sandboxed 568×504 frame; no page errors; a screenshot step in the Task |
 | build-vite | Build: turn it into Vite + React, install, run the dev server | `vite`/`react` in package.json, Vite client through `/preview/` |
 
 Options (environment):

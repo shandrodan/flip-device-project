@@ -11,7 +11,7 @@ const headers = { authorization: `Bearer ${TOKEN}`, "content-type": "application
 
 type Schema = { type?: string | string[]; enum?: unknown[]; items?: Schema; properties?: Record<string, Schema>; required?: string[]; description?: string };
 interface Manifest { name: string; description: string; props: Record<string, Schema>; required: string[] }
-interface CallState { id: string; done: boolean; output?: string; error?: string }
+interface CallState { id: string; done: boolean; output?: string; error?: string; attachments?: { type: "file"; mime: string; url: string; filename?: string }[] }
 
 /** The small JSON Schema subset Flip tools use, as zod. */
 function toZod(schema: Schema): any {
@@ -35,14 +35,14 @@ function toZod(schema: Schema): any {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** A call can wait minutes for an approval press, so the server answers in rounds of about 20 s. */
-async function call(sessionID: string, callID: string, name: string, args: unknown, abort: AbortSignal): Promise<string> {
+async function call(sessionID: string, callID: string, name: string, args: unknown, abort: AbortSignal): Promise<CallState> {
   let response = await fetch(`${SERVER}/engine/call`, { method: "POST", headers, body: JSON.stringify({ sessionID, callID, tool: name, args }), signal: abort });
   for (;;) {
     if (!response.ok) throw new Error(`Flip server error ${response.status}: ${await response.text()}`);
     const state = await response.json() as CallState;
     if (state.done) {
       if (state.error) throw new Error(state.error);
-      return state.output ?? "Done.";
+      return state;
     }
     if (abort.aborted) throw new Error("Stopped.");
     response = await fetch(`${SERVER}/engine/call/${state.id}`, { headers, signal: abort });
@@ -73,7 +73,9 @@ export const Flip: Plugin = async () => {
       async execute(input, context) {
         const say = typeof (input as { say?: unknown }).say === "string" ? String((input as { say: string }).say) : def.name;
         context.metadata({ title: say });
-        return call(context.sessionID, `${context.messageID}:${def.name}:${crypto.randomUUID()}`, def.name, input, context.abort);
+        const result = await call(context.sessionID, `${context.messageID}:${def.name}:${crypto.randomUUID()}`, def.name, input, context.abort);
+        // A Build screenshot comes back as an image the model can look at.
+        return result.attachments?.length ? { output: result.output ?? "Done.", attachments: result.attachments } : result.output ?? "Done.";
       },
     });
   }

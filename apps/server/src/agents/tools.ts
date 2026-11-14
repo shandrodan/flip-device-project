@@ -44,7 +44,7 @@ export interface ToolDef {
   grey?: boolean; // gets an ask_first flag
   alwaysAsk?: boolean; // asks in Manual and Auto, never skipped except in Full
   purposes: AgentPurpose[] | "all";
-  run(ctx: Ctx, input: Input, callId?: string): Promise<{ text: string; data?: any }>;
+  run(ctx: Ctx, input: Input, callId?: string): Promise<{ text: string; data?: any; image?: { mime: string; base64: string } }>;
 }
 
 const SAY = { type: "string", description: "What you're doing, 3 to 8 words, shown on the user's device. Present tense, plain words, e.g. 'Moving 167 screenshots to Archive'." };

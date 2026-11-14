@@ -260,7 +260,8 @@ function buildBrief(fromBuild: boolean, native: boolean) {
         ? "Work like a coding agent in that folder: read, glob and grep to look, edit to change part of a file, write for new files, bash for commands such as npm install or a build. Paths are relative to the project."
         : "Use the build_* tools: paths are relative to that folder. build_run runs commands there.",
       "The Device preview shows the project's files directly, so plain HTML, CSS and JavaScript need no server and appear after the task. A framework app needs its dev server: install with a command, then start it with build_serve on a port from 5300 to 5399 with base path /preview/ (Vite: `npx vite --host 127.0.0.1 --port 5300 --strictPort --base /preview/`). Never start a long-running server with a plain command: it would block. build_logs shows its output.",
-      `Verify before you answer: curl -s http://127.0.0.1:${config.port}/preview/ shows what the Device sees.`,
+      "The Device shows the preview in a sandboxed frame with no same-origin access: localStorage, sessionStorage, cookies and IndexedDB throw there. Keep state in memory, or wrap storage in try/catch.",
+      "Check your work the way the user sees it: after a visible change, call build_screenshot, look at the screenshot and its element list, and fix what does not match the request before you answer.",
     );
   } else {
     lines.push(
@@ -456,7 +457,11 @@ async function runModel(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string> 
       ctx.step(String(input.say || def.name));
       try {
         const out = await def.run(ctx, input, use.id);
-        results.push({ type: "tool_result", tool_use_id: use.id, content: out.text.slice(0, 15000) });
+        const text = out.text.slice(0, 15000);
+        // A Build screenshot goes in as an image where the API takes one in a tool result (Anthropic).
+        results.push({ type: "tool_result", tool_use_id: use.id, content: out.image && !model.openRouter
+          ? [{ type: "text", text }, { type: "image", source: { type: "base64", media_type: out.image.mime as "image/png", data: out.image.base64 } }]
+          : text });
       } catch (err) {
         if (err instanceof Cancelled || err instanceof MachineOffline) throw err;
         results.push({ type: "tool_result", tool_use_id: use.id, content: (err as Error).message, is_error: true });

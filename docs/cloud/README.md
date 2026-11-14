@@ -49,3 +49,4 @@ Roadmap items built in the night run (see [REPORT-2026-11-15.md](REPORT-2026-11-
 | Item | Status | Proof |
 | --- | --- | --- |
 | P0.3 Engine health and restart | Done | `engine-restart`: OpenCode killed between requests, the next request works. `/health` reports `engine` and `engineRestarts` |
+| P1.4 `build_screenshot` | Done | `build-look`: "make the button bigger and centred", button measured before and after in a sandboxed frame, screenshot in the Task steps |

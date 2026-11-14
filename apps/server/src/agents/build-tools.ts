@@ -6,6 +6,7 @@ import path from "node:path";
 import type { FsEntry } from "@app/protocol";
 import { bus } from "../bus.js";
 import { devLog, devServer, insideProject, localBuild, projectDir, runInProject, startDev, stopDev } from "../build-host.js";
+import { shootPreview } from "../build-shot.js";
 import { saveNow, state } from "../store.js";
 import { ToolError, type ToolDef } from "./tools.js";
 
@@ -130,6 +131,17 @@ export const BUILD_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "build_screenshot",
+    description: "See the Build preview as the Device shows it: a screenshot at the preview's size, with the page's errors and the position and size of its visible elements. Use it after a visible change and fix what looks wrong before you answer.",
+    props: { path: REL("Page to show, e.g. about.html. Leave out for the home page."), say: SAY }, required: ["say"], purposes: "all",
+    async run(ctx, i) {
+      await ctx.gate({ title: "Look at the preview?" });
+      const shot = await shootPreview(typeof i.path === "string" ? i.path : "").catch(err => { throw new ToolError((err as Error).message); });
+      ctx.step(`Screenshot of the preview (${path.basename(shot.file)})`);
+      return { text: shot.summary, image: { mime: "image/png", base64: shot.png.toString("base64") } };
+    },
+  },
+  {
     name: "build_logs",
     description: "Read the last output of the Build dev server: compile errors, warnings, the address.",
     props: { say: SAY }, required: ["say"], purposes: "all",
@@ -142,7 +154,7 @@ export const BUILD_TOOLS: ToolDef[] = [
 ];
 
 /** Tools that exist only when the Build project is on this machine, and those only for the PC. */
-export const SERVER_BUILD_ONLY = ["build_serve", "build_stop", "build_logs"];
+export const SERVER_BUILD_ONLY = ["build_serve", "build_stop", "build_logs", "build_screenshot"];
 export const PC_BUILD_ONLY = ["build_preview"];
 
 /** A project-relative path on this machine (BUILD_HOST=server). */

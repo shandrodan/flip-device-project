@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
+import { chromium } from "playwright-core";
 import { PROTOCOL_VERSION, isAppCommand, type DeviceMessage, type ServerMessage, type Snapshot, type Task } from "@app/protocol";
 
 const PORT = 18887, PC_PORT = 17177;
@@ -98,6 +99,29 @@ const preview = async (p = "") => {
     return { status: r.status, text: await r.text() };
   } catch (err) { return { status: 0, text: String(err) }; }
 };
+/** The first button in the preview, measured in a frame sandboxed like the Device's, at its size. */
+async function measureButton(): Promise<{ w: number; h: number; cx: number; errors: string[] } | null> {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 568, height: 504 } });
+    const errors: string[] = [];
+    page.on("pageerror", err => errors.push(err.message));
+    await page.setContent(`<style>html,body{margin:0}</style><iframe sandbox="allow-scripts allow-forms" src="http://127.0.0.1:${PORT}/preview/" style="border:0;display:block;width:568px;height:504px"></iframe>`);
+    const frame = (await (await page.waitForSelector("iframe")).contentFrame())!;
+    await frame.waitForLoadState("load");
+    await page.waitForTimeout(800);
+    const box = await frame.evaluate(() => {
+      const b = document.querySelector("button");
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { w: r.width, h: r.height, cx: r.left + r.width / 2 };
+    });
+    return box && { ...box, errors };
+  } finally { await browser.close(); }
+}
+let buttonBefore: Awaited<ReturnType<typeof measureButton>> = null;
+let lastSteps: string[] = [];
+
 /** Every text file in the Build project, joined, without node_modules. */
 function projectText(dir = buildDir): string {
   if (!fs.existsSync(dir)) return "";
@@ -206,6 +230,24 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    // P1.4: the agent checks a screenshot of its own work.
+    name: "build-look",
+    async before() { buttonBefore = await measureButton(); },
+    turns: [{ target: { kind: "app", app: "build" }, text: "Make the button bigger and centred." }],
+    async check() {
+      const after = await measureButton();
+      const shot = lastSteps.some(step => /Screenshot of the preview/.test(step));
+      const problems = [
+        !after && "no button",
+        after && buttonBefore && after.w * after.h < buttonBefore.w * buttonBefore.h * 1.15 && `not bigger: ${Math.round(buttonBefore.w)}×${Math.round(buttonBefore.h)} → ${Math.round(after.w)}×${Math.round(after.h)}`,
+        after && Math.abs(after.cx - 284) > 8 && `not centred: centre at x ${Math.round(after.cx)} of 568`,
+        after?.errors.length && `page errors: ${after.errors.join("; ")}`,
+        !shot && "no screenshot in the Task steps",
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
+  {
     name: "build-vite",
     turns: [{ target: { kind: "app", app: "build" }, text: "Turn the Build project into a Vite + React app. Keep the Flip Lemonade title, the tagline and the green counter button. Install it and run its dev server so I see it in the preview." }],
     async check() {
@@ -261,6 +303,7 @@ async function main() {
     let last: Awaited<ReturnType<typeof ask>> | null = null;
     await scenario.before?.();
     for (const turn of scenario.turns) last = await ask(turn.target, turn.text);
+    lastSteps = last?.steps ?? [];
     const problem = !last?.task ? "timed out" : last.task.status !== "done" ? `Task ${last.task.status}: ${last.task.detail}` : await scenario.check();
     if (problem) failed++;
     console.log(`${problem ? "✕" : "✓"} ${scenario.name}  (${last?.seconds}s, ${last?.steps.length} steps, ${last?.approvals} presses)`);

@@ -16,6 +16,7 @@
     "@opencode-ai/plugin": "1.19.5",
     "nodemailer": "6.9.16",
     "opencode-ai": "1.19.5",
+    "playwright-core": "1.56.1",
     "ws": "8.18.0"
   },
   "devDependencies": {

@@ -96,6 +96,9 @@ importers:
       opencode-ai:
         specifier: 1.19.5
         version: 1.19.5
+      playwright-core:
+        specifier: 1.56.1
+        version: 1.56.1
       ws:
         specifier: 8.18.0
         version: 8.18.0
@@ -1039,6 +1042,11 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  playwright-core@1.56.1:
+    resolution: {integrity: sha512-hutraynyn31F+Bifme+Ps9Vq59hKuUCz7H1kDOcBs+2oGguKkWTU50bBWrtz34OUWmIwpBTWDxaRPXrIXkgvmQ==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   postcss@8.5.32:
     resolution: {integrity: sha512-LJlKCCAUFKOuZxipUdYw1NzIITEsPcgyOG9LkvRJvuKj/bRzbuRY0ARXvL0pWGpsZvn8jku+LMep2eU0seHp8g==}
     engines: {node: ^10 || ^12 || >=14}
@@ -1966,6 +1974,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   playwright-core@1.49.1: {}
+
+  playwright-core@1.56.1: {}
 
   postcss@8.5.32:
     dependencies:
