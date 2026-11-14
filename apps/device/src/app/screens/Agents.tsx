@@ -1,12 +1,13 @@
-import { useState } from "react";
-import type { AgentPurpose, AgentShape, AppId } from "@app/protocol";
-import { AGENT_NAME_MAX, APP_IDS, RISK_LABEL, minAppAgents } from "@app/protocol";
+import { useEffect, useRef, useState } from "react";
+import type { AgentPurpose, AgentShape, AppId, Task } from "@app/protocol";
+import { AGENT_NAME_MAX, APP_IDS, minAppAgents } from "@app/protocol";
 import { Bot, BudScene, SHAPE_KEYS } from "../../bot/Bot";
 import { useControls, step, type ControlEvent } from "../../input/controls";
 import { net } from "../../net/client";
 import { FN_LABEL, useApp, useTalkTarget } from "../context";
-import { ACTIVE, AgentBot, ago, Ico, moodFor, statusChip, useScrollSel } from "../ui";
+import { ACTIVE, AgentBot, Ico, moodFor, useScrollSel } from "../ui";
 import { TextEntry } from "../TextEntry";
+import { useTalkLive } from "../talkLevel";
 
 // device-controls.md, Active Agents mode: the screen shows agent status by itself.
 // D-pad or the in-app wheel picks an agent (A opens it), D makes a new one.
@@ -52,42 +53,64 @@ export function AgentView({ id }: { id: string }) {
   const a = snap.agents.find(x => x.id === id);
   const ownedApp = APP_IDS.find(app => snap.appAgents[app].includes(id));
   useTalkTarget(a ? { kind: "agent", agentId: a.id } : null, [a?.id]);
+  const live = useTalkLive();
+  const talking = live?.agentId === id ? live : null;
   const work = snap.tasks.find(t => t.agentId === id && ACTIVE.includes(t.status));
+  // The thread under the bot: the newest request this agent got, newest first in the list.
+  const task = work ?? snap.tasks.find(t => t.agentId === id && t.target === "agent");
+  const thread = useRef<HTMLDivElement>(null);
+  useEffect(() => { thread.current?.scrollTo({ top: 0 }); }, [task?.id]);
   useControls(e => {
     if (!a) return false;
+    if ((e.c === "up" || e.c === "down") && thread.current) { thread.current.scrollBy({ top: e.c === "up" ? -70 : 70, behavior: "smooth" }); return true; }
     if (e.c === "a" && work) { push({ name: "task", taskId: work.id }); return true; }
     if (e.c === "c" && (!a.builtin || a.purpose === "app") && !ownedApp) { net.send({ type: "agent.delete", agentId: a.id }); return true; }
     return false;
-  }, { a: work ? "Open task" : undefined, c: a && (!a.builtin || a.purpose === "app") && !ownedApp ? "Delete agent" : undefined });
+  }, { mic: "Hold to talk", dpad: task ? "Scroll" : undefined, a: work ? "Open task" : undefined, c: a && (!a.builtin || a.purpose === "app") && !ownedApp ? "Delete agent" : undefined });
   if (!a) return <div className="scr"><p className="say">That agent is gone.</p></div>;
-  const done = snap.tasks.filter(t => t.agentId === a.id && t.status === "done").length;
-  const acts = snap.activity.filter(x => x.agentId === a.id).slice(0, 2);
-  const messages = (snap.messages ?? []).filter(x => x.fromAgentId === a.id || x.toAgentId === a.id).slice(-40).reverse();
-  const mode = snap.settings.permissionMode;
-  const asks = mode === "manual" ? ["Every step"] : mode === "full" ? ["Nothing, Full mode is on"] : Object.values(RISK_LABEL);
   const fresh = Date.now() - Date.parse(snap.activity.find(x => x.text === `Made ${a.name}`)?.at || "0") < 4000;
-  return <div className="scr">
-    <div style={{ position: "absolute", left: 20, top: 92 }}><AgentBot agent={a} size={230} state={fresh ? "happy" : moodFor(work)} morphFrom={fresh ? "circle" : undefined} /></div>
-    <div style={{ position: "absolute", left: 286, right: 28, top: 56, bottom: 40, display: "flex", flexDirection: "column" }}>
-      <p className="say in" style={{ fontSize: 30 }}>{a.name}</p>
-      <p className="mute in" style={{ margin: "6px 0 14px", fontSize: 15 }}>{a.role}</p>
-      {a.personality && <p className="in" style={{ margin: "-6px 0 14px", fontSize: 14, color: "rgba(235,235,245,0.8)" }}>“{a.personality}”</p>}
-      {ownedApp && <p className="mute in" style={{ margin: "0 0 12px", fontSize: 13 }}>Works in {FN_LABEL[ownedApp]}. Press blue D on the app on Home to manage its agents.</p>}
-      <div className="in in-2"><div className="label" style={{ marginBottom: 6 }}>Asks you before</div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{asks.map(x => <span key={x} className="chip warn">{x}</span>)}</div></div>
-      <div className="in in-3" style={{ marginTop: 16, minHeight: 0, display: "flex", flexDirection: "column", flex: 1 }}>
-        <div className="label" style={{ marginBottom: 2 }}>{work ? "Working on" : `${done} task${done === 1 ? "" : "s"} done`}</div>
-        {work && <div className="row sel"><span style={{ flex: 1 }}>{work.title}</span>{statusChip(work, snap)}</div>}
-        {acts.map((x, k) => <div key={k} style={{ display: "flex", gap: 10, fontSize: 14, padding: "4px 0" }}><span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.text}</span><span className="mute">{ago(x.at)}</span></div>)}
-        <div className="label" style={{ marginTop: 12 }}>Recent messages · hold the mic to talk</div>
-        <div className="scroll" style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
-          {messages.map(message => <div key={message.id} className="row" style={{ fontSize: 13, display: "block", overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
-            <b>{message.fromAgentId === "user" ? "You" : snap.agents.find(agent => agent.id === message.fromAgentId)?.name ?? "Task agent"}: </b>{message.text}
-          </div>)}
-        </div>
-      </div>
+  const state = talking ? (talking.phase === "listen" ? "listen" : "think") : fresh ? "happy" : moodFor(work);
+  const pulse = talking?.phase === "listen" ? 1 + Math.min(1, talking.level) * 0.14 : 1;
+  const big = !task || !!talking;
+  return <div className="scr agent-view">
+    <p className="label in agent-view-name">{a.name}{ownedApp ? ` · ${FN_LABEL[ownedApp]}` : ""}</p>
+    <div className={"agent-view-bot" + (big ? " big" : "")} style={{ transform: `scale(${pulse.toFixed(3)})` }}>
+      <AgentBot agent={a} size={big ? 200 : 132} state={state} morphFrom={fresh ? "circle" : undefined} />
     </div>
+    {!task && !talking && <p className="mute in agent-view-hint">Hold the mic and talk to {a.name}.</p>}
+    {task && !talking && <div ref={thread} className="scroll agent-thread in in-2"><Thread task={task} /></div>}
   </div>;
+}
+
+/** One request, what the agent did for it, and its answer. */
+function Thread({ task }: { task: Task }) {
+  const { snap } = useApp();
+  const request = snap.messages?.find(m => m.id === task.requestMessageId);
+  const from = request && request.fromAgentId !== "user" ? snap.agents.find(x => x.id === request.fromAgentId) : undefined;
+  const asked = snap.tasks.filter(t => t.sourceTaskId === task.id).reverse();
+  const output = task.status === "done" ? task.result || task.detail : undefined;
+  const failed = task.status === "failed" || task.status === "paused" ? task.detail : undefined;
+  return <>
+    <div className="thread-row ask">
+      {from ? <AgentBot agent={from} size={22} state="idle" fps={20} /> : <span className="thread-you">You</span>}
+      <span>{from ? <><b>{from.name}</b> asked: </> : null}{request?.text ?? task.title}</span>
+    </div>
+    {task.steps.map(s => <div key={s.id} className={"thread-row step " + s.state}>
+      <span className="thread-dot">{s.state === "done" ? Ico.check(11) : s.state === "failed" || s.state === "declined" ? "×" : ""}</span>
+      <span>{s.text}</span>
+    </div>)}
+    {asked.map(t => {
+      const who = snap.agents.find(x => x.id === t.agentId);
+      return <div key={t.id} className={"thread-row step " + (t.status === "done" ? "done" : t.status === "failed" ? "failed" : "running")}>
+        {who ? <AgentBot agent={who} size={22} state={moodFor(t)} fps={20} /> : <span className="thread-dot" />}
+        <span>Asked <b>{who?.name ?? "Task agent"}</b>{t.status === "done" && (t.result || t.detail) ? <span className="mute"> · {t.result || t.detail}</span> : null}</span>
+      </div>;
+    })}
+    {ACTIVE.includes(task.status) && !task.steps.some(s => s.state === "running") && <div className="thread-row step running"><span className="thread-dot" /><span className="mute">{task.status === "queued" ? "Waiting for a slot…" : "Thinking…"}</span></div>}
+    {output && <p className="thread-out">{output}</p>}
+    {failed && <p className="thread-out failed">{failed}</p>}
+    {!output && !failed && task.status === "done" && <p className="thread-out mute">Done.</p>}
+  </>;
 }
 
 /** `start` opens straight at one action (from the Home cell menu, ADR 0017); B at its first step goes back. */

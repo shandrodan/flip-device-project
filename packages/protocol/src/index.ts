@@ -276,13 +276,14 @@ export interface Snapshot {
  * Otherwise, or "new note …": a new note. The answer comes back as note.routed.
  * "task" (the To-Do app, ADR 0016): saved as a note first, then the main agent makes it one task with a date,
  * a project and maybe an agent. listId is the open list ("today", "inbox", "scheduled", "completed" or a
- * project id). The answer comes back as task.routed.
+ * project id). taskId is the selected task, if any: "move this to Friday" changes it instead of adding one
+ * (ADR 0025). The answer comes back as task.routed.
  */
 export type VoiceTarget =
   | { kind: "note" }
   | { kind: "append"; noteId: string }
   | { kind: "auto"; openNoteId: string | null }
-  | { kind: "task"; listId: string | null }
+  | { kind: "task"; listId: string | null; taskId?: string | null }
   | { kind: "main" }
   | { kind: "app"; app: AppId }
   | { kind: "agent"; agentId: string };
@@ -467,7 +468,8 @@ function isVoiceTarget(value: unknown): value is VoiceTarget {
   if (target.kind === "app") return APP_IDS.includes(target.app as AppId);
   if (target.kind === "append") return typeof target.noteId === "string" && target.noteId.length > 0;
   if (target.kind === "auto") return target.openNoteId === null || (typeof target.openNoteId === "string" && target.openNoteId.length > 0);
-  if (target.kind === "task") return target.listId === null || (typeof target.listId === "string" && target.listId.length > 0);
+  if (target.kind === "task") return (target.listId === null || (typeof target.listId === "string" && target.listId.length > 0))
+    && (target.taskId === undefined || target.taskId === null || (typeof target.taskId === "string" && target.taskId.length > 0));
   return target.kind === "agent" && typeof target.agentId === "string" && target.agentId.length > 0;
 }
 

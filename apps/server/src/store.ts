@@ -102,13 +102,7 @@ export function defaults(): State {
   const t = now();
   return {
     notes: [],
-    tasks: [
-      { id: id("t"), title: "Pick a product name (3 options max)", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t, due: localDay(-1), projectId: "p_pitch" },
-      { id: id("t"), title: "Record backup demo video", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t, due: localDay(0), projectId: "p_demo" },
-      { id: id("t"), title: "Write the one-line pitch for slide 1", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t, due: localDay(0) + "T16:00", projectId: "p_pitch" },
-      { id: id("t"), title: "Run the demo flow 20 times", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t, due: localDay(1), projectId: "p_demo" },
-      { id: id("t"), title: "Buy a USB-C cable for the dock", target: "todo", agentId: null, status: "todo", steps: [], createdAt: t, updatedAt: t, due: null, projectId: null },
-    ],
+    tasks: [],
     projects: DEFAULT_PROJECTS.map(p => ({ ...p })),
     agents: BUILTIN_AGENTS.map(a => ({ ...a })),
     appAgents: Object.fromEntries(APP_IDS.map(app => [app, defaultMembers(app)])) as Record<AppId, string[]>,

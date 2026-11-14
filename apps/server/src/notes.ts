@@ -1,8 +1,8 @@
 // Dumps become notes instantly (ADR 0005), then get a better transcript and suggestions.
 import type { Note, Task, VoiceTarget } from "@app/protocol";
-import { state, id, now, noteById, log, save } from "./store.js";
-import { routeTask } from "./tasks.js";
-import { startTask } from "./agents/runner.js";
+import { state, id, now, noteById, log, save, patchTask } from "./store.js";
+import { routeTask, decideTask, type TaskEdit } from "./tasks.js";
+import { startTask, isRunning } from "./agents/runner.js";
 import { bus } from "./bus.js";
 import { transcribe } from "./voice.js";
 import { suggestTasks } from "./suggest.js";
@@ -49,7 +49,7 @@ export async function voiceEnd(streamId: string, durationMs: number, hint?: stri
 
   if (s.target.kind === "task") {
     const stt = await transcribe(audio, s.mime);
-    return routeTaskDump(stt?.text || quick, s.target.listId, durationMs, stt?.by || "local", streamId);
+    return routeTaskDump(stt?.text || quick, s.target.listId, durationMs, stt?.by || "local", streamId, s.target.taskId);
   }
 
   if (s.target.kind === "append") {
@@ -106,7 +106,7 @@ function sendToAgent(target: Extract<VoiceTarget, { kind: "main" | "agent" | "ap
 export async function voiceScripted(text: string, cloudText: string | undefined, durationMs: number, target: VoiceTarget, streamId = id("voice")) {
   if (target.kind === "append") return appendToNote(target.noteId, cloudText || text);
   if (target.kind === "auto") return routeAuto(cloudText || text, target.openNoteId, durationMs, cloudText ? "cloud" : "local", streamId);
-  if (target.kind === "task") return routeTaskDump(cloudText || text, target.listId, durationMs, cloudText ? "cloud" : "local", streamId);
+  if (target.kind === "task") return routeTaskDump(cloudText || text, target.listId, durationMs, cloudText ? "cloud" : "local", streamId, target.taskId);
   if (target.kind === "main" || target.kind === "agent" || target.kind === "app") {
     return sendToAgent(target, cloudText || text, streamId);
   }
@@ -172,15 +172,18 @@ async function routeAuto(raw: string, openNoteId: string | null, durationMs: num
 }
 
 /** Dumps in To-Do (ADR 0016): kept as a note, then made one task. No suggestions: the task is the answer. */
-async function routeTaskDump(raw: string, listId: string | null, durationMs: number, by: "cloud" | "local", streamId?: string) {
+async function routeTaskDump(raw: string, listId: string | null, durationMs: number, by: "cloud" | "local", streamId?: string, taskId?: string | null) {
   const text = raw.trim();
   if (!text) {
     bus.notice("Didn't catch that.", "warn");
     bus.emit({ type: "state", state: "idle" });
     return;
   }
-  const r = await routeTask(text, listId);
+  const selected = taskId ? state.tasks.find(t => t.id === taskId) : undefined;
+  const d = await decideTask(text, listId, selected);
   const note = createNote(/[.!?]$/.test(text) ? text : text + ".", by, durationMs);
+  if (d.kind === "edit" && selected) return applyTaskEdit(selected, d.edit, note, streamId);
+  const r = d.kind === "add" ? d.route : await routeTask(text, listId);
   const t = now();
   const task: Task = { id: id("t"), noteId: note.id, title: r.title, target: r.agentId ? "agent" : "todo", agentId: r.agentId, status: "todo", steps: [], createdAt: t, updatedAt: t, due: r.due, projectId: r.projectId };
   state.tasks.unshift(task);
@@ -192,6 +195,30 @@ async function routeTaskDump(raw: string, listId: string | null, durationMs: num
   bus.emit({ type: "task.routed", taskId: task.id, noteId: note.id, label: r.label, why: r.why, streamId });
   bus.emit({ type: "state", state: "idle" });
   if (task.agentId) startTask(task);
+}
+
+/** "Move this to Friday": the dump is still a note first, then it changes the selected task (ADR 0025). */
+function applyTaskEdit(t: Task, e: TaskEdit, note: Note, streamId?: string) {
+  const busy = isRunning(t.id);
+  const patch: Partial<Task> = {};
+  if (e.title) patch.title = e.title;
+  if (e.due !== undefined) patch.due = e.due ?? undefined;
+  if (e.projectId !== undefined) patch.projectId = e.projectId;
+  if (e.complete && !busy) Object.assign(patch, { status: "done", completedAt: now() });
+  patchTask(t, patch);
+  note.taskIds.push(t.id);
+  note.suggestionState = "accepted";
+  log("main", `${e.label}: ${t.title}`);
+  save();
+  bus.changed();
+  bus.emit({ type: "note.saved", note, streamId });
+  bus.emit({ type: "task.routed", taskId: t.id, noteId: note.id, label: e.complete && busy ? "Still running" : e.label, why: e.why, streamId });
+  bus.emit({ type: "state", state: "idle" });
+  if (e.agentId && !busy) {
+    patchTask(t, { agentId: e.agentId, target: "agent" });
+    save();
+    startTask(t);
+  }
 }
 
 function appendToNote(noteId: string, text: string, o: { sep?: string; quiet?: boolean } = {}) {

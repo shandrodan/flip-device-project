@@ -6,6 +6,7 @@ import { net } from "../net/client";
 import { startCapture, blobToBase64, type Capture } from "../voice/capture";
 import { useApp, FN_LABEL, type TalkTarget } from "./context";
 import { Ico, AgentBot } from "./ui";
+import { setTalkLive } from "./talkLevel";
 
 /* ================================ Talk ================================ */
 // Mounted while the mic button is held. Home talks to main, an Agent view talks
@@ -146,6 +147,16 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
     }
     return true; // nothing else while talking
   }, { mic: phase === "listen" ? "Let go to send" : "Saving…" }, true, LAYER.talk);
+
+  // On an Agent view talking to that same agent, the agent's own bot listens and pulses.
+  const inlineAgent = app.route?.name === "agent" && (target.kind === "agent" || target.kind === "main")
+    && app.route.agentId === (target.kind === "main" ? "main" : target.agentId) ? app.route.agentId : null;
+  useEffect(() => {
+    if (!inlineAgent) return;
+    setTalkLive({ agentId: inlineAgent, phase, level });
+  }, [inlineAgent, phase, level]);
+  useEffect(() => () => setTalkLive(null), []);
+  if (inlineAgent) return null;
 
   const agentName = target.kind === "agent" ? app.snap.agents.find(a => a.id === target.agentId)?.name : null;
   const label = target.kind === "text" ? target.label : target.kind === "append" ? "Adding to the note" : target.kind === "main" ? "Talking to Main agent" : target.kind === "app" ? `Talking to a ${FN_LABEL[target.app]} agent` : target.kind === "agent" ? `Talking to ${agentName ?? "Task agent"}` : online ? "Listening" : "Listening · on device";

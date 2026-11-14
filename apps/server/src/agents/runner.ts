@@ -263,6 +263,7 @@ async function runModel(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string> 
       ? "You are the main Task agent. Use list_agents and send_agent_message to assign parts to other Task agents. Check their replies before you answer the user."
       : "You can use list_agents and send_agent_message to ask another Task agent for a distinct part. Do not send a request back to its sender.",
     ...(task.app === "build" || servesBuild(agent.id) ? [buildBrief(task.app === "build")] : []),
+    "Words: when the user says \"task\" or \"todo\", they mean an item in the To-Do app (change_app todo.create), never a new agent. Make a new agent only when the user says \"agent\".",
     "Each Device app has one or more assigned Task agents. Use read_app or change_app when work needs an app. The server sends that work to one assigned agent and waits for its result. Do not ask another agent to bypass an app agent.",
     "",
     `Machines:\n${machineLines}`,

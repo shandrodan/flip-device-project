@@ -669,3 +669,24 @@ mark.np-added { color: inherit; border-radius: 4px; padding: 1px 2px; margin: 0 
   .studio-area { height: 56vh; flex: none; padding: 12px; }
   .studio-panel { width: auto; border-left: 0; border-top: 1px solid var(--page-line); }
 }
+
+/* Agent view: the bot in the middle, the latest request as a thread under it. */
+.agent-view-name { position: absolute; top: 20px; left: 0; right: 0; text-align: center; }
+.agent-view-bot { position: absolute; left: 50%; top: 44px; margin-left: -66px; transition: transform 90ms linear, top 320ms cubic-bezier(.2,.8,.2,1), margin 320ms cubic-bezier(.2,.8,.2,1); transform-origin: 50% 50%; }
+.agent-view-bot.big { top: 132px; margin-left: -100px; }
+.agent-view-hint { position: absolute; left: 0; right: 0; top: 352px; text-align: center; font-size: 15px; margin: 0; }
+.agent-thread { position: absolute; left: 50%; width: 520px; margin-left: -260px; top: 190px; bottom: 40px; padding-bottom: 12px;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 18px), transparent 100%); }
+.thread-row { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.35; padding: 5px 0; overflow-wrap: anywhere; }
+.thread-row > :first-child { flex: none; margin-top: -1px; }
+.thread-row.ask { font-size: 15px; color: #f5f5f7; padding-top: 10px; }
+.thread-row.step { color: rgba(235,235,245,0.62); }
+.thread-you { font: 600 11px/22px var(--sys); padding: 0 7px; border-radius: 999px; background: rgba(255,255,255,0.1); color: rgba(235,235,245,0.8); }
+.thread-dot { width: 22px; height: 22px; display: grid; place-items: center; font-size: 14px; }
+.thread-dot::before { content: ""; }
+.thread-row.running .thread-dot:empty::before { width: 7px; height: 7px; border-radius: 50%; background: #8cc4ff; animation: breathe 1.1s ease-in-out infinite; }
+.thread-row.done .thread-dot { color: #7fe0a8; }
+.thread-row.failed .thread-dot, .thread-row.declined .thread-dot { color: #ff8a80; }
+.thread-row.asking .thread-dot:empty::before { width: 7px; height: 7px; border-radius: 50%; background: #ff9a4d; }
+.thread-out { margin: 10px 0 0; font: 500 18px/1.38 var(--sys-display); letter-spacing: -0.01em; color: #f5f5f7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.thread-out.failed { color: #ff8a80; font-size: 16px; }

@@ -13,6 +13,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { CSS3DObject, CSS3DRenderer } from "three/addons/renderers/CSS3DRenderer.js";
 import { emit, onPress, wheelHandler, type Control } from "../input/controls";
 import glbUrl from "../../../../web-render/device-handoff/white-slider-device.glb?url";
+import dockUrl from "../../../../web-render/device-handoff/dock-station.glb?url";
 
 const SCREEN_W = 784, SCREEN_H = 504;
 const FOV = 26;
@@ -20,6 +21,14 @@ const FOV = 26;
 const FRAME_W = 86, FRAME_H = 78;
 /** How far the Device's centre drops when the tray is out (tray travels 32 mm). */
 const OPEN_SHIFT = 16;
+/** Docking, one step at a time, in ms. Undocking plays the same steps backwards.
+ *  Before these the tray slides closed; after undocking it slides back open. */
+const DOCK_FADE = 750, DOCK_TRAVEL = 1100, DOCK_LAND = 800;
+const DOCK_MS = DOCK_FADE + DOCK_TRAVEL + DOCK_LAND;
+/** How high above the seat the Device hovers before it lowers in, in mm. */
+const DOCK_HOVER = 34;
+/** Breathing room around the Dock with the Device seated, in mm. */
+const DOCK_PAD = 26;
 
 type Part = "a" | "b" | "c" | "d" | "dpad" | "pushBar" | "mic" | "systemWheel" | "appWheel" | "power" | "kickstand";
 /** Node names in the model → the control they are. Checked on the hit mesh and its parents. */
@@ -97,11 +106,13 @@ function shadowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-export default function Device3D({ open, want, resetView, onToggleOpen, onFail, studio = false, rings = false, shadow = true, onReady, children }: {
+export default function Device3D({ open, want, docked = false, resetView, onToggleOpen, onFail, studio = false, rings = false, shadow = true, onReady, children }: {
   /** Tray slid out (controls showing) or closed. */
   open: boolean;
   /** An approval press is wanted: the push bar glows. */
   want: boolean;
+  /** Dock mode: the Device travels into the Dock and seats in `device_seat`, tray closed. */
+  docked?: boolean;
   /** Bump to bring the camera back to the front. */
   resetView: number;
   /** The shell was clicked: slide the tray the other way. */
@@ -131,15 +142,16 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
   });
   const [loaded, setLoaded] = useState(false);
   const label = useRef<HTMLDivElement>(null);
-  const live = useRef({ open, want, resetView, onToggleOpen, onReady, rings, shadow, poke: () => { }, zoomBy: (_f: number) => { } });
+  const live = useRef({ open, want, docked, resetView, onToggleOpen, onReady, rings, shadow, poke: () => { }, zoomBy: (_f: number) => { } });
   live.current.onToggleOpen = onToggleOpen;
   live.current.onReady = onReady;
   live.current.rings = rings;
   live.current.shadow = shadow;
   live.current.open = open;
   live.current.want = want;
+  live.current.docked = docked;
   live.current.resetView = resetView;
-  useEffect(() => { live.current.poke(); }, [open, want, resetView, rings, shadow]);
+  useEffect(() => { live.current.poke(); }, [open, want, docked, resetView, rings, shadow]);
 
   useEffect(() => {
     const el = stage.current!;
@@ -150,9 +162,13 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
       onFail?.();
       return;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Supersample a little past the screen's own density: the shell's grain and the small
+    // controls stay crisp instead of shimmering. We only draw while something moves, so it's cheap.
+    renderer.setPixelRatio(Math.min(3, Math.min(window.devicePixelRatio, 2) * 1.25));
     renderer.setClearColor(0x000000, 0);
     renderer.toneMapping = THREE.NeutralToneMapping;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const css = new CSS3DRenderer();
     css.domElement.className = "stage3d-css";
     renderer.domElement.className = "stage3d-gl";
@@ -166,6 +182,14 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
     // A raking key light, so the grain in the shell's normal and roughness maps reads. A cool rim for the edges.
     const keyLight = new THREE.DirectionalLight(0xfff6ea, 2.1);
     keyLight.position.set(-260, 300, 190);
+    // Real shadows from the key light: the screen housing over the tray, the Device in the Dock.
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.radius = 3;
+    keyLight.shadow.bias = -0.0003;
+    keyLight.shadow.normalBias = 0.35;
+    Object.assign(keyLight.shadow.camera, { left: -130, right: 130, top: 130, bottom: -130, near: 150, far: 750 });
+    keyLight.shadow.camera.updateProjectionMatrix();
     const rimLight = new THREE.DirectionalLight(0xdfe8ff, 0.9);
     rimLight.position.set(300, 80, -260);
     scene.add(keyLight, rimLight);
@@ -189,13 +213,16 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
     live.current.poke = () => { dirty = true; };
     let fitDist = 400;
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+    /** Half extents to keep in frame: the Device alone, or the Dock with the Device seated. */
+    const frameHand = { w: FRAME_W, h: FRAME_H }, frameDock = { w: FRAME_W, h: FRAME_H }, frameNow = { w: FRAME_W, h: FRAME_H };
+    const fitFor = (f: { w: number; h: number }) => Math.max(f.h / tanHalf, f.w / (tanHalf * camera.aspect));
     const fit = () => {
       const w = el.clientWidth, h = el.clientHeight;
       if (!w || !h) return;
       renderer.setSize(w, h);
       css.setSize(w, h);
       camera.aspect = w / h;
-      fitDist = Math.max(FRAME_H / tanHalf, FRAME_W / (tanHalf * camera.aspect));
+      fitDist = fitFor(frameNow);
       camera.updateProjectionMatrix();
       dirty = true;
     };
@@ -246,6 +273,7 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
       // Keep the surface textures sharp at grazing angles and up close.
       const aniso = renderer.capabilities.getMaxAnisotropy();
       model.traverse(o => {
+        if ((o as THREE.Mesh).isMesh) o.castShadow = o.receiveShadow = true;
         const mats = (o as THREE.Mesh).material;
         for (const m of (Array.isArray(mats) ? mats : mats ? [mats] : []) as THREE.MeshPhysicalMaterial[]) {
           for (const t of [m.map, m.normalMap, m.roughnessMap, m.metalnessMap]) if (t) { t.anisotropy = aniso; t.needsUpdate = true; }
@@ -275,6 +303,7 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
         const box = screen.geometry.boundingBox!;
         const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
         screen.material = new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, blending: THREE.NoBlending });
+        screen.castShadow = screen.receiveShadow = false;
         const ui = new CSS3DObject(host);
         ui.position.set(mid.x, mid.y, box.max.z);
         ui.scale.set(size.x / SCREEN_W, size.y / SCREEN_H, 1);
@@ -301,7 +330,86 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
       dirty = true;
       setLoaded(true);
       live.current.onReady?.(twin);
+      // The Dock comes second, so the Device shows up first.
+      if (!studio || live.current.docked) loadDock();
     }, undefined, () => { if (!dead) onFail?.(); });
+
+    // ---- Dock: dock-station.glb, with the closed Device seated in `device_seat` ----
+    let dock: THREE.Object3D | null = null, dockLoading = false;
+    let indicator: THREE.MeshStandardMaterial | null = null;
+    const indicatorOn = { color: new THREE.Color(), glow: 1 }, indicatorOff = new THREE.Color(0x2a2e33);
+    const dockMats: THREE.Material[] = [];
+    /** Where the Dock rests, and the Device's pose in the seat, both in rig space. */
+    const dockAt = new THREE.Vector3(), seatPos = new THREE.Vector3(), seatQuat = new THREE.Quaternion();
+    /** Where on the docking timeline we are, in ms: 0 = in the hand, DOCK_MS = seated. */
+    let dockT = 0, dockFade = -1;
+    const loadDock = () => {
+      if (dockLoading) return;
+      dockLoading = true;
+      new GLTFLoader().load(dockUrl, gltf => {
+        if (dead || !model) return;
+        dock = gltf.scene;
+        dock.scale.setScalar(1000);
+        dock.visible = false;
+        rig.add(dock);
+        const aniso = renderer.capabilities.getMaxAnisotropy();
+        dock.traverse(o => {
+          const m = o as THREE.Mesh;
+          if (!m.isMesh) return;
+          m.castShadow = m.receiveShadow = true;
+          m.raycast = () => { }; // the Dock is scenery; clicks go to the Device
+          for (const mat of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshPhysicalMaterial[]) {
+            if (!dockMats.includes(mat)) dockMats.push(mat);
+            for (const t of [mat.map, mat.normalMap, mat.roughnessMap]) if (t) { t.anisotropy = aniso; t.needsUpdate = true; }
+          }
+        });
+        const led = dock.getObjectByName("dock_indicator") as THREE.Mesh | undefined;
+        if (led && !Array.isArray(led.material)) {
+          indicator = led.material as THREE.MeshStandardMaterial;
+          indicatorOn.color.copy(indicator.color);
+          indicatorOn.glow = indicator.emissiveIntensity || 1;
+          indicator.emissiveIntensity = 0;
+          indicator.color.copy(indicatorOff);
+        }
+
+        // Seat the closed Device (identity local transform under device_seat) and centre the pair on the pivot.
+        const seat = dock.getObjectByName("device_seat");
+        const saved = { rot: rig.rotation.clone(), pos: model.position.clone(), quat: model.quaternion.clone(), t: slideClip?.time ?? 0 };
+        rig.rotation.set(0, 0, 0);
+        if (slideClip && mixer) { slideClip.time = 0; mixer.update(0); }
+        rig.updateMatrixWorld(true);
+        const seatM = seat ? seat.matrixWorld.clone() : new THREE.Matrix4();
+        seatM.decompose(seatPos, seatQuat, new THREE.Vector3());
+        model.position.copy(seatPos);
+        model.quaternion.copy(seatQuat);
+        rig.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(model).union(new THREE.Box3().setFromObject(dock));
+        const mid = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+        dockAt.copy(mid).negate();
+        seatPos.add(dockAt);
+        frameDock.w = size.x / 2 + DOCK_PAD;
+        frameDock.h = size.y / 2 + DOCK_PAD;
+        rig.rotation.copy(saved.rot);
+        model.position.copy(saved.pos);
+        model.quaternion.copy(saved.quat);
+        if (slideClip && mixer) { slideClip.time = saved.t; mixer.update(0); }
+        dock.position.copy(dockAt);
+        dirty = true;
+      }, undefined, () => { dockLoading = false; });
+    };
+    /** Fade the Dock's materials. Transparent only while fading, so the solid Dock sorts and shadows normally. */
+    const setDockFade = (a: number) => {
+      if (a === dockFade) return;
+      const solid = a >= 1;
+      for (const m of dockMats) {
+        if (m === indicator) continue;
+        if (m.transparent === solid) { m.transparent = !solid; m.needsUpdate = true; }
+        m.opacity = a;
+        m.depthWrite = solid;
+      }
+      dockFade = a;
+    };
+    const handPos = new THREE.Vector3(), hoverPos = new THREE.Vector3(), identity = new THREE.Quaternion();
 
     let slide = live.current.open ? 1 : 0;
 
@@ -427,6 +535,7 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
     let moved = 0, onShell = false, pinch = 0;
     const touches = new Map<number, { x: number; y: number }>();
     let seenReset = live.current.resetView;
+    let seenDock = live.current.docked;
     const canvas = renderer.domElement;
     const tip = (text: string | null, ev?: PointerEvent) => {
       const t = label.current;
@@ -514,7 +623,7 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
     const up = (ev: PointerEvent) => {
       if (!touches.delete(ev.pointerId)) return;
       if (micHeld) emit({ c: "mic", phase: "up" });
-      if (mode === "orbit" && moved < 5 && onShell) live.current.onToggleOpen?.();
+      if (mode === "orbit" && moved < 5 && onShell && !live.current.docked) live.current.onToggleOpen?.();
       else if (mode && typeof mode === "object" && !mode.turned) {
         emit(mode.wheel === "systemWheel" ? { c: "systemWheel", dir: mode.back ? -1 : 1 } : { c: "appWheelPress" });
       }
@@ -589,8 +698,60 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
       view.tiltY = damp(view.tiltY, view.toTiltY, 7);
       rig.rotation.set(view.pitch + view.tiltX, view.yaw + view.tiltY, 0);
 
-      slide = damp(slide, live.current.open ? 1 : 0, 9);
-      if (model) model.position.y = OPEN_SHIFT * slide; // keep the whole Device centred on the pivot
+      const docking = live.current.docked;
+      if (docking && !dock) loadDock();
+      if (docking !== seenDock) {
+        seenDock = docking;
+        // Swing round to a three-quarter view (as in device-docked.png) so the Dock reads in depth.
+        if (!studio && !tween) {
+          view.yaw -= Math.round(view.yaw / (Math.PI * 2)) * Math.PI * 2;
+          view.toYaw = docking ? -0.5 : -0.3;
+          view.toPitch = docking ? 0.2 : 0.12;
+          toZoom = 1;
+          toPan.set(0, 0);
+        }
+      }
+      // Docking, in strict order so nothing passes through the Dock:
+      //   the tray slides closed → the Dock fades up → the Device travels over the seat → it lowers in.
+      // Undocking is the same backwards: it lifts out, travels back, the Dock fades away, then the tray slides open.
+      const dockGoal = docking && dock ? DOCK_MS : 0;
+      slide = damp(slide, live.current.open && !docking && dockT === 0 ? 1 : 0, 7);
+      const trayShut = slide < 0.01;
+      if (dockT !== dockGoal && (dockGoal === 0 || trayShut)) {
+        dockT = THREE.MathUtils.clamp(dockT + (dockGoal ? 1 : -1) * dt * 1000, 0, DOCK_MS);
+        moving = true;
+      }
+      const step = (from: number, len: number) => THREE.MathUtils.clamp((dockT - from) / len, 0, 1);
+      const show = EASE.inOut(step(0, DOCK_FADE));
+      const travel = EASE.inOut(step(DOCK_FADE, DOCK_TRAVEL));
+      const land = EASE.inOut(step(DOCK_FADE + DOCK_TRAVEL, DOCK_LAND));
+      if (model) {
+        handPos.set(0, OPEN_SHIFT * slide, 0); // keep the whole Device centred on the pivot
+        hoverPos.copy(seatPos).y += DOCK_HOVER;
+        model.position.lerpVectors(handPos, hoverPos, travel);
+        model.position.y -= DOCK_HOVER * land;
+        model.quaternion.slerpQuaternions(identity, seatQuat, travel);
+      }
+      if (dock) {
+        dock.visible = show > 0;
+        dock.position.set(dockAt.x, dockAt.y - 24 * (1 - show), dockAt.z);
+        setDockFade(show);
+        if (indicator) {
+          // The green charging light comes on once the contacts meet.
+          const on = dockT >= DOCK_MS ? 1 : 0;
+          const k = damp(indicator.emissiveIntensity / (indicatorOn.glow || 1), on, 6);
+          indicator.emissiveIntensity = k * indicatorOn.glow;
+          indicator.color.copy(indicatorOff).lerp(indicatorOn.color, k);
+          indicator.opacity = show;
+          if (indicator.transparent !== show < 1) { indicator.transparent = show < 1; indicator.needsUpdate = true; }
+        }
+      }
+      // Pull back for the Dock as it appears, and come in again once it has gone.
+      const e = EASE.inOut(step(0, DOCK_FADE + DOCK_TRAVEL));
+      frameNow.w = THREE.MathUtils.lerp(frameHand.w, frameDock.w, e);
+      // …and pull back a little more while it hovers over the seat, so its top stays in frame.
+      frameNow.h = THREE.MathUtils.lerp(frameHand.h, frameDock.h, e) + DOCK_HOVER * travel * (1 - land);
+      fitDist = fitFor(frameNow);
       if (mixer && slideClip) {
         slideClip.time = slide * slideClip.getClip().duration;
         mixer.update(0);
@@ -603,7 +764,7 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
       if (node.appWheel) node.appWheel.position.y = rest.appWheel!.y - 0.0005 * press("appWheel");
       if (micGlow) micGlow.emissiveIntensity = 0.9 * (depth.mic || 0);
       if (node.power) node.power.position.y = damp(node.power.position.y, rest.power!.y + (powered ? 0 : 0.0028), 22);
-      if (node.kickstand) node.kickstand.rotation.x = damp(node.kickstand.rotation.x, standOut ? 0.95 : 0, 11);
+      if (node.kickstand) node.kickstand.rotation.x = damp(node.kickstand.rotation.x, standOut && !docking && dockT === 0 ? 0.95 : 0, 11);
       if (node.dpad) {
         const on = now < (held.dpad || 0) ? 0.09 : 0;
         dpadTilt.set(damp(dpadTilt.x, dpadTarget.x * on, 38), damp(dpadTilt.y, dpadTarget.y * on, 38));

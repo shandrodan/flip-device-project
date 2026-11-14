@@ -93,7 +93,9 @@ export function Simulator() {
   }, [flat]);
   useEffect(() => { try { localStorage.setItem("flip-voice", voice); } catch { /* ignore */ } }, [voice]);
   // The screen's prompts follow the tray: closed, the D-pad and A–D are covered. The drawn twin is always open.
-  useEffect(() => { setTrayOpen(flat || open); }, [flat, open]);
+  // In the Dock the tray is always closed.
+  const docked = n.mode === "dock";
+  useEffect(() => { setTrayOpen(flat || (open && !docked)); }, [flat, open, docked]);
 
   const btn = (c: Control, cls: string, content: ReactNode, label: string) =>
     <button className={cls + (down[c] ? " down" : "")} aria-label={label} onPointerDown={e => { e.preventDefault(); emit({ c }); }}>{content}</button>;
@@ -101,7 +103,6 @@ export function Simulator() {
 
   const micDown = (e: React.PointerEvent) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); emit({ c: "mic", phase: "down" }); };
   const micUp = () => { if (down.mic) emit({ c: "mic", phase: "up" }); };
-  const docked = n.mode === "dock";
   const app = remoteUrl ? <RemoteScreen url={remoteUrl} />
     : <DeviceApp voice={voice} onWantPush={setWant} debug={debug} onEndDebug={() => setDebug(null)} />;
   const tri = (r: number) => <PlayIcon width={16} height={16} aria-hidden="true" style={{ transform: `rotate(${r - 90}deg)` }} />;
@@ -121,7 +122,7 @@ export function Simulator() {
     </header>
 
     {!flat && <Suspense fallback={<div className="stage3d"><div className="stage3d-note">Loading the Device model…</div></div>}>
-      <Device3D open={open} want={want} resetView={view} onToggleOpen={() => setOpen(o => !o)} onFail={() => setFlat(true)}>{app}</Device3D>
+      <Device3D open={open} want={want} docked={docked} resetView={view} onToggleOpen={() => setOpen(o => !o)} onFail={() => setFlat(true)}>{app}</Device3D>
     </Suspense>}
     {!flat && <div className="panel reach">
       <span className="pstat">Out of sight from the front</span>
@@ -181,7 +182,7 @@ export function Simulator() {
       {flat
         ? <button className="pbtn" aria-pressed={!labels} onClick={() => setLabels(!labels)}>{labels ? "Hide labels" : "Show labels"}</button>
         : <>
-          <button className="pbtn" aria-pressed={!open} onClick={() => setOpen(!open)}>{open ? "Slide closed" : "Slide open"}</button>
+          <button className="pbtn" aria-pressed={!open || docked} disabled={docked} onClick={() => setOpen(!open)}>{open && !docked ? "Slide closed" : "Slide open"}</button>
           <button className="pbtn" onClick={() => setView(v => v + 1)}>Front view</button>
         </>}
     </div>

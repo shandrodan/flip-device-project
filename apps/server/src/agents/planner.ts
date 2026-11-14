@@ -42,7 +42,7 @@ export async function runPlanner(ctx: Ctx): Promise<string> {
       return (await ctx.waitForChildren()) ?? "The request did not return a result.";
     }
   }
-  const todo = title.match(/^(?:add|create|make) (?:me )?(?:a )?(?:to-?do|task)(?: to|:)? (.+)$/i);
+  const todo = title.match(/^(?:add|create|make) (?:me )?(?:a |an )?(?:new )?(?:to-?do|task)(?! agent\b)(?: called| named| to|:)? (.+?)\.?$/i);
   if (todo) return (await use(ctx, "change_app", { action: "todo.create", text: todo[1], say: "Adding a To-Do" })).text;
   const note = title.match(/^save (?:a )?note (?:that|to|:)? (.+)$/i);
   if (note) return (await use(ctx, "change_app", { action: "notes.create", text: note[1], say: "Saving a Note" })).text;

@@ -2,7 +2,7 @@
 // note), then the main agent turns them into one task: a title, maybe a day and time, maybe a project,
 // and an agent only when you name one ("ask the mail agent to …"). The configured model when a key is set, otherwise
 // rules that cover the demo.
-import type { Agent, Project } from "@app/protocol";
+import type { Agent, Project, Task } from "@app/protocol";
 import { structuredMessage, hasLlm, describeApiError } from "./llm.js";
 import { config } from "./config.js";
 import { state, localDay } from "./store.js";
@@ -19,8 +19,146 @@ export interface TaskRoute {
   why: string;
 }
 
+/** A change to the selected task (ADR 0025). Only the fields they asked to change are set. */
+export interface TaskEdit {
+  taskId: string;
+  title?: string;
+  /** null clears the date. */
+  due?: string | null;
+  projectId?: string | null;
+  agentId?: string;
+  complete?: boolean;
+  label: string;
+  why: string;
+}
+export type TaskDecision = { kind: "add"; route: TaskRoute } | { kind: "edit"; edit: TaskEdit };
+
 const LISTS = new Set(["today", "inbox", "scheduled", "completed"]);
 const projectById = (pid: string | null | undefined) => state.projects.find(p => p.id === pid);
+
+/**
+ * A To-Do dump either adds a task or changes the selected one ("move this to Friday", "rename it to …",
+ * "it's done", "hand it to the research agent"). With nothing selected it always adds.
+ */
+export async function decideTask(text: string, listId: string | null, selected?: Task): Promise<TaskDecision> {
+  if (selected && hasLlm()) {
+    try {
+      const d = await decideViaModel(text, listId, selected);
+      if (d) return d;
+    } catch (err) {
+      console.warn("[tasks] Model failed, using rules:", describeApiError(err));
+    }
+    const edit = editViaRules(text, selected);
+    if (edit) return { kind: "edit", edit };
+    return { kind: "add", route: viaRules(text, listId) };
+  }
+  if (selected) {
+    const edit = editViaRules(text, selected);
+    if (edit) return { kind: "edit", edit };
+  }
+  return { kind: "add", route: await routeTask(text, listId) };
+}
+
+function editLabel(e: Omit<TaskEdit, "label" | "why" | "taskId">) {
+  if (e.complete) return "Marked done";
+  if (e.agentId) return `Handed to ${state.agents.find(a => a.id === e.agentId)?.name ?? "an agent"}`;
+  if (e.due !== undefined) return e.due ? `Moved to ${dayLabel(e.due.slice(0, 10))}` : "Date cleared";
+  if (e.projectId !== undefined) return e.projectId ? `Moved to ${projectById(e.projectId)?.name ?? "a project"}` : "Moved to Inbox";
+  if (e.title) return "Renamed";
+  return "No change";
+}
+
+const describeTask = (t: Task) =>
+  `"${t.title}"${t.due ? `, due ${t.due}` : ", no date"}${t.projectId ? `, in project ${projectById(t.projectId)?.name ?? t.projectId}` : ", in Inbox"}${t.status === "done" ? ", already done" : ""}`;
+
+const DECIDE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["action", "title", "day", "time", "clearDate", "projectId", "agentId", "complete", "why"],
+  properties: {
+    action: { type: "string", enum: ["add", "edit"], description: "edit: they talk about the selected task. add: they describe new work." },
+    title: { type: "string", description: "add: the new task, imperative, at most 9 words, without date, project or agent words. edit: the new title ONLY if they rename it, else empty." },
+    day: { type: "string", description: "YYYY-MM-DD if they gave a day ('tomorrow', 'on Friday'), else empty." },
+    time: { type: "string", description: "HH:mm (24h) if they gave a time ('at 3', 'in the morning' = 09:00), else empty." },
+    clearDate: { type: "boolean", description: "edit only: true if they want the date removed ('no date', 'someday')." },
+    projectId: { type: "string", description: "A project id from the list if they named it (add: or it clearly belongs there), else empty. 'inbox' to take an edited task out of its project." },
+    agentId: { type: "string", description: "An agent id only if they explicitly asked an agent to do it / hand it over, else empty." },
+    complete: { type: "boolean", description: "edit only: true if they say it is done or finished." },
+    why: { type: "string", description: "At most 8 plain words for the screen, e.g. 'You said tomorrow morning'." },
+  },
+};
+
+async function decideViaModel(text: string, listId: string | null, sel: Task): Promise<TaskDecision | null> {
+  const today = new Date();
+  const open = listId && !LISTS.has(listId) ? projectById(listId) : undefined;
+  const res = await structuredMessage({
+    model: config.suggestModel,
+    max_tokens: 600,
+    output_config: { effort: "low", format: { type: "json_schema", schema: DECIDE_SCHEMA } },
+    system:
+      `Someone holds the mic in the To-Do app of a small desk device and speaks. Today is ${today.toLocaleDateString("en-GB", { weekday: "long" })} ${localDay(0)}.\n` +
+      `The open list is ${open ? `the project "${open.name}" (${open.id})` : `"${listId || "today"}"`}.\n` +
+      `The task selected on screen is ${describeTask(sel)}.\n\n` +
+      "Decide the action:\n" +
+      "- edit: they are talking about the selected task. Signs: 'this', 'it', 'this task', 'that one', or a change with no new work in it: " +
+      "'move this task to tomorrow', 'push it to Friday', 'rename it to call the venue', 'put this in Pitch deck', 'it's done', 'hand this to the research agent', 'make it 3pm'. " +
+      "Fill only the fields they change; leave the rest empty or false. A time alone keeps the task's day.\n" +
+      "- add: they describe new work: 'buy batteries tomorrow', 'remind me to call Rasa'. Use the open list as the project if it is one and they name none.\n" +
+      "Never turn an instruction about the selected task into a new task: 'move this task tomorrow' is an edit, never a task called 'Move this task'.\n" +
+      "Never invent a date, project or agent they didn't give.\n\n" +
+      "Projects:\n" + state.projects.map(p => `- ${p.id}: ${p.name}`).join("\n") +
+      "\n\nAgents:\n" + state.agents.filter(a => a.purpose !== "main").map(a => `- ${a.id}: ${a.name}. ${a.role}`).join("\n"),
+    messages: [{ role: "user", content: text }],
+  });
+  if (!res) return null;
+  const o = res as Record<string, string | boolean>;
+  const str = (k: string) => (typeof o[k] === "string" ? (o[k] as string).trim() : "");
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(str("day")) ? str("day") : null;
+  const time = /^\d{2}:\d{2}$/.test(str("time")) ? str("time") : null;
+  const agent = state.agents.find(a => a.id === str("agentId") && a.purpose !== "main");
+  const why = str("why") || "Saved";
+
+  if (o.action === "edit") {
+    const e: Omit<TaskEdit, "label" | "why" | "taskId"> = {};
+    if (str("title")) e.title = str("title")[0].toUpperCase() + str("title").slice(1);
+    if (o.clearDate === true) e.due = null;
+    // A new day keeps the task's time; a time alone keeps its day.
+    else if (day || time) e.due = (day ?? sel.due?.slice(0, 10) ?? localDay(0)) + (time ? "T" + time : sel.due?.includes("T") ? sel.due.slice(10) : "");
+    if (str("projectId") === "inbox") e.projectId = null;
+    else if (projectById(str("projectId"))) e.projectId = str("projectId");
+    if (agent) e.agentId = agent.id;
+    if (o.complete === true) e.complete = true;
+    return { kind: "edit", edit: { taskId: sel.id, ...e, label: editLabel(e), why } };
+  }
+
+  const title = str("title");
+  if (!title) return null;
+  let d = day;
+  if (!d && (time || listId === "today")) d = localDay(0);
+  const project = projectById(str("projectId")) ?? open;
+  return { kind: "add", route: finish(title, d ? d + (time ? "T" + time : "") : null, project, agent, why) };
+}
+
+/** Without a model: "move this (task) to tomorrow", "rename it to …", "it's done", "hand this to the mail agent". */
+const POINTS = /\b(this|it|that)(\s+(task|one|todo))?\b/i;
+const CHANGES = /^(?:okay|ok|so|please|can you|could you|just)?[,\s]*(move|push|reschedule|postpone|shift|change|rename|call|mark|set|put|make|hand|give|send|do)\b|\b(it'?s|is) (done|finished|complete)\b|\bmark (it|this)( task)? (as )?(done|complete)\b/i;
+export function editViaRules(raw: string, sel: Task): TaskEdit | null {
+  const s = raw.trim().replace(/[.!?]+$/, "");
+  if (!POINTS.test(s) || !CHANGES.test(s)) return null;
+  const e: Omit<TaskEdit, "label" | "why" | "taskId"> = {};
+  const rename = s.match(/\b(?:rename|call)\s+(?:it|this|that)(?:\s+(?:task|one))?\s+(?:to\s+|as\s+)?(.+)$/i);
+  if (rename) e.title = rename[1][0].toUpperCase() + rename[1].slice(1);
+  if (/\b(done|finished|complete)\b/i.test(s) && !rename) e.complete = true;
+  if (!rename && !e.complete) {
+    const r = viaRules(s, null);
+    if (r.agentId) e.agentId = r.agentId;
+    if (r.due) e.due = r.due;
+    if (r.projectId && r.why.startsWith("You named")) e.projectId = r.projectId;
+    if (/\b(no date|someday|unschedule)\b/i.test(s)) e.due = null;
+  }
+  if (!Object.keys(e).length) return null;
+  return { taskId: sel.id, ...e, label: editLabel(e), why: `You said “${s.length > 40 ? s.slice(0, 39) + "…" : s}”` };
+}
 
 export async function routeTask(text: string, listId: string | null): Promise<TaskRoute> {
   if (hasLlm()) {

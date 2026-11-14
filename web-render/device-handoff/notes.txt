@@ -7,3 +7,4 @@ Keep the motion snappy and damped, with a satin white shell, glossy dark screen,
 Target screen for display content, button_power and button_microphone for the side controls, and wheel_in_app, wheel_system, and kickstand for pivoted motion.
 The screen faces +Z and up is +Y. The tray travels 32 mm down and the rails travel 16 mm down.
 Use soft studio reflections on the screen and match front.png, side.png, three-quarter.png, and lighting-setup.jpg. See slide-open.mp4 for the motion.
+For Dock mode, load dock-station.glb and parent the closed device node to device_seat with an identity local transform. Use dock_indicator for the green charging light and device-docked.png for the seated pose.

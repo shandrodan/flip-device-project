@@ -178,6 +178,8 @@ export function Todo() {
   tasksRef.current = snap.tasks;
   const listRef = useRef(list);
   listRef.current = list;
+  const selRef = useRef<Task | undefined>(undefined);
+  selRef.current = focus === "tasks" ? cur : undefined;
   const dLater = (fn: () => void, ms: number) => { dTimers.current.push(window.setTimeout(fn, ms)); };
   const clearD = () => { dTimers.current.forEach(clearTimeout); dTimers.current = []; stopWait.current?.(); stopWait.current = null; };
   const patch = (p: Partial<Dict>) => setDict(d => (d ? { ...d, ...p } : d));
@@ -211,7 +213,8 @@ export function Todo() {
     return () => clearInterval(id);
   }, [dict?.phase]);
 
-  const target = () => ({ kind: "task" as const, listId: listRef.current.id });
+  // The selected task rides along, so "move this to Friday" changes it instead of adding a task (ADR 0025).
+  const target = () => ({ kind: "task" as const, listId: listRef.current.id, taskId: selRef.current?.id ?? null });
   const miss = () => { patch({ phase: "miss", bot: "sad", about: "" }); dLater(close, 2200); };
 
   const start = () => {

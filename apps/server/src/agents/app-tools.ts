@@ -30,7 +30,7 @@ export const APP_TOOLS: ToolDef[] = [
   },
   {
     name: "change_app",
-    description: "Change a built-in Device app. Actions: notes.create, notes.append, todo.create, todo.complete, todo.reopen, focus.start, focus.stop, agents.create, settings.permission. Give only fields the action needs. Full permission mode and keys are user-only.",
+    description: "Change a built-in Device app. Actions: notes.create, notes.append, todo.create, todo.complete, todo.reopen, focus.start, focus.stop, agents.create, settings.permission. Give only fields the action needs. A \"task\" or \"todo\" the user asks for is todo.create (text = its title). Use agents.create only when the user says \"agent\". Full permission mode and keys are user-only.",
     props: {
       action: { type: "string", enum: ["notes.create", "notes.append", "todo.create", "todo.complete", "todo.reopen", "focus.start", "focus.stop", "agents.create", "settings.permission"] },
       text: { type: "string" }, id: { type: "string" }, name: { type: "string" }, role: { type: "string" },
