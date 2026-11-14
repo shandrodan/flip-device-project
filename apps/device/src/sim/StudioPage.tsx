@@ -8,6 +8,7 @@ import { useNet } from "../net/client";
 import { DeviceApp } from "../app/App";
 import { defaultSource, type VoiceSource } from "../voice/capture";
 import Device3D from "./Device3D";
+import { RemoteScreen, remoteUrl } from "./RemoteScreen";
 import { ASPECTS, BACKDROPS, SHOTS, backdropCss, bind, castsShadow, onCaption, set, studio, useStudio, type Aspect } from "./studio";
 
 (window as unknown as { studio: typeof studio }).studio = studio;
@@ -85,7 +86,7 @@ export default function Studio() {
       <div className="studio-frame" ref={frame} data-studio-stage style={{ width: box?.w, height: box?.h, background: backdropCss(st.backdrop) }}>
         {box && <Device3D studio open={st.open} want={want} resetView={0} rings={st.rings} shadow={castsShadow(st)}
           onToggleOpen={() => set({ open: !st.open })} onReady={t => bind(t, frame.current!)}>
-          <DeviceApp voice={voice} onWantPush={setWant} />
+          {remoteUrl ? <RemoteScreen url={remoteUrl} /> : <DeviceApp voice={voice} onWantPush={setWant} />}
         </Device3D>}
         {st.captions && <Caption />}
       </div>

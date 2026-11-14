@@ -8,7 +8,7 @@
 // The server is the source of truth. After every change it broadcasts a full `snapshot`
 // (the state is small), plus a few event messages for things the screen reacts to at once.
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /* ============================== Basic words ============================== */
 
@@ -209,16 +209,20 @@ export interface CodingAgent {
   since: string;
 }
 
+export type BuildPreviewMode = "proxy" | "custom";
+
 /**
- * The Build app (ADR 0021): one project on the user's machine and its dev server, shown as a live
- * preview on the Device. `rev` goes up after every Build task, so the preview reloads.
+ * The Build app (ADR 0021, 0022): one project on the user's machine, shown as a live preview on
+ * the Device. `rev` goes up after every Build task, so the preview reloads.
  */
 export interface BuildState {
   /** Project folder on the machine, as a ~/ path. */
   dir: string;
   /** Short project name shown on the Device. */
   name: string;
-  /** What the Device loads in the preview frame, e.g. http://100.x.y.z:5173. Null until a dev server runs. */
+  /** Server proxy for static Build files, or an explicitly configured custom dev server. */
+  previewMode: BuildPreviewMode;
+  /** What the Device loads in the preview frame. The server fills this for proxy previews. */
   previewUrl: string | null;
   rev: number;
 }

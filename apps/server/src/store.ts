@@ -71,7 +71,13 @@ const defaultMembers = (app: AppId) => (DEFAULT_APP_AGENTS[app] ? [DEFAULT_APP_A
 
 export function defaultBuild(): BuildState {
   const dir = config.buildDir.replace(/\/+$/, "") || "~/Flip/build";
-  return { dir, name: config.buildName || dir.split("/").pop() || "Project", previewUrl: config.buildPreviewUrl || null, rev: 0 };
+  return {
+    dir,
+    name: config.buildName || dir.split("/").pop() || "Project",
+    previewMode: config.buildPreviewUrl ? "custom" : "proxy",
+    previewUrl: config.buildPreviewUrl || null,
+    rev: 0,
+  };
 }
 
 export const PURPOSE_ROLES: Record<string, string> = {
@@ -160,9 +166,15 @@ function load(): State {
         : t,
     );
     s.notes = (s.notes || []).map(n => (n.suggestionState === "pending" ? { ...n, suggestionState: "none" } : n));
-    // Env wins for the project; the preview URL an agent set is kept unless env names one.
     const build = defaultBuild();
-    s.build = { ...build, previewUrl: config.buildPreviewUrl || saved.build?.previewUrl || null, rev: saved.build?.rev ?? 0 };
+    const savedBuild = saved.build as Partial<BuildState> | undefined;
+    const previewMode = config.buildPreviewUrl ? "custom" : savedBuild?.previewMode === "custom" ? "custom" : "proxy";
+    s.build = {
+      ...build,
+      previewMode,
+      previewUrl: previewMode === "custom" ? config.buildPreviewUrl || savedBuild?.previewUrl || null : null,
+      rev: savedBuild?.rev ?? 0,
+    };
     if (process.env.PC_AGENTS) s.machines = parseMachines(); // env wins over the saved list
     return s;
   } catch (err) {

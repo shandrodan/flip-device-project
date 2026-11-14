@@ -76,12 +76,13 @@ export const BUILD_TOOLS: ToolDef[] = [
   },
   {
     name: "build_preview",
-    description: "Set the address the Device shows as the live preview, once the dev server runs. Use an address the Device can reach (the machine's Tailscale or LAN IP, not localhost), e.g. http://100.64.0.2:5173.",
+    description: "Set a custom dev-server address only after starting and verifying that server. The Device normally previews static Build files through the Flip server, so do not call this for ordinary HTML, CSS, or browser JavaScript changes. Use a reachable Tailscale or LAN URL, never localhost or a guessed address.",
     props: { url: { type: "string" }, say: SAY }, required: ["url", "say"], purposes: "all",
     async run(ctx, i) {
       const url = String(i.url).trim();
       if (!/^https?:\/\/[^\s]+$/i.test(url)) throw new ToolError("Give a full http:// or https:// address.");
       await ctx.gate({ title: "Show this preview?", body: url });
+      state.build.previewMode = "custom";
       state.build.previewUrl = url;
       saveNow();
       bus.changed();

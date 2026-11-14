@@ -33,6 +33,26 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 .pbtn[aria-pressed="true"] { background: var(--page-fg); color: var(--page-bg); }
 .pstat { font-size: 13px; color: var(--page-muted); display: inline-flex; gap: 6px; align-items: center; }
 .pstat .dot { width: 7px; height: 7px; border-radius: 50%; }
+/* Board monitor: what the Pi-class VM uses (ADR 0024) */
+.bm { width: 100%; max-width: 940px; padding: 18px 20px; border-radius: 20px; background: var(--page-chip); display: grid; gap: 16px; }
+.bm-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.bm h2 { font: 600 15px/1.3 var(--sys-display); margin: 0; }
+.bm p { margin: 2px 0 0; color: var(--page-muted); font-size: 13px; }
+.bm .bm-fine { font-size: 12px; }
+.bm-note { margin: 0; color: var(--page-muted); font-size: 13px; }
+.bm-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+.bm-stat { display: grid; gap: 6px; min-width: 0; }
+.bm-stat > span { color: var(--page-muted); font-size: 12.5px; }
+.bm-stat b { font: 600 28px/1.1 var(--sys-display); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.bm-stat small { font-size: 14px; font-weight: 500; color: var(--page-muted); }
+.bm-bar { height: 6px; border-radius: 3px; background: var(--page-line); overflow: hidden; }
+.bm-bar i { display: block; height: 100%; background: #34c759; transition: width 400ms ease-out; }
+.bm-bar i[data-high] { background: #ff9f0a; }
+.bm-spark { width: 100%; height: 40px; color: var(--page-muted); display: block; }
+.bm-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bm-table th { color: var(--page-muted); font-weight: 500; text-align: right; padding: 0 0 6px; }
+.bm-table td { text-align: right; padding: 6px 0; border-top: 1px solid var(--page-line); }
+.bm-table th:first-child, .bm-table td:first-child { text-align: left; }
 .keys { width: 100%; max-width: 940px; color: var(--page-muted); font-size: 12.5px; line-height: 2; }
 
 /* The 3D twin: the Device screen (DOM, behind) shows through a hole in the WebGL canvas (in front). */
@@ -169,7 +189,7 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } }
 .soft { position: absolute; left: 20px; right: 20px; bottom: 40px; z-index: 22; display: flex; align-items: center; gap: 14px; background: #1c1c1e; border-radius: 22px; padding: 12px 16px; animation: materialize 420ms var(--ease) both; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.8); }
 .sheet { position: absolute; inset: 0; z-index: 21; background: rgba(0,0,0,0.6); animation: fadeIn 200ms ease both; }
-.sheet-in { position: absolute; left: 30px; right: 30px; bottom: 40px; border-radius: 24px; background: #1c1c1e; padding: 16px; animation: materialize 380ms var(--ease) both; }
+.sheet-in { position: absolute; left: 30px; right: 30px; bottom: 40px; border-radius: 24px; background: #1c1c1e; color: #fff; padding: 16px; animation: materialize 380ms var(--ease) both; }
 @keyframes fadeIn { from { opacity: 0; } }
 .nudge { animation: nudge 360ms ease; }
 @keyframes nudge { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
@@ -251,10 +271,11 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 }
 
 /* Home: the main agent on the left, apps and bots in one honeycomb on the right. */
-.home-main { position: absolute; left: 24px; top: 44px; width: 232px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.home-left { position: absolute; left: 24px; top: 44px; bottom: 44px; width: 232px; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; }
+.home-main { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .home-main .say { font-size: 22px; line-height: 1.18; }
 .home-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.home-cap { position: absolute; left: 24px; bottom: 44px; width: 232px; display: flex; flex-direction: column; gap: 3px; animation: materialize 260ms var(--ease) both; }
+.home-cap { display: flex; flex-direction: column; gap: 3px; animation: materialize 260ms var(--ease) both; }
 .home-cap b { font: 600 17px/1.2 var(--sys-display); letter-spacing: -0.015em; }
 .home-cap .mute { font-size: 13px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .comb-view { position: absolute; left: 276px; top: 40px; width: 496px; height: 428px; overflow: hidden; }

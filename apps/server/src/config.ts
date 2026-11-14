@@ -28,7 +28,7 @@ export const config = {
   hosting: (env("HOSTING", "self") as "cloud" | "vm" | "self"),
 
   openRouterKey: env("OPENROUTER_API_KEY"),
-  openRouterModel: env("OPENROUTER_MODEL").trim() || "nvidia/nemotron-3.5-super-vl:free",
+  openRouterModel: env("OPENROUTER_MODEL").trim() || "mistralai/mistral-small-2603",
   anthropicKey: env("ANTHROPIC_API_KEY", ""),
   agentModel: env("AGENT_MODEL", "claude-opus-5-5"),
   suggestModel: env("SUGGEST_MODEL", "claude-opus-5-5"),

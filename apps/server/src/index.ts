@@ -28,6 +28,7 @@ import { startTask, cancelTask, isRunning, resumePausedForMachines, resumeQueued
 import { voiceStart, voiceChunk, voiceEnd, voiceCancel, voiceScripted, syncOfflineNote, runSuggestions } from "./notes.js";
 import { handleSetup } from "./setup.js";
 import { acceptVoiceMessage } from "./agents/coordination.js";
+import { serveBuildPreview } from "./build-preview.js";
 
 const SERVER_ID = id("srv");
 
@@ -48,6 +49,11 @@ function lanUrl() {
   return `http://${ts || ips[0] || "localhost"}:${config.port}`;
 }
 
+function buildSnapshot() {
+  if (state.build.previewMode === "proxy") return { ...state.build, previewUrl: `${lanUrl()}/preview/` };
+  return state.build;
+}
+
 function snapshot(): Snapshot {
   const devices = [...clients];
   const handheld = devices.filter(c => c.kind === "device");
@@ -64,7 +70,7 @@ function snapshot(): Snapshot {
     approvals: state.approvals,
     machines: machines.list(),
     coding: machines.coding(),
-    build: state.build,
+    build: buildSnapshot(),
     settings: {
       permissionMode: state.permissionMode,
       hosting: state.hosting,
@@ -406,7 +412,11 @@ machines.onOnline(name => {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://x");
-  if (url.pathname === "/health") {
+  if (url.pathname === "/preview") {
+    res.writeHead(308, { location: "/preview/" }).end();
+  } else if (url.pathname.startsWith("/preview/")) {
+    await serveBuildPreview(res, url.pathname.slice("/preview/".length));
+  } else if (url.pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, clients: clients.size, llm: hasLlm(), machines: machines.list().map(m => ({ name: m.name, online: m.online })) }));
   } else if (url.pathname === "/api/snapshot") {
     res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" }).end(JSON.stringify(snapshot()));

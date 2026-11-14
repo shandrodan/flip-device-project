@@ -36,6 +36,7 @@ Product name: TBD.
 | `renders/` | Blender scripts and exported renders |
 | `pitch/` | Slides, video, demo script |
 | `docker/` | Container setup for the device-side demo |
+| `pi-vm/` | The Device side on a Pi 5-class cloud VM, its screen streamed to the twin (ADR 0024) |
 
 ## Rules for agents
 

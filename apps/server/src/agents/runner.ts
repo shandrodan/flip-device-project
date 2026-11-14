@@ -216,7 +216,9 @@ function buildBrief(fromBuild: boolean) {
   return [
     fromBuild ? "This request comes from the Build app: the user is building a web app by talking, and watches its live preview next to you." : "You also serve the Build app.",
     `The project is ${b.name} in ${b.dir} on the user's machine. Use the build_* tools: paths are relative to that folder.`,
-    b.previewUrl ? `The Device previews ${b.previewUrl}. The dev server hot-reloads, so writing files is enough.` : "No preview is set yet. If the project has no dev server running, scaffold or start one (in the background), then call build_preview with an address the Device can reach.",
+    b.previewMode === "proxy"
+      ? "The Device already previews this folder through the Flip server. For ordinary builds, write a self-contained HTML, CSS, and browser JavaScript app; it reloads after the task. Only use build_preview after you deliberately start and verify a separate dev server for a framework that needs one."
+      : `The Device previews ${b.previewUrl}. Its dev server hot-reloads, so writing files is enough.`,
     "Make small, working changes. Read a file before you replace it, and keep everything else in it. Publishing always goes through build_deploy.",
     "Your final answer is shown under your bot on a tiny screen: one short sentence, at most 8 words, e.g. 'Waitlist form added'.",
   ].join("\n");
@@ -234,7 +236,7 @@ async function runAppRequest(ctx: Ctx): Promise<string> {
 async function runModel(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string> {
   const { agent, task } = ctx;
   const model = messageClient();
-  const defs = toolsFor(agent, { shell: !model.openRouter && ctx.hasShell() });
+  const defs = toolsFor(agent, { shell: ctx.hasShell() });
   const tools: Anthropic.Beta.BetaToolUnion[] = defs.map(toApiTool);
   if (!model.openRouter && WEB_SEARCH_PURPOSES.includes(agent.purpose)) tools.push({ type: "web_search_20260209", name: "web_search", max_uses: 5 });
 

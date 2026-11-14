@@ -6,6 +6,8 @@ import { useNet, net } from "../net/client";
 import { DeviceApp } from "../app/App";
 import type { DebugLink } from "../app/screens/Debug";
 import { defaultSource, type VoiceSource } from "../voice/capture";
+import { RemoteScreen, remoteUrl } from "./RemoteScreen";
+import { BoardMonitor } from "./BoardMonitor";
 import { ArrowUpRightIcon, MicrophoneIcon, PlayIcon } from "@heroicons/react/20/solid";
 
 const W = 904, H = 968;
@@ -100,7 +102,8 @@ export function Simulator() {
   const micDown = (e: React.PointerEvent) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); emit({ c: "mic", phase: "down" }); };
   const micUp = () => { if (down.mic) emit({ c: "mic", phase: "up" }); };
   const docked = n.mode === "dock";
-  const app = <DeviceApp voice={voice} onWantPush={setWant} debug={debug} onEndDebug={() => setDebug(null)} />;
+  const app = remoteUrl ? <RemoteScreen url={remoteUrl} />
+    : <DeviceApp voice={voice} onWantPush={setWant} debug={debug} onEndDebug={() => setDebug(null)} />;
   const tri = (r: number) => <PlayIcon width={16} height={16} aria-hidden="true" style={{ transform: `rotate(${r - 90}deg)` }} />;
 
   return <div className="sim">
@@ -182,6 +185,7 @@ export function Simulator() {
           <button className="pbtn" onClick={() => setView(v => v + 1)}>Front view</button>
         </>}
     </div>
+    {remoteUrl && <BoardMonitor url={remoteUrl} />}
     <div className="keys">
       <kbd>Space</kbd> hold mic · <kbd>Enter</kbd> push bar · <kbd>K</kbd> A · <kbd>L</kbd>/<kbd>Esc</kbd> B · <kbd>I</kbd> C · <kbd>J</kbd> D · <kbd>←↑↓→</kbd> D-pad · <kbd>Q</kbd>/<kbd>E</kbd> system wheel · <kbd>W</kbd>/<kbd>S</kbd> or scroll on the screen: in-app wheel · <kbd>D</kbd> wheel press{!flat && <> · drag to turn the Device, click its buttons, click the shell to slide it · scroll or drag a wheel to turn it · scroll or pinch to zoom, right-drag to move</>} · An Xbox controller works too (LB/RB system wheel, LT/RT in-app wheel, Start push bar, hold View for mic).
     </div>

@@ -78,7 +78,7 @@ async function main() {
   const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const pcEnv = { HOME: home, USERPROFILE: home, PC_AGENT_PORT: String(PC_PORT), PC_AGENT_HOST: "127.0.0.1", PC_AGENT_TOKEN: "e2e", PC_AGENT_NAME: "Test laptop" };
   let pc = start("pc", path.join(here, "../pc-agent"), pcEnv);
-  const serverEnv = { PORT: String(PORT), DATA_DIR: path.join(root, "data"), PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`, PC_AGENT_TOKEN: "e2e", ANTHROPIC_API_KEY: process.env.E2E_CLAUDE ? process.env.ANTHROPIC_API_KEY ?? "" : "", STT_API_KEY: "", OPENROUTER_API_KEY: "" };
+  const serverEnv = { PORT: String(PORT), PUBLIC_URL: `http://127.0.0.1:${PORT}`, DATA_DIR: path.join(root, "data"), PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`, PC_AGENT_TOKEN: "e2e", ANTHROPIC_API_KEY: process.env.E2E_CLAUDE ? process.env.ANTHROPIC_API_KEY ?? "" : "", STT_API_KEY: "", OPENROUTER_API_KEY: "" };
   let serverProc = start("server", here, serverEnv);
 
   const ws = await connect();
@@ -106,6 +106,9 @@ async function main() {
     fail("older state lost data or did not get app owners");
   if (new Set(Object.values(snap!.appAgents).flat()).size !== 5 || Object.entries(snap!.appAgents).some(([app, agents]) => agents.length < minAppAgents(app as AppId))) fail("apps did not get distinct Task agents");
   if (snap!.appAgents.build.length || !snap!.build) fail("Build should start with no agent of its own");
+  if (snap!.build.previewMode !== "proxy" || !snap!.build.previewUrl) fail("Build should start with the server preview");
+  const preview = await fetch(snap!.build.previewUrl);
+  if (!preview.ok || !(await preview.text()).includes("<h1>Flip Device</h1>")) fail("Build preview did not serve the project from the PC agent");
   console.log("✓ server up, PC agent online");
 
   for (let run = 1; run <= RUNS; run++) {

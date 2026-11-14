@@ -211,14 +211,21 @@ export function Home() {
     : "Your main agent builds it from what you say";
 
   return <div className="scr home">
-    <div className="home-main in">
-      <Bot state={state} size={150} seed={3} />
-      <p className="say">{line}</p>
-      <div className="home-chips">
-        {pending && <span className="chip blue"><i className="dot" />{pending.suggestions.length} suggested</span>}
-        <span className="chip">{todo} task{todo === 1 ? "" : "s"} today</span>
-        {snap.focus.running && <span className="chip">Focus round {snap.focus.round}</span>}
-        {!online && <span className="chip warn"><i className="dot" />Offline · notes still work</span>}
+    <div className="home-left">
+      <div className="home-main in">
+        <Bot state={state} size={150} seed={3} />
+        <p className="say">{line}</p>
+        <div className="home-chips">
+          {pending && <span className="chip blue"><i className="dot" />{pending.suggestions.length} suggested</span>}
+          <span className="chip">{todo} task{todo === 1 ? "" : "s"} today</span>
+          {snap.focus.running && <span className="chip">Focus round {snap.focus.round}</span>}
+          {!online && <span className="chip warn"><i className="dot" />Offline · notes still work</span>}
+        </div>
+      </div>
+      <div className="home-cap" key={i}>
+        <b>{name}</b>
+        <span className="mute">{about}</span>
+        {partners.length > 0 && <span className="home-link">Linked with {partners.length > 1 ? partners.slice(0, -1).join(", ") + " and " + partners.at(-1) : partners[0]}</span>}
       </div>
     </div>
 
@@ -261,11 +268,6 @@ export function Home() {
       })}
     </div>
 
-    <div className="home-cap" key={i}>
-      <b>{name}</b>
-      <span className="mute">{about}</span>
-      {partners.length > 0 && <span className="home-link">Linked with {partners.length > 1 ? partners.slice(0, -1).join(", ") + " and " + partners.at(-1) : partners[0]}</span>}
-    </div>
 
     {menuCell && <CellMenu key={menu} cell={menuCell.kind === "app" ? { kind: "app", fn: menuCell.fn, icon: menuCell.icon, tone: menuCell.tone } : menuCell} onClose={() => setMenu(null)} />}
     <CommandCenter open={cc} onClose={() => setCc(false)} />

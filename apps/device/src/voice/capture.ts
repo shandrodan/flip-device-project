@@ -72,6 +72,9 @@ interface Opts {
 }
 
 export function defaultSource(): VoiceSource {
+  // `?voice=script`: the Pi-class VM's kiosk has no microphone (ADR 0024).
+  const q = new URLSearchParams(location.search).get("voice");
+  if (q === "mic" || q === "script") return q;
   try {
     const saved = localStorage.getItem("flip-voice") as VoiceSource | null;
     if (saved) return saved;
