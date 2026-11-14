@@ -32,6 +32,7 @@ A scripted model stands in for OpenRouter: an OpenAI-compatible server that answ
 | todo-filters | `todo_read` with each filter and with `projectId` returns exactly the right To-Dos |
 | projects | create, move To-Dos in, duplicate refused, rename, delete (push bar, To-Dos to Inbox) |
 | notes-edit | `notes_edit` milk → oat milk at word edges, a miss explained, `notes_merge` after a press |
+| typed-apps | `focus_start`, `focus_stop`, `agents_create` (press), `settings_permission`; `change_app` not offered to the model |
 | errors-vite | with a Vite dev server: a syntax error in `src/main.js` comes back in the edit result |
 
 `SHOW=1` prints every tool result, `DUMP=1` every request's last messages, `KEEP=1` keeps the temp folder. `errors-vite` runs `npm install` (network).

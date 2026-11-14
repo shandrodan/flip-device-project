@@ -41,7 +41,16 @@ Risk is set on the tool, never by the model.
 | `todo_project_rename` | `projectId`, `name` | |
 | `todo_project_delete` | `projectId` (its To-Dos move to Inbox) | delete |
 
-**Other apps:** `read_app {app}` (focus, agents, settings, build, dock) and `change_app {action}` with `focus.start`, `focus.stop`, `agents.create`, `settings.permission`. Settings never exposes keys or Full mode.
+**Focus, Agents, Settings** (ADR 0034)
+
+| Tool | Input | Gate |
+| --- | --- | --- |
+| `focus_start` | `minutes` (1–180) | |
+| `focus_stop` | — | |
+| `agents_create` | `name`, `role` | asks in Auto |
+| `settings_permission` | `mode` (`manual` or `auto`; Full is user-only) | asks in Auto |
+
+`read_app {app}` reads Focus, Agents, Settings, Build or the Dock. Settings never exposes keys. `change_app` is not offered to models (ADR 0034): the typed tools run as its actions, and forwarded app requests and the demo planner still use it.
 
 **Agents:** `list_agents`, `send_agent_message {agent_id, message, expects_reply}` (a request is answered before the asker replies; depth and fan-out limits, ADR 0013).
 
@@ -67,7 +76,7 @@ Risk is set on the tool, never by the model.
 
 ## Adding an app's tools
 
-1. Add entries to `APP_MANIFEST` in `apps/server/src/agents/app-tools.ts`: `app`, `name` (`<app>_<verb>`), a one-line `description`, `props` with **required** fields marked in `required`, and the `action` it runs.
+1. Add entries to `APP_MANIFEST` (models only see typed tools, never `change_app`) in `apps/server/src/agents/app-tools.ts`: `app`, `name` (`<app>_<verb>`), a one-line `description`, `props` with **required** fields marked in `required`, and the `action` it runs.
 2. Implement the action in `change_app.run` (or a read in `read_app.run`). Call `ctx.gate` with the right `risk` before you change anything. Throw errors that say how to fix the call.
 3. If the app is new, add it to `APP_IDS` in `packages/protocol` and give it a default agent in `store.ts` (that is a Protocol change: write an ADR).
 4. Add a scenario to `scripts/agent-e2e.ts` and run it 3 times.

@@ -356,7 +356,7 @@ function agentBrief(ctx: Ctx, opts: { webTool: boolean; native?: boolean }) {
     ...(task.app === "build" || servesBuild(agent.id) ? [buildBrief(task.app === "build", !!opts.native)] : []),
     "A task or todo refers to an item in the To-Do app. Read To-Do to resolve existing items and use todo_update to move them to another date or project. Create a new To-Do only for new work. Create a Task agent only when explicitly requested.",
     ownedApp ? `You are assigned to the ${ownedApp} app. Your app tools can act on its live state.` : "",
-    "Each Device app has its own tools: notes_* for Notes, todo_* for To-Do, and read_app and change_app for the others. Read the app first, even on the very first request or when the request comes from an assigned Task, then act with the IDs you read. The server forwards a call to the app's assigned agent when needed, so use the app tools directly for app work.",
+    "Each Device app has its own tools: notes_* for Notes, todo_* for To-Do, focus_start and focus_stop for Focus, agents_create for Agents, settings_permission for Settings, and read_app to read Focus, Agents, Settings, Build or the Dock. Read the app first, even on the very first request or when the request comes from an assigned Task, then act with the IDs you read. The server forwards a call to the app's assigned agent when needed, so use the app tools directly for app work.",
     opts.webTool ? "Use web search or fetch for facts you need from the web." : "",
     "",
     `Machines:\n${machineLines}`,

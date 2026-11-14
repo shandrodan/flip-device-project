@@ -401,6 +401,33 @@ const scenarios: Scenario[] = [
       return problems.length ? problems.join("; ") : null;
     },
   },
+  {
+    // P2.13: typed tools for Focus, Agents and Settings; change_app is no longer offered to the model.
+    name: "typed-apps",
+    async test() {
+      const from = requests.length;
+      const focus = await run(MAIN, "Give me twelve minutes of focus", [{ tool: "focus_start", args: { minutes: 12, say: SAY } }, { text: "Started." }]);
+      const focusOn = snap!.focus.running && snap!.focus.lengthMs === 720_000;
+      const stop = await run(MAIN, "Stop focus", [{ tool: "focus_stop", args: { say: SAY } }, { text: "Stopped." }]);
+      const agent = await run(MAIN, "Make a Task agent called Scout that researches venues", [{ tool: "agents_create", args: { name: "Scout", role: "Researches event venues and compares prices.", say: SAY } }, { text: "Made Scout." }]);
+      const manual = await run(MAIN, "Switch to manual mode", [{ tool: "settings_permission", args: { mode: "manual", say: SAY } }, { text: "Manual." }]);
+      const wasManual = snap!.settings.permissionMode;
+      await run(MAIN, "Back to auto", [{ tool: "settings_permission", args: { mode: "auto", say: SAY } }, { text: "Auto." }]);
+      const offered = new Set(requests.slice(from).flatMap((r: any) => r.tools.map((t: any) => t.function?.name)));
+      const problems = [
+        focus.task?.status !== "done" && `focus ${focus.task?.status}: ${focus.task?.detail}`,
+        !focusOn && `focus ${JSON.stringify(snap!.focus)}`,
+        (stop.task?.status !== "done" || snap!.focus.running) && "focus did not stop",
+        !snap!.agents.some(a => a.name === "Scout") && `no Scout: ${agent.task?.detail}`,
+        agent.presses < 1 && "making an agent did not ask",
+        manual.task?.status !== "done" && `settings ${manual.task?.status}: ${manual.task?.detail}`,
+        wasManual !== "manual" && `mode was ${wasManual}`,
+        offered.has("change_app") && "change_app is still offered to the model",
+        !["focus_start", "focus_stop", "agents_create", "settings_permission", "read_app"].every(name => offered.has(name)) && `offered: ${[...offered].filter(n => /focus|agents|settings|app/.test(n)).join(", ")}`,
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
 ];
 
 /** Wait until the preview, in a frame sandboxed like the Device's, shows `word`. */

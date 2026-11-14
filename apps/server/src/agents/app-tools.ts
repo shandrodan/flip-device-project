@@ -149,7 +149,9 @@ const BASE_TOOLS: ToolDef[] = [
       name: { type: "string", description: "agents.create: the new Task agent's name." }, role: { type: "string", description: "agents.create: what the new Task agent does." },
       minutes: { type: "number" }, mode: { type: "string", enum: ["manual", "auto"] }, say: SAY,
     },
-    required: ["action", "say"], purposes: "all",
+    // Models get the typed tools (notes_*, todo_*, focus_*, agents_create, settings_permission). change_app stays
+    // for forwarded app requests and the planner (P2.13).
+    required: ["action", "say"], purposes: "all", hidden: true,
     async run(ctx, input, callId) {
       const action = String(input.action);
       const app = action.split(".")[0];
@@ -422,6 +424,13 @@ export const APP_MANIFEST: AppToolSpec[] = [
     props: { projectId: { type: "string", description: "Project ID from todo_read." }, name: { type: "string", description: "The new name." } }, required: ["projectId", "name"] },
   { app: "todo", name: "todo_project_delete", action: "todo.project_delete", description: "Delete a To-Do project. Its To-Dos are kept and move to Inbox. Always asks the user with a button press.",
     props: { projectId: { type: "string", description: "Project ID from todo_read." } }, required: ["projectId"] },
+  { app: "focus", name: "focus_start", action: "focus.start", description: "Start a Focus timer on the Device.",
+    props: { minutes: { type: "number", description: "Length in minutes, 1 to 180." } }, required: ["minutes"] },
+  { app: "focus", name: "focus_stop", action: "focus.stop", description: "Stop the running Focus timer.", props: {}, required: [] },
+  { app: "agents", name: "agents_create", action: "agents.create", description: "Make a new Task agent. Asks the user first.",
+    props: { name: { type: "string", description: "The new Task agent's name, up to 24 characters." }, role: { type: "string", description: "What it does, in one or two sentences." } }, required: ["name", "role"] },
+  { app: "settings", name: "settings_permission", action: "settings.permission", description: "Set the permission mode to manual or auto. Full mode is for the user only. Asks the user first.",
+    props: { mode: { type: "string", enum: ["manual", "auto"] } }, required: ["mode"] },
   { app: "todo", name: "todo_delete", action: "todo.delete", description: "Delete To-Dos. Always asks the user with a button press.", props: { ids: IDS("To-Do") }, required: ["ids"] },
 ];
 
