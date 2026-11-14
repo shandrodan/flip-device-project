@@ -19,7 +19,7 @@ import { TOOLS, ToolError, type Ctx, type ToolDef } from "./tools.js";
 export interface EngineModel { providerID: string; modelID: string }
 
 /** OpenCode's own tools act on the server machine, not the user's. Flip tools replace them. */
-const OPENCODE_TOOLS_OFF = ["task", "websearch", "skill", "apply_patch", "question"];
+const OPENCODE_TOOLS_OFF = ["task", "websearch", "skill", "apply_patch", "question", "worktree_create", "worktree_delete"];
 
 const AGENT_PROMPT = [
   "You are an agent behind Flip, a small voice-first desk device. The user speaks a request; you do the work with tools on their Device apps and their own machines. Act like an agent, not a chat.",
