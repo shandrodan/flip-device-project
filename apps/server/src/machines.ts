@@ -1,7 +1,7 @@
 // Connections to PC agents over Tailscale (ADR 0006). The server dials each configured
 // machine, authenticates with the shared token, and keeps the link open with retries.
 import WebSocket from "ws";
-import type { Machine, PcAction, PcAgentCommand, PcAgentResult, PcHello } from "@app/protocol";
+import type { CodingAgent, CodingTool, Machine, PcAction, PcAgentCommand, PcAgentResult, PcCodingSession, PcHello } from "@app/protocol";
 import { config } from "./config.js";
 import { state, id, type MachineConfig } from "./store.js";
 import { bus } from "./bus.js";
@@ -21,6 +21,8 @@ interface Pending {
 class Link {
   ws: WebSocket | null = null;
   hello: PcHello | null = null;
+  /** Coding agents the PC agent last reported (ADR 0020). */
+  coding: PcCodingSession[] = [];
   lastSeen: string | undefined;
   pending = new Map<string, Pending>();
   retry: NodeJS.Timeout | null = null;
@@ -68,6 +70,9 @@ class Link {
           this.pending.delete(m.requestId);
           p.resolve({ ok: m.ok, output: m.output, data: m.data });
         }
+      } else if (m.type === "pc.coding" && Array.isArray(m.sessions)) {
+        codingReport(this, m.sessions);
+        bus.changed();
       } else if (m.type === "pc.error") {
         console.warn(`[pc] ${this.name}: ${m.message}`);
       }
@@ -79,6 +84,7 @@ class Link {
   dropped() {
     const was = !!this.hello;
     this.hello = null;
+    this.coding = []; // unknown while offline; not "finished"
     for (const [rid, p] of this.pending) {
       clearTimeout(p.timer);
       p.resolve({ ok: false, output: `Lost the connection to ${this.name}` });
@@ -124,6 +130,28 @@ class Link {
     this.ws?.terminate();
     this.connect();
   }
+}
+
+/* ------------------------------ Coding agents (ADR 0020) ------------------------------ */
+const TOOL_LABEL: Record<CodingTool, string> = {
+  "claude-code": "Claude Code", codex: "Codex", opencode: "OpenCode", antigravity: "Antigravity",
+  cursor: "Cursor Agent", gemini: "Gemini CLI", aider: "Aider", other: "Coding agent",
+};
+const FINISHED_KEEP_MS = 30 * 60e3;
+/** Sessions that ended while we watched, shown as "finished" for half an hour. */
+const ended = new Map<string, CodingAgent>();
+const codingId = (link: Link, pid: number) => `${machineId(link.cfg.url)}:${pid}`;
+const asAgent = (link: Link, s: PcCodingSession): CodingAgent => ({
+  id: codingId(link, s.pid), tool: s.tool, name: TOOL_LABEL[s.tool] ?? TOOL_LABEL.other, machine: link.name,
+  repo: s.repo, branch: s.branch, state: s.busy ? "working" : "idle", since: s.startedAt,
+});
+
+function codingReport(link: Link, sessions: PcCodingSession[]) {
+  const now = new Date().toISOString();
+  const still = new Set(sessions.map(s => s.pid));
+  for (const s of link.coding) if (!still.has(s.pid)) ended.set(codingId(link, s.pid), { ...asAgent(link, s), state: "finished", since: now });
+  for (const s of sessions) ended.delete(codingId(link, s.pid));
+  link.coding = sessions;
 }
 
 const links = new Map<string, Link>();
@@ -175,6 +203,14 @@ export const machines = {
   },
   links() {
     return [...links.values()];
+  },
+  /** Running coding agents on every online machine, then the ones that finished in the last 30 min. */
+  coding(): CodingAgent[] {
+    const cutoff = Date.now() - FINISHED_KEEP_MS;
+    for (const [k, a] of ended) if (Date.parse(a.since) < cutoff) ended.delete(k);
+    const live = [...links.values()].filter(l => l.online).flatMap(l => l.coding.map(s => asAgent(l, s)));
+    const done = [...ended.values()].sort((a, b) => b.since.localeCompare(a.since)).slice(0, 8);
+    return [...live, ...done];
   },
 };
 

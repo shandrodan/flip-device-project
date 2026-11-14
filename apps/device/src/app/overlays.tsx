@@ -4,7 +4,7 @@ import { Bot } from "../bot/Bot";
 import { useControls, LAYER, type ControlEvent } from "../input/controls";
 import { net } from "../net/client";
 import { startCapture, blobToBase64, type Capture } from "../voice/capture";
-import { useApp, FN_LABEL, type Fn, type TalkTarget } from "./context";
+import { useApp, FN_LABEL, type TalkTarget } from "./context";
 import { Ico, AgentBot } from "./ui";
 
 /* ================================ Talk ================================ */
@@ -242,9 +242,3 @@ export function SoftApproval({ req }: { req: ApprovalRequest }) {
 }
 
 /* ================================ Switcher HUD ================================ */
-
-export function Hud({ fns, fn, icons }: { fns: Fn[]; fn: Fn; icons: Record<Fn, JSX.Element> }) {
-  return <div className="hud">
-    {fns.map(f => <div key={f} className={"fn" + (f === fn ? " on" : "")}>{icons[f]}<span>{FN_LABEL[f]}</span></div>)}
-  </div>;
-}

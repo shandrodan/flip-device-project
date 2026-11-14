@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { emit, onPress, type Control, type ControlEvent } from "../input/controls";
 import { useNet, net } from "../net/client";
 import { DeviceApp } from "../app/App";
+import type { DebugLink } from "../app/screens/Debug";
 import { defaultSource, type VoiceSource } from "../voice/capture";
 import { ArrowUpRightIcon, MicrophoneIcon, PlayIcon } from "@heroicons/react/20/solid";
 
@@ -71,6 +72,7 @@ export function Simulator() {
   const [want, setWant] = useState(false);
   const [labels, setLabels] = useState(true);
   const [voice, setVoice] = useState<VoiceSource>(defaultSource());
+  const [debug, setDebug] = useState<DebugLink | null>(null);
   const down = usePressed();
   const spin = useWheelSpin();
   const screenWheel = useRef(wheelHandler("appWheel")).current;
@@ -120,7 +122,7 @@ export function Simulator() {
     <div className="fit" ref={wrap} style={{ height: H * scale }}>
       <div className="device" style={{ transform: `scale(${scale})`, marginLeft: `max(0px, calc((100% - ${W * scale}px) / 2 / ${scale}))` }}>
         <div className="lid">
-          <div className="glass"><div className="screen" ref={screenRef}><DeviceApp voice={voice} onWantPush={setWant} /></div></div>
+          <div className="glass"><div className="screen" ref={screenRef}><DeviceApp voice={voice} onWantPush={setWant} debug={debug} onEndDebug={() => setDebug(null)} /></div></div>
           <button className="mic" aria-label="Microphone (hold)" onPointerDown={micDown} onPointerUp={micUp} onPointerCancel={micUp} onLostPointerCapture={micUp} style={down.mic ? { transform: "translateY(1px) scale(0.95)", boxShadow: "0 0 0 4px rgba(255,69,58,0.25)" } : undefined}>
             <MicrophoneIcon width={14} height={14} aria-hidden="true" />
           </button>
@@ -156,6 +158,7 @@ export function Simulator() {
       <button className="pbtn" aria-pressed={docked} onClick={() => net.setMode(docked ? "handheld" : "dock")}>{docked ? "Take off dock" : "Put on dock"}</button>
       <button className="pbtn" aria-pressed={n.forcedOffline} onClick={() => net.setForcedOffline(!n.forcedOffline)}>{n.forcedOffline ? "Go online" : "Go offline"}</button>
       <button className="pbtn" aria-pressed={voice === "script"} onClick={() => setVoice(voice === "mic" ? "script" : "mic")}>Voice: {voice === "mic" ? "microphone" : "scripted"}</button>
+      <button className="pbtn" aria-pressed={!!debug} onClick={() => setDebug(debug === null ? "usb" : debug === "usb" ? "wifi" : null)}>Debug: {debug === "usb" ? "USB-C" : debug === "wifi" ? "Wi-Fi" : "off"}</button>
       <button className="pbtn" aria-pressed={!labels} onClick={() => setLabels(!labels)}>{labels ? "Hide labels" : "Show labels"}</button>
     </div>
     <div className="keys">

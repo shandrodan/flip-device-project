@@ -4,7 +4,7 @@ import "./styles.css";
 import { installInputs } from "./input/controls";
 import { Simulator } from "./sim/Simulator";
 import { DeviceApp } from "./app/App";
-import { DockGrid } from "./app/screens/Dock";
+import { StandBy } from "./app/screens/Dock";
 import { useNet } from "./net/client";
 import { Bot } from "./bot/Bot";
 
@@ -22,7 +22,7 @@ function Kiosk() {
   return <div className="kiosk"><div className="screen" style={{ transform: `scale(${k})` }}><DeviceApp /></div></div>;
 }
 
-/** /dock: the dock screen on a second tab, same WebSocket (DEMO.md). */
+/** /dock: the dock screen (StandBy, ADR 0020) on a second tab, same WebSocket (DEMO.md). W/S turn the wheel. */
 function DockPage() {
   const n = useNet();
   const [k, setK] = useState(1);
@@ -34,8 +34,7 @@ function DockPage() {
   }, []);
   return <div className="dockpage">
     <div className="screen" style={{ transform: `scale(${k})`, borderRadius: 0 }}>
-      <div className="status"><span className="tnum">{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><span>{n.conn === "online" ? "Dock" : "Reconnecting…"} <span className="batt charge"><i /></span></span></div>
-      {n.snap ? <DockGrid snap={n.snap} /> : <div className="fill" style={{ display: "grid", placeItems: "center" }}><Bot size={140} state="think" /></div>}
+      {n.snap ? <StandBy snap={n.snap} online={n.online} /> : <div className="fill" style={{ display: "grid", placeItems: "center" }}><Bot size={140} state="think" /></div>}
     </div>
   </div>;
 }

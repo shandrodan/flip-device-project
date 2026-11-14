@@ -1,4 +1,4 @@
-# 0017: OpenRouter for Task agents and transcription
+# 0018: OpenRouter for Task agents and transcription
 
 Status: Accepted
 Date: 2026-11-13

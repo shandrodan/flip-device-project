@@ -226,6 +226,11 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 .goo .bridge { width: 1px; height: 1px; margin-top: -0.5px; transform-origin: 0 50%; }
 .goo.lit i, .orb.fused.lit { background: #3a3a3c; }
 .orb.fused { background: #2c2c2e; }
+/* An app with linked bots, and those bots: the app's bright tone behind, its dark tone on top
+   (tone.tsx). Cut-outs in glyphs and bots' eyes show the bright tone through. */
+.orb.toned, .orb.toned.sel, .orb.fused.lit.toned, .goo.toned i, .aw-it.toned, .aw-it.toned.sel, .cm-ico.toned { background: var(--tone-bg); color: var(--tone-ink); }
+/* Fused and toned: only the goo silhouette paints the tone, so circles and neck are one even colour. */
+.orb.fused.toned, .orb.fused.lit.toned { background: transparent; }
 .home-link { font-size: 12px; color: rgba(235,235,245,0.5); }
 .orb .badge { position: absolute; top: 4px; right: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--push); box-shadow: 0 0 0 2px #000; }
 
@@ -266,11 +271,32 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 .cc-empty { padding: 18px 10px; font-size: 14px; color: rgba(235,235,245,0.45); }
 .cc-handle { position: absolute; left: 50%; bottom: 9px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: rgba(255,255,255,0.28); }
 
-/* Function switcher HUD (system wheel). */
-.hud { position: absolute; left: 50%; top: 50%; z-index: 30; transform: translate(-50%, -50%); display: flex; gap: 8px; padding: 10px; border-radius: 22px; background: rgba(28,28,30,0.92); backdrop-filter: blur(10px); animation: hudIn 260ms var(--ease) both; pointer-events: none; }
-@keyframes hudIn { from { opacity: 0; transform: translate(-50%, -46%) scale(0.96); } }
-.hud .fn { width: 64px; padding: 10px 0 8px; border-radius: 14px; display: flex; flex-direction: column; align-items: center; gap: 6px; color: rgba(235,235,245,0.45); font: 500 11px/1 var(--sys); transition: background-color 150ms, color 150ms; }
-.hud .fn.on { background: rgba(255,255,255,0.14); color: #fff; }
+/* System wheel flywheel (AppWheel): apps and Task agents on an arc round the top-left corner,
+   over a progressive blur that is strongest in the corner. */
+/* The fade sits on each layer, not on .aw: an ancestor with opacity below 1 would cut the
+   backdrop blur off from the screen behind it. */
+.aw { position: absolute; inset: 0; z-index: 30; pointer-events: none; }
+/* Enter is the exit played backwards: same length, ease-out instead of ease-in. */
+.aw > * { animation: awIn 160ms ease-out both; }
+.aw.out > * { animation: awOut 160ms ease-in both; }
+@keyframes awIn { from { opacity: 0; } }
+@keyframes awOut { to { opacity: 0; } }
+.aw-blur, .aw-tint { position: absolute; left: 0; top: 0; width: 470px; height: 430px; }
+/* Three blur layers, each masked a little closer to the corner: the blur adds up toward it. */
+.aw-blur { --m: radial-gradient(circle at 0 0, #000 var(--a), transparent var(--b)); -webkit-mask-image: var(--m); mask-image: var(--m); }
+.aw-b1 { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); --a: 30%; --b: 100%; }
+.aw-b2 { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); --a: 20%; --b: 72%; }
+.aw-b3 { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); --a: 10%; --b: 50%; }
+.aw-tint { background: radial-gradient(circle at 0 0, rgba(0,0,0,0.7) 0, rgba(0,0,0,0.5) 150px, rgba(0,0,0,0.18) 300px, transparent 430px); }
+.aw-it { position: absolute; left: 0; top: 0; width: 56px; height: 56px; border-radius: 50%; background: #1c1c1e; display: grid; place-items: center;
+  color: rgba(235,235,245,0.7); box-shadow: 0 6px 18px rgba(0,0,0,0.35); transition: box-shadow 150ms ease, background-color 150ms ease, color 150ms ease; will-change: transform, opacity; }
+.aw-it.app { background: #2c2c2e; }
+.aw-it svg { width: 26px; height: 26px; display: block; }
+.aw-it.sel { box-shadow: var(--ring); background: #3a3a3c; color: #fff; }
+.aw-cap { position: absolute; width: 180px; display: flex; flex-direction: column; gap: 2px; color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,0.6); }
+.aw:not(.out) > .aw-cap { animation: materialize 160ms ease-out both; }
+.aw-cap b { font: 600 17px/1.2 var(--sys-display); letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-cap span { font-size: 12.5px; color: rgba(235,235,245,0.6); }
 
 /* Fire (approval). */
 .fire-layer { position: absolute; inset: 0; z-index: 30; pointer-events: none; }

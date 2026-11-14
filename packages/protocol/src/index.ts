@@ -180,6 +180,26 @@ export interface Limits {
   machine?: string;
 }
 
+/**
+ * A coding agent running on one of your machines (Claude Code, Codex, OpenCode, …), seen by the PC agent
+ * (ADR 0020). Not a Task agent: the Device only shows it on the Dock.
+ * "working": busy now. "idle": open but quiet, usually waiting for you. "finished": the process ended.
+ */
+export type CodingTool = "claude-code" | "codex" | "opencode" | "antigravity" | "cursor" | "gemini" | "aider" | "other";
+export interface CodingAgent {
+  id: string;
+  tool: CodingTool;
+  /** Display name, e.g. "Claude Code". */
+  name: string;
+  machine: string;
+  /** Folder name of the git repo (or working folder). */
+  repo: string;
+  branch?: string;
+  state: "working" | "idle" | "finished";
+  /** When it started (working/idle) or ended (finished). ISO. */
+  since: string;
+}
+
 export interface Settings {
   permissionMode: PermissionMode;
   hosting: Hosting;
@@ -210,6 +230,8 @@ export interface Snapshot {
   activity: Activity[];
   approvals: ApprovalRequest[];
   machines: Machine[];
+  /** Coding agents on your machines, newest activity first (ADR 0020). Missing from older servers. */
+  coding?: CodingAgent[];
   settings: Settings;
   focus: Focus;
   limits: Limits;
@@ -340,7 +362,19 @@ export type PcAgentResult =
   | { type: "pc.progress"; requestId: string; step: string }
   | { type: "pc.done"; requestId: string; ok: boolean; output?: string; data?: unknown }
   | { type: "pc.pong"; t: number }
-  | { type: "pc.error"; message: string };
+  | { type: "pc.error"; message: string }
+  /** The coding agents running on this machine right now. Sent on connect and whenever it changes (ADR 0020). */
+  | { type: "pc.coding"; sessions: PcCodingSession[] };
+
+/** One running coding agent as the PC agent sees it. The server adds the machine and keeps finished ones. */
+export interface PcCodingSession {
+  pid: number;
+  tool: CodingTool;
+  repo: string;
+  branch?: string;
+  busy: boolean;
+  startedAt: string;
+}
 
 /** Result shapes for the PC actions that return data. */
 export interface FsEntry {

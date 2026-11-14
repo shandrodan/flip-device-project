@@ -1,20 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useApp } from "./context";
+import { AppGlyph, appOfBot, botColor, type Tone } from "./tone";
 import type { Agent, Snapshot, Task } from "@app/protocol";
 import { Bot, type BotState } from "../bot/Bot";
 import { useActiveHints, type Hints } from "../input/controls";
 import {
-  AdjustmentsHorizontalIcon, ArrowPathIcon, ArrowRightIcon, CheckCircleIcon, ClockIcon, ComputerDesktopIcon,
-  CheckIcon, DocumentIcon, DocumentTextIcon, MicrophoneIcon, PaperClipIcon, PlusIcon, UserGroupIcon,
+  ArrowPathIcon, ArrowRightIcon, ComputerDesktopIcon,
+  CheckIcon, DocumentIcon, DocumentTextIcon, MicrophoneIcon, PaperClipIcon, PlusIcon,
 } from "@heroicons/react/20/solid";
 
-// All icons come from the Heroicons Mini set (20px solid).
+// App icons are our own glyphs (tone.tsx); the rest come from the Heroicons Mini set (20px solid).
 const ico = (C: typeof DocumentTextIcon, s: number) => <C width={s} height={s} aria-hidden="true" />;
 export const Ico = {
-  notes: ico(DocumentTextIcon, 22),
-  tasks: ico(CheckCircleIcon, 22),
-  agents: ico(UserGroupIcon, 22),
-  focus: ico(ClockIcon, 22),
-  settings: ico(AdjustmentsHorizontalIcon, 22),
+  notes: <AppGlyph fn="notes" />,
+  tasks: <AppGlyph fn="todo" />,
+  agents: <AppGlyph fn="agents" />,
+  focus: <AppGlyph fn="focus" />,
+  settings: <AppGlyph fn="settings" />,
   dock: ico(ComputerDesktopIcon, 22),
   mic: (s = 16) => <MicrophoneIcon width={s} height={s} aria-hidden="true" />,
   check: (s = 12) => <CheckIcon width={s} height={s} aria-hidden="true" />,
@@ -44,9 +46,13 @@ export function moodFor(t: Task | undefined): BotState {
   return ({ queued: "wide", running: "think", waiting: "wide", "awaiting-approval": "warn", held: "wide", paused: "sad", failed: "sad", done: "happy" } as Record<string, BotState>)[t.status] || "idle";
 }
 
-export const AgentBot = ({ agent, size, state = "idle", fps, morphFrom, eyesOnly }: { agent: Agent; size: number; state?: BotState; fps?: number; morphFrom?: Agent["shape"]; eyesOnly?: boolean }) => (
-  <Bot shape={agent.shape} color={agent.color} seed={agent.seed} size={size} state={state} fps={fps || (size < 90 ? 30 : 60)} morphFrom={morphFrom} eyesOnly={eyesOnly} />
-);
+/** A bot linked to an app wears the app's bright colour. Pass `onTone` where it sits on that
+ *  bright colour (the Home comb, the flywheel): then it is drawn in the dark one. */
+export function AgentBot({ agent, size, state = "idle", fps, morphFrom, eyesOnly, onTone }: { agent: Agent; size: number; state?: BotState; fps?: number; morphFrom?: Agent["shape"]; eyesOnly?: boolean; onTone?: Tone }) {
+  const snap = useApp()?.snap;
+  const color = onTone ? onTone.ink : botColor(agent, appOfBot(snap, agent.id));
+  return <Bot shape={agent.shape} color={color} seed={agent.seed} size={size} state={state} fps={fps || (size < 90 ? 30 : 60)} morphFrom={morphFrom} eyesOnly={eyesOnly} />;
+}
 
 export function statusChip(t: Task, snap: Snapshot) {
   const ag = snap.agents.find(a => a.id === t.agentId), who = ag ? ag.name : "You";

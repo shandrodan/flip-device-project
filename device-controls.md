@@ -30,11 +30,21 @@ The behavior of each control depends on the currently selected mode. Locations a
 
 **Purpose:** Navigate between the device's main functions outside individual applications.
 
-- **System Wheel:** Rotate to switch between functions.
+- **System Wheel:** Rotate to open the app flywheel (below).
 - **Push Bar:** No action.
 - **In-App Wheel:** Rotate to browse every cell on the home screen.
 - **C Button (yellow):** Open the command center. Only from the home screen: inside an app, go back to Home first.
 - **D Button (blue):** Open the menu for the selected app or Task agent. On the New bot cell, open pending Suggestions.
+
+### App flywheel
+
+**Purpose:** Jump to any app or Task agent from anywhere (ADR 0019).
+
+- Opens in the top-left corner on the first turn of the System Wheel, over a blur that is strongest in the corner. It shows Home, then the apps and Task agents in Home order. Five are in view; the middle one is selected.
+- **System Wheel / D-Pad up and down:** Turn it. It never ends.
+- **A Button or Push Bar:** Open the selected app or Task agent.
+- **B Button:** Close it.
+- **Idle:** With no turn for 2 seconds, it hides by itself.
 
 ### Home cell menu
 
@@ -66,7 +76,7 @@ The behavior of each control depends on the currently selected mode. Locations a
 
 **Purpose:** Display information about currently active agents.
 
-- **System Wheel:** Rotate to switch to another function.
+- **System Wheel:** Rotate to open the app flywheel and pick another function.
 - **Push Bar:** No action.
 - **In-App Wheel:** Rotate to pick an agent.
 - **Screen:** Automatically displays the status of active agents.
@@ -85,7 +95,7 @@ The behavior of each control depends on the currently selected mode. Locations a
 
 **Purpose:** Select and manage focus sessions.
 
-- **System Wheel:** Rotate to switch to another function.
+- **System Wheel:** Rotate to open the app flywheel and pick another function.
 - **Push Bar:**
   - First press: Start the focus session.
   - Second press: End the active focus session.
@@ -95,13 +105,23 @@ The behavior of each control depends on the currently selected mode. Locations a
 
 **Purpose:** Navigate through tasks and manage their completion. Lists on the left (Today, Inbox, Scheduled, Completed, projects), tasks on the right. See `docs/adr/0016-todo-lists-and-spotlight.md`.
 
-- **System Wheel:** Rotate to switch to another function.
+- **System Wheel:** Rotate to open the app flywheel and pick another function.
 - **Push Bar:** Press to mark the currently selected task as completed. In Completed, it restores the task.
 - **In-App Wheel:** Rotate to browse and select tasks (or lists, when the sidebar has focus).
 - **D-pad:** Left and right move between the lists and the tasks, and between days on the Scheduled board.
 - **A / B / C / D:** A opens the task, B goes back to the lists, C moves the task to Today (on Overdue: all of it), D hands it to an agent.
 - **Microphone:** Hold to say a task. It is saved as a note, then filed as a task with its day, project or agent.
 - **Task Completion:** Once a task is marked as completed, it leaves the list and waits in Completed.
+
+## Dock Mode (StandBy)
+
+**Purpose:** The companion screen while the Device sits in the dock (ADR 0020). Five screens: Clock, Focus, Agents (coding agents on your machines), To-Do board, and a split screen of two blocks. The D-pad and A–D buttons are out of reach when docked.
+
+- **In-App Wheel:** Next or previous screen. It never ends, and the screen zooms out while it turns.
+- **In-App Wheel press:** On the split screen, edit it. Press again when done.
+- **Push Bar:** On Focus (or a Focus block), start or end the session. While editing the split screen, switch to the other side.
+- **In-App Wheel while editing:** Change the selected block (Clock, Focus timer, Agents, Today, Claude limits).
+- **Microphone Button:** Talk to the main Task agent.
 
 ## 5. Microphone Button
 **Location:** Red button with a microphone icon on the lower edge of the screen housing, above the action buttons.

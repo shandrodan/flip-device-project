@@ -19,8 +19,8 @@ export function localDay(offset = 0) {
   const n = new Date(), d = new Date(n.getFullYear(), n.getMonth(), n.getDate() + offset);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
-const dayOf = (t: Task) => (t.due ? t.due.slice(0, 10) : null);
-const timeOf = (t: Task) => (t.due && t.due.length > 10 ? t.due.slice(11, 16) : null);
+export const dayOf = (t: Task) => (t.due ? t.due.slice(0, 10) : null);
+export const timeOf = (t: Task) => (t.due && t.due.length > 10 ? t.due.slice(11, 16) : null);
 const diff = (day: string) => Math.round((Date.parse(day + "T12:00") - Date.parse(localDay() + "T12:00")) / 864e5);
 const asDate = (day: string) => new Date(day + "T12:00");
 function dayWord(day: string, long = false) {
@@ -55,7 +55,7 @@ const BASE: List[] = [
   { id: "completed", name: "Completed", icon: ico(CheckCircleIcon) },
 ];
 
-function tasksIn(id: ListId, all: Task[]): Task[] {
+export function tasksIn(id: ListId, all: Task[]): Task[] {
   if (id === "completed") return all.filter(t => t.status === "done").sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
   const open = all.filter(t => t.status !== "done");
   const today = localDay();
@@ -65,9 +65,9 @@ function tasksIn(id: ListId, all: Task[]): Task[] {
   return open.filter(t => t.projectId === id).sort(byDue);
 }
 
-interface Col { key: string; label: string; late?: boolean; tasks: Task[] }
+export interface Col { key: string; label: string; late?: boolean; tasks: Task[] }
 /** Scheduled: Overdue (only when there is any), the next seven days, then Later. */
-function columns(all: Task[]): Col[] {
+export function columns(all: Task[]): Col[] {
   const open = tasksIn("scheduled", all), today = localDay(), last = localDay(6);
   const cols: Col[] = [];
   const late = open.filter(t => dayOf(t)! < today);
