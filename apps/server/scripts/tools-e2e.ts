@@ -452,6 +452,28 @@ const scenarios: Scenario[] = [
       return r.task?.status === "done" && JSON.stringify(plan) === JSON.stringify(want) ? null : `steps: ${JSON.stringify(steps)}`;
     },
   },
+  {
+    // P2.17: tokens, cost and time per Task. The scripted model reports 100 in / 10 out per call.
+    name: "usage",
+    async test() {
+      const r = await run(MAIN, "Save a note", [
+        { tool: "notes_create", args: { texts: ["Usage check"], say: SAY } },
+        { text: "Saved." },
+      ]);
+      const list = await fetch(`http://127.0.0.1:${PORT}/api/usage?ids=${r.task?.id}`).then(x => x.json()) as { calls: number; input: number; output: number; cost: number | null; seconds: number; model: string }[];
+      const u = list[0];
+      const want = u ? u.input * 1e-6 + u.output * 2e-6 : 0;
+      const problems = [
+        !u && `no usage for ${r.task?.id}`,
+        u && u.calls !== 2 && `${u.calls} calls (want 2)`,
+        u && (u.input < 200 || u.output < 20) && `tokens ${u.input} in / ${u.output} out`,
+        u && (u.cost === null || Math.abs(u.cost - want) > 1e-9) && `cost ${u.cost} (want ${want} at ENGINE_PRICE 1,2)`,
+        u && !(u.seconds > 0) && `seconds ${u.seconds}`,
+        u && u.model !== "openrouter/scripted-model" && `model ${u.model}`,
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
 ];
 
 /** Wait until the preview, in a frame sandboxed like the Device's, shows `word`. */
@@ -496,7 +518,7 @@ async function main() {
     HOST: "127.0.0.1", PORT: String(PORT), DATA_DIR: path.join(root, "data"),
     PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`, PC_AGENT_TOKEN: "tools",
     DEVICE_ACCESS_TOKEN: "", DEMO_PLANNER: "", SMTP_URL: "", STT_API_KEY: "", ANTHROPIC_API_KEY: "",
-    AGENT_ENGINE: "opencode", OPENROUTER_API_KEY: "scripted", ENGINE_MODEL: "openrouter/scripted-model", ENGINE_VISION: "1",
+    AGENT_ENGINE: "opencode", OPENROUTER_API_KEY: "scripted", ENGINE_MODEL: "openrouter/scripted-model", ENGINE_VISION: "1", ENGINE_PRICE: "1,2",
     ENGINE_CONFIG: JSON.stringify({ provider: { openrouter: { options: { baseURL: `http://127.0.0.1:${modelPort}/v1` } } } }),
     FLIP_TOOL_LOG: toolLog, BUILD_HOST: "server", BUILD_DIR: buildDir, BUILD_NAME: "Lemonade", BUILD_PREVIEW_URL: "", PUBLIC_URL: `http://127.0.0.1:${PORT}`,
   });

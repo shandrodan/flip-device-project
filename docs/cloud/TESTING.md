@@ -34,6 +34,7 @@ A scripted model stands in for OpenRouter: an OpenAI-compatible server that answ
 | notes-edit | `notes_edit` milk → oat milk at word edges, a miss explained, `notes_merge` after a press |
 | typed-apps | `focus_start`, `focus_stop`, `agents_create` (press), `settings_permission`; `change_app` not offered to the model |
 | plan | a `todowrite` plan of three items shows as Task steps "1/3 …", "2/3 …", "3/3 …" (the scripted model waits 0.9 s per move, like a real one, so the 400 ms poll sees each state) |
+| usage | `/api/usage` has the Task's 2 model calls, tokens, time, and the cost at `ENGINE_PRICE=1,2` to the dollar |
 | errors-vite | with a Vite dev server: a syntax error in `src/main.js` comes back in the edit result |
 
 `SHOW=1` prints every tool result, `DUMP=1` every request's last messages, `KEEP=1` keeps the temp folder. `errors-vite` runs `npm install` (network).
@@ -75,6 +76,8 @@ Options (environment):
 | `VERBOSE=1` / `ENGINE_VERBOSE=1` | Server / OpenCode output |
 | `KEEP=1` | Keep the temp folder (data, OpenCode sessions, Build project) |
 | `ASK_TIMEOUT=400` | Seconds per request (default 300) |
+
+At the end, `agent-e2e` prints a cost and speed table: per scenario, seconds, model calls, tokens in and out, and dollars (from `GET /api/usage`).
 
 ### Reading a failure
 

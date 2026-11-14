@@ -433,6 +433,8 @@ async function main() {
   console.log(`Engine: ${ENGINE}${MODEL ? ` · ${MODEL}` : ""}\n`);
 
   let failed = 0;
+  // Cost and speed per scenario (P2.17), from the server's /api/usage.
+  const table: { name: string; seconds: number; calls: number; input: number; output: number; cost: number | null }[] = [];
   for (const scenario of scenarios) {
     if (ONLY.length && !ONLY.includes(scenario.name)) continue;
     let last: Awaited<ReturnType<typeof ask>> | null = null;
@@ -446,6 +448,21 @@ async function main() {
     console.log(`    said: ${(last?.reply ?? "").replace(/\s+/g, " ").slice(0, 200)}`);
     if (problem) console.log(`    problem: ${problem}`);
     if (problem || process.env.STEPS) for (const step of last?.steps ?? []) console.log(`      · ${step}`);
+    if (last?.task) {
+      const all = snap?.tasks ?? [];
+      const tree = (id: string): string[] => [id, ...all.filter(t => t.parentTaskId === id).flatMap(t => tree(t.id))];
+      const usage = await fetch(`http://127.0.0.1:${PORT}/api/usage?ids=${tree(last.task.id).join(",")}`).then(r => r.json() as Promise<{ calls: number; input: number; output: number; cost: number | null }[]>).catch(() => []);
+      const sum = (key: "calls" | "input" | "output") => usage.reduce((n, u) => n + u[key], 0);
+      table.push({ name: scenario.name, seconds: last.seconds, calls: sum("calls"), input: sum("input"), output: sum("output"), cost: usage.some(u => u.cost === null) ? null : usage.reduce((n, u) => n + (u.cost ?? 0), 0) });
+    }
+  }
+  if (table.length) {
+    const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+    const money = (n: number | null) => (n === null ? "?" : `$${n.toFixed(4)}`);
+    console.log("\nCost and speed (model calls, tokens in / out):");
+    for (const row of table) console.log(`  ${row.name.padEnd(16)} ${String(row.seconds).padStart(4)} s  ${String(row.calls).padStart(3)} calls  ${k(row.input).padStart(7)} / ${k(row.output).padEnd(6)}  ${money(row.cost)}`);
+    const total = (key: "seconds" | "calls" | "input" | "output") => table.reduce((n, row) => n + row[key], 0);
+    console.log(`  ${"total".padEnd(16)} ${String(total("seconds")).padStart(4)} s  ${String(total("calls")).padStart(3)} calls  ${k(total("input")).padStart(7)} / ${k(total("output")).padEnd(6)}  ${money(table.some(row => row.cost === null) ? null : table.reduce((n, row) => n + (row.cost ?? 0), 0))}`);
   }
   console.log(failed ? `\n${failed} failed` : "\nAll passed");
   process.exit(failed ? 1 : 0);

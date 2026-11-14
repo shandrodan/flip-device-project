@@ -15,6 +15,7 @@ import { MachineOffline } from "../machines.js";
 import { save, state } from "../store.js";
 import { buildEnv, devLogMark } from "../build-host.js";
 import { checkAfterEdit } from "../build-check.js";
+import { costOf, priceFromEnv, recordUsage, type Price } from "../usage.js";
 import { NATIVE_TOOLS } from "./native-tools.js";
 import { TOOLS, ToolError, type Ctx, type ToolDef } from "./tools.js";
 
@@ -54,23 +55,30 @@ export function engineModel(): EngineModel | null {
 }
 
 /** The OpenCode binary itself. The `.bin` shim is a shell script that would leave the engine running when killed. */
-/** Whether the engine's model takes images, from ENGINE_VISION or OpenRouter's model list. */
-let vision: { ref: string; ok: boolean } | null = null;
-export function engineSeesImages() { return !!vision?.ok; }
-async function checkVision(model: EngineModel): Promise<boolean> {
+/** What the server knows about the engine's model: whether it takes images, and its price (P1.4, P2.17).
+ *  From ENGINE_VISION / ENGINE_PRICE, else from OpenRouter's public model list. */
+interface ModelInfo { ref: string; vision: boolean; price: Price | null }
+let modelInfo: ModelInfo | null = null;
+export function engineSeesImages() { return !!modelInfo?.vision; }
+async function loadModelInfo(model: EngineModel): Promise<ModelInfo> {
   const ref = `${model.providerID}/${model.modelID}`;
-  if (vision?.ref === ref) return vision.ok;
-  let ok = false;
-  if (process.env.ENGINE_VISION) ok = process.env.ENGINE_VISION !== "0";
-  else if (model.providerID === "anthropic") ok = true;
-  else if (model.providerID === "openrouter") {
+  if (modelInfo?.ref === ref) return modelInfo;
+  let vision: boolean | null = process.env.ENGINE_VISION ? process.env.ENGINE_VISION !== "0" : model.providerID === "anthropic" ? true : null;
+  let price = priceFromEnv();
+  if ((vision === null || !price) && model.providerID === "openrouter") {
     try {
-      const list = await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(8_000) }).then(r => r.json()) as { data?: { id: string; architecture?: { input_modalities?: string[] } }[] };
-      ok = !!list.data?.find(m => m.id === model.modelID)?.architecture?.input_modalities?.includes("image");
-    } catch { ok = false; }
+      const list = await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(8_000) }).then(r => r.json()) as { data?: { id: string; architecture?: { input_modalities?: string[] }; pricing?: Record<string, string> }[] };
+      const found = list.data?.find(m => m.id === model.modelID);
+      if (vision === null) vision = !!found?.architecture?.input_modalities?.includes("image");
+      if (!price && found?.pricing) {
+        const input = Number(found.pricing.prompt), output = Number(found.pricing.completion);
+        const cached = Number(found.pricing.input_cache_read ?? found.pricing.prompt);
+        if (Number.isFinite(input) && Number.isFinite(output)) price = { input, output, cacheRead: Number.isFinite(cached) ? cached : input };
+      }
+    } catch { /* offline: no vision, no price */ }
   }
-  vision = { ref, ok };
-  return ok;
+  modelInfo = { ref, vision: !!vision, price };
+  return modelInfo;
 }
 
 function binary() {
@@ -140,7 +148,7 @@ export function engineHealth(): { engine: EngineStatus; engineRestarts: number; 
 }
 
 async function ensureEngine(model: EngineModel): Promise<string> {
-  const cfg = engineConfig(model, await checkVision(model));
+  const cfg = engineConfig(model, (await loadModelInfo(model)).vision);
   const key = crypto.createHash("sha256").update(JSON.stringify(cfg)).digest("hex");
   if (proc && baseUrl && runningKey === key) return baseUrl;
   if (starting?.key === key) return starting.promise;
@@ -399,7 +407,8 @@ export async function handleEngineHttp(req: http.IncomingMessage, res: http.Serv
 /* --------------------------------- Running -------------------------------- */
 
 interface EngineMessage {
-  info: { id: string; role: string; time: { created: number; completed?: number }; error?: { name: string; data?: { message?: string } }; finish?: string };
+  info: { id: string; role: string; time: { created: number; completed?: number }; error?: { name: string; data?: { message?: string } }; finish?: string;
+    cost?: number; tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } } };
   parts: { type: string; text?: string; synthetic?: boolean }[];
 }
 
@@ -453,6 +462,8 @@ export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: En
   const session: Live = { ctx, allowed, queue: Promise.resolve(), fatal: null, failures: new Map(), root: dir ?? null, edits: new Map() };
   busy.add(sessionID);
   live.set(sessionID, session);
+  const t0 = Date.now();
+  const firstMessage = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`, undefined, dir).catch(() => [])).length;
   try {
     let text = run.firstMessage(fresh);
     for (let round = 0; round < 6; round++) {
@@ -472,7 +483,27 @@ export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: En
   } finally {
     busy.delete(sessionID);
     live.delete(sessionID);
+    await recordEngineUsage(base, sessionID, dir, firstMessage, ctx, model, t0).catch(() => undefined);
   }
+}
+
+/** Sum the model calls this Task made in its session: tokens, cost and time (P2.17). */
+async function recordEngineUsage(base: string, sessionID: string, dir: string | undefined, from: number, ctx: Ctx, model: EngineModel, t0: number) {
+  const messages = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`, undefined, dir)).slice(from);
+  const t = { calls: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cost: 0 };
+  for (const { info } of messages) {
+    if (info.role !== "assistant") continue;
+    t.calls++;
+    t.input += info.tokens?.input ?? 0;
+    t.output += info.tokens?.output ?? 0;
+    t.reasoning += info.tokens?.reasoning ?? 0;
+    t.cacheRead += info.tokens?.cache?.read ?? 0;
+    t.cost += info.cost ?? 0;
+  }
+  if (!t.calls) return;
+  // OpenCode prices models it knows; for the rest, the server's price list.
+  const cost = t.cost > 0 ? t.cost : costOf(modelInfo?.price ?? null, t);
+  recordUsage({ taskId: ctx.task.id, agentId: ctx.agent.id, model: `${model.providerID}/${model.modelID}`, calls: t.calls, input: t.input, output: t.output, reasoning: t.reasoning, cacheRead: t.cacheRead, cost, seconds: (Date.now() - t0) / 1000, at: new Date().toISOString() });
 }
 
 async function prompt(base: string, sessionID: string, model: EngineModel, system: string, tools: Record<string, boolean>, text: string, ctl: { cancelled: boolean }, session: Live, dir?: string): Promise<string> {
