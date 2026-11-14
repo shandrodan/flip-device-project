@@ -138,7 +138,7 @@ export function Build() {
     if (e.c === "a" && !dict && build?.previewUrl) { setReload(n => n + 1); return true; }
     if (e.c === "b" && dict?.phase === "miss") { close(); return true; }
     return false; // B goes back Home, the system wheel switches apps
-  }, { mic: listening ? "Release to send" : "Hold to talk", a: build?.previewUrl && !dict ? "Reload" : undefined });
+  }, { cue: listening ? ["mic"] : [], mic: listening ? "Release to send" : "Hold to talk", a: build?.previewUrl && !dict ? "Reload" : undefined });
 
   /* ---------- What the sidebar says ---------- */
   let mood: BotState = "idle", line: JSX.Element | string = IDLE_LINE;

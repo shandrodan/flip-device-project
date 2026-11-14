@@ -1,7 +1,7 @@
 // The hardware twin: the flip device drawn open, with every control from device-controls.md.
 // Software-first, hardware-ready (ADR 0002): this is a web app, the renders show the real thing.
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
-import { emit, onPress, wheelHandler, type Control, type ControlEvent } from "../input/controls";
+import { emit, onPress, setTrayOpen, wheelHandler, type Control, type ControlEvent } from "../input/controls";
 import { useNet, net } from "../net/client";
 import { DeviceApp } from "../app/App";
 import type { DebugLink } from "../app/screens/Debug";
@@ -90,6 +90,8 @@ export function Simulator() {
     return () => el.removeEventListener("wheel", h);
   }, [flat]);
   useEffect(() => { try { localStorage.setItem("flip-voice", voice); } catch { /* ignore */ } }, [voice]);
+  // The screen's prompts follow the tray: closed, the D-pad and A–D are covered. The drawn twin is always open.
+  useEffect(() => { setTrayOpen(flat || open); }, [flat, open]);
 
   const btn = (c: Control, cls: string, content: ReactNode, label: string) =>
     <button className={cls + (down[c] ? " down" : "")} aria-label={label} onPointerDown={e => { e.preventDefault(); emit({ c }); }}>{content}</button>;

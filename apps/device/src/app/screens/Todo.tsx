@@ -332,7 +332,7 @@ export function Todo() {
     if (e.c === "c" && !isDone && (canToday || (board && cols[ci]?.late))) { reschedule(); return true; }
     return false;
   }, dict
-    ? { mic: dict.phase === "listen" ? "Release to save" : dict.phase === "done" ? "Hold to talk again" : undefined, b: busy ? undefined : "Close" }
+    ? { mic: dict.phase === "listen" ? "Release to save" : dict.phase === "done" ? "Hold to talk again" : undefined, b: busy ? undefined : "Close", cue: ["mic"] }
     : focus === "side"
       ? { wheel: "Lists", a: "Open", mic: "Hold to add a task" }
       : {

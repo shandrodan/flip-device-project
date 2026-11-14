@@ -84,7 +84,7 @@ export function AppWheel({ items, start, dir, onClose }: { items: WheelItem[]; s
     // The mic still works: it closes the wheel and talks to whoever is on screen.
     if (e.c === "mic") { if (e.phase === "down") close(); return false; }
     return true;
-  }, { a: "Open", push: "", b: "Close", c: "", d: "", wheel: "", dpad: "Browse" }, true, LAYER.sheet);
+  }, { a: "Open", push: "Open", b: "Close", c: "", d: "", wheel: "", sys: "Turn", dpad: "Browse" }, true, LAYER.sheet);
 
   return <div className={"aw" + (closing ? " out" : "")} aria-label="Apps and agents">
     <div className="aw-blur aw-b1" /><div className="aw-blur aw-b2" /><div className="aw-blur aw-b3" />

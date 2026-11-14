@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Bot } from "../../bot/Bot";
 import { LAYER, useControls } from "../../input/controls";
-import { Ico } from "../ui";
+import { EdgeCue, Ico } from "../ui";
 
 const STEPS = [
   {
@@ -9,6 +9,7 @@ const STEPS = [
     title: "Say what is on your mind.",
     detail: "Hold the mic button and talk. Your words become a Note first, so nothing gets lost.",
     control: "MIC BUTTON",
+    cue: "mic",
     instruction: "Hold to speak · Release to save",
   },
   {
@@ -16,6 +17,7 @@ const STEPS = [
     title: "Turn a Note into work.",
     detail: "The Device suggests tasks from your Notes. Turn the in-app wheel to browse. Press A to choose.",
     control: "IN-APP WHEEL",
+    cue: "wheel",
     instruction: "Turn to browse · A to choose",
   },
   {
@@ -23,6 +25,7 @@ const STEPS = [
     title: "You make the final call.",
     detail: "An action that sends, deletes, pays, or leaves your machines stops for you. Press the push bar to approve it.",
     control: "PUSH BAR",
+    cue: "push",
     instruction: "Press to approve a risky action",
   },
 ] as const;
@@ -45,7 +48,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     }
     // The guide owns the controls until it closes. No action can start behind it.
     return true;
-  }, { a: last ? "Start" : "Next", b: index === 0 ? "Skip" : "Back" }, true, LAYER.sheet);
+  }, { a: last ? "Start" : "Next", b: index === 0 ? "Skip" : "Back", mic: "", push: "", wheel: "", sys: "" }, true, LAYER.sheet);
 
   return <div className="scr onboarding" aria-label="First-run guide">
     <div className="onboarding-copy" key={index}>
@@ -70,9 +73,11 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       </>}
       {index === 2 && <>
         <span className="onboarding-approval-ring"><Bot size={115} seed={3} state="warn" fps={20} /></span>
-        <span className="onboarding-push-mark" />
       </>}
     </div>
+
+    {/* Point at the control this step is about, on the edge of the screen it sits behind. */}
+    <div className="cues"><EdgeCue key={index} k={current.cue} label={current.control.charAt(0) + current.control.slice(1).toLowerCase()} urgent /></div>
 
     <div className="onboarding-footer" aria-label={`Step ${index + 1} of ${STEPS.length}`}>
       <div className="onboarding-progress">{STEPS.map((_, step) => <i key={step} className={step === index ? "active" : ""} />)}</div>
