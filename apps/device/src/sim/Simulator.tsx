@@ -108,6 +108,7 @@ export function Simulator() {
         <p>The Device as a web app, driven only by its buttons. Hold the red mic, turn the wheels, press the push bar. Agents run on the server and act on your machines through the PC agent.</p>
       </div>
       <nav className="sim-links">
+        {!flat && <a href="/?studio=1">Studio</a>}
         <a href="/dock" target="_blank" rel="noreferrer">Dock screen <ArrowUpRightIcon width={12} height={12} aria-hidden="true" style={{ verticalAlign: "-1px" }} /></a>
         <a href="/?kiosk=1" target="_blank" rel="noreferrer">Kiosk <ArrowUpRightIcon width={12} height={12} aria-hidden="true" style={{ verticalAlign: "-1px" }} /></a>
         <a href="/setup" target="_blank" rel="noreferrer">Setup <ArrowUpRightIcon width={12} height={12} aria-hidden="true" style={{ verticalAlign: "-1px" }} /></a>

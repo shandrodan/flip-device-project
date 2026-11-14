@@ -42,7 +42,46 @@ const LABEL: Record<Part, string> = {
 /** The plain shell: a click on it (not a drag) slides the tray. */
 const SHELL = /^(slider_tray|slider_rails|screen_housing)$/;
 const MAX_ZOOM = 8;
+/** How long a press stays in, in ms. Long enough to read in a video. */
+const PRESS_MS = 190;
 const partOf = (name: string) => PARTS.find(([re]) => re.test(name))?.[1];
+
+/** Where the camera is. Angles in radians, zoom 1 = the whole Device in frame, x and y in mm. */
+export interface View { yaw: number; pitch: number; zoom: number; x: number; y: number }
+export type Ease = "linear" | "in" | "out" | "inOut";
+/** Anything a pointer or a press ring can aim at: a part, or one arm of the D-pad. */
+export type Target = Part | "up" | "down" | "left" | "right" | "appWheelPress";
+/** The twin's remote control, for studio mode and for agents (see docs/STUDIO.md). */
+export interface Twin {
+  view(): View;
+  /** Move the camera. With no duration it cuts; with one it travels for that many ms. */
+  setView(v: Partial<View>, opts?: { duration?: number; ease?: Ease }): void;
+  /** True while the camera is travelling. */
+  moving(): boolean;
+  /** Where a control is on the page, and whether the camera can see it. */
+  locate(t: Target): { x: number; y: number; visible: boolean } | null;
+  power(on?: boolean): boolean;
+  kickstand(out?: boolean): boolean;
+}
+const EASE: Record<Ease, (t: number) => number> = {
+  linear: t => t,
+  in: t => t * t * t,
+  out: t => 1 - (1 - t) ** 3,
+  inOut: t => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2),
+};
+
+/** The mark a press leaves on the model: a soft disc with a ring. */
+function ringTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "rgba(255,255,255,0.3)";
+  g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.fill();
+  g.lineWidth = 7;
+  g.strokeStyle = "rgba(255,255,255,1)";
+  g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.stroke();
+  return new THREE.CanvasTexture(c);
+}
 
 /** Soft blob behind the Device, standing in for the studio backdrop shadow. */
 function shadowTexture() {
@@ -58,7 +97,7 @@ function shadowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-export default function Device3D({ open, want, resetView, onToggleOpen, onFail, children }: {
+export default function Device3D({ open, want, resetView, onToggleOpen, onFail, studio = false, rings = false, shadow = true, onReady, children }: {
   /** Tray slid out (controls showing) or closed. */
   open: boolean;
   /** An approval press is wanted: the push bar glows. */
@@ -69,6 +108,14 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
   onToggleOpen?: () => void;
   /** WebGL or the model is not available. */
   onFail?: () => void;
+  /** Studio mode: the camera only goes where it is told, and nothing but the Device is drawn. */
+  studio?: boolean;
+  /** Mark every press on the model with a ring, so it reads in a video. */
+  rings?: boolean;
+  /** The soft shadow behind the Device. */
+  shadow?: boolean;
+  /** The model is loaded: here is its remote control. */
+  onReady?: (twin: Twin) => void;
   /** The Device screen. */
   children: ReactNode;
 }) {
@@ -84,12 +131,15 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
   });
   const [loaded, setLoaded] = useState(false);
   const label = useRef<HTMLDivElement>(null);
-  const live = useRef({ open, want, resetView, onToggleOpen, poke: () => { }, zoomBy: (_f: number) => { } });
+  const live = useRef({ open, want, resetView, onToggleOpen, onReady, rings, shadow, poke: () => { }, zoomBy: (_f: number) => { } });
   live.current.onToggleOpen = onToggleOpen;
+  live.current.onReady = onReady;
+  live.current.rings = rings;
+  live.current.shadow = shadow;
   live.current.open = open;
   live.current.want = want;
   live.current.resetView = resetView;
-  useEffect(() => { live.current.poke(); }, [open, want, resetView]);
+  useEffect(() => { live.current.poke(); }, [open, want, resetView, rings, shadow]);
 
   useEffect(() => {
     const el = stage.current!;
@@ -119,7 +169,9 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
     const rimLight = new THREE.DirectionalLight(0xdfe8ff, 0.9);
     rimLight.position.set(300, 80, -260);
     scene.add(keyLight, rimLight);
-    const camera = new THREE.PerspectiveCamera(FOV, 1, 20, 3000);
+    const camera = new THREE.PerspectiveCamera(FOV, 1, 20, 6000);
+    /** The studio may pull back for a wide shot. */
+    const MIN_ZOOM = studio ? 0.35 : 1;
 
     const shadow = new THREE.Mesh(
       new THREE.PlaneGeometry(300, 250),
@@ -159,6 +211,7 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
     let micGlow: THREE.MeshStandardMaterial | null = null;
     const node: Partial<Record<Part, THREE.Object3D>> = {};
     const rest: Partial<Record<Part, THREE.Vector3>> = {};
+    const bounds: Partial<Record<Part, THREE.Box3>> = {};
     let dead = false;
 
     new GLTFLoader().load(glbUrl, gltf => {
@@ -175,6 +228,19 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
       for (const k of Object.keys(names) as Part[]) {
         const o = model.getObjectByName(names[k]);
         if (o) { node[k] = o; rest[k] = o.position.clone(); }
+      }
+
+      // Where each control sits in its own space, for press rings and locate().
+      rig.updateMatrixWorld(true);
+      for (const k of Object.keys(node) as Part[]) {
+        const o = node[k]!, inv = o.matrixWorld.clone().invert(), box = new THREE.Box3();
+        o.traverse(m => {
+          const geo = (m as THREE.Mesh).geometry;
+          if (!geo) return;
+          if (!geo.boundingBox) geo.computeBoundingBox();
+          box.union(geo.boundingBox!.clone().applyMatrix4(inv.clone().multiply(m.matrixWorld)));
+        });
+        if (!box.isEmpty()) bounds[k] = box;
       }
 
       // Keep the surface textures sharp at grazing angles and up close.
@@ -230,10 +296,11 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
         slideClip.play();
         slideClip.paused = true; // scrubbed by hand below, so it can be damped and reversed
       }
-      // Arrive with a small turn and the tray sliding out.
-      view.yaw = -0.7; view.pitch = 0.28; slide = 0; zoom = 0.86;
+      // Arrive with a small turn and the tray sliding out. The studio starts on its own shot.
+      if (!studio) { view.yaw = -0.7; view.pitch = 0.28; slide = 0; zoom = 0.86; }
       dirty = true;
       setLoaded(true);
+      live.current.onReady?.(twin);
     }, undefined, () => { if (!dead) onFail?.(); });
 
     let slide = live.current.open ? 1 : 0;
@@ -244,17 +311,53 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
     const dpadTilt = new THREE.Vector2(), dpadTarget = new THREE.Vector2();
     const spin = { systemWheel: 0, appWheel: 0 }, spinTarget = { systemWheel: 0, appWheel: 0 };
     let micHeld = false;
+
+    /** A control's centre in the world, as the model stands right now. */
+    const spot = (t: Target) => {
+      const arm = t === "up" || t === "down" || t === "left" || t === "right";
+      const part: Part = arm ? "dpad" : t === "appWheelPress" ? "appWheel" : t;
+      const o = node[part], box = bounds[part];
+      if (!o || !box) return null;
+      const p = box.getCenter(new THREE.Vector3());
+      if (arm) {
+        const size = box.getSize(new THREE.Vector3());
+        if (t === "left" || t === "right") p.x += (t === "right" ? 0.33 : -0.33) * size.x;
+        else p.y += (t === "up" ? 0.33 : -0.33) * size.y;
+      }
+      rig.updateMatrixWorld(true);
+      return { part, world: o.localToWorld(p), radius: Math.max(4.5, Math.min(9, 0.5 * 1000 * (arm ? 0.34 : 1) * Math.max(...box.getSize(new THREE.Vector3()).toArray().sort((a, b) => a - b).slice(1)))) };
+    };
+
+    // ---- Press rings: a mark on the model where a control was pressed, so a video shows it ----
+    const ringMap = ringTexture();
+    interface Ring { sprite: THREE.Sprite; target: Target; t0: number; size: number; hold: boolean }
+    const ringList: Ring[] = [];
+    const ring = (target: Target, hold = false) => {
+      if (!live.current.rings) return;
+      const s = spot(target);
+      if (!s) return;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringMap, color: 0x14161a, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+      sprite.renderOrder = 10;
+      scene.add(sprite);
+      ringList.push({ sprite, target, t0: performance.now(), size: s.radius, hold });
+    };
+
     const offPress = onPress(e => {
       dirty = true;
-      if (e.c === "mic") { micHeld = e.phase === "down"; return; }
+      if (e.c === "mic") {
+        micHeld = e.phase === "down";
+        if (micHeld) ring("mic", true);
+        return;
+      }
+      ring(e.c);
       if (e.c === "systemWheel" || e.c === "appWheel") { spinTarget[e.c] += (e.dir || 1) * (Math.PI / 6); return; }
       const now = performance.now();
       if (e.c === "up" || e.c === "down" || e.c === "left" || e.c === "right") {
         dpadTarget.set(e.c === "up" ? -1 : e.c === "down" ? 1 : 0, e.c === "right" ? 1 : e.c === "left" ? -1 : 0);
-        held.dpad = now + 130;
+        held.dpad = now + PRESS_MS;
         return;
       }
-      held[e.c === "appWheelPress" ? "appWheel" : e.c] = now + 130;
+      held[e.c === "appWheelPress" ? "appWheel" : e.c] = now + PRESS_MS;
     });
 
     // ---- Pointer: press a control, drag a wheel, or drag anywhere to orbit. Scroll and pinch zoom. ----
@@ -280,7 +383,7 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
     const pan = new THREE.Vector2(), toPan = new THREE.Vector2();
     /** Zoom by `factor`, keeping what is under the pointer (x, y in -1..1) where it is. */
     const zoomAt = (x: number, y: number, factor: number) => {
-      const next = THREE.MathUtils.clamp(toZoom * factor, 1, MAX_ZOOM);
+      const next = THREE.MathUtils.clamp(toZoom * factor, MIN_ZOOM, MAX_ZOOM);
       const before = (tanHalf * fitDist) / toZoom, after = (tanHalf * fitDist) / next;
       toPan.x += x * camera.aspect * (before - after);
       toPan.y += y * (before - after);
@@ -289,10 +392,34 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
       dirty = true;
     };
     const clampPan = () => {
-      const reach = 1 - 1 / toZoom; // nothing to pan to when the whole Device is in frame
+      const reach = Math.max(studio ? 0.6 : 0, 1 - 1 / toZoom); // nothing to pan to when the whole Device is in frame
       toPan.set(THREE.MathUtils.clamp(toPan.x, -FRAME_W * reach, FRAME_W * reach), THREE.MathUtils.clamp(toPan.y, -FRAME_H * reach, FRAME_H * reach));
     };
     live.current.zoomBy = f => zoomAt(0, 0, f);
+
+    // ---- The remote control: camera moves on a timeline, and where each control is on the page ----
+    let tween: { t0: number; dur: number; from: View; to: View; ease: (t: number) => number } | null = null;
+    const twin: Twin = {
+      view: () => ({ yaw: view.yaw, pitch: view.pitch, zoom, x: pan.x, y: pan.y }),
+      setView(v, opts = {}) {
+        const from = twin.view(), to = { ...(tween ? tween.to : from), ...v };
+        tween = { t0: performance.now(), dur: Math.max(0, opts.duration || 0), from, to, ease: EASE[opts.ease || "inOut"] };
+        dirty = true;
+      },
+      moving: () => !!tween,
+      locate(t) {
+        const s = spot(t);
+        if (!s || !model) return null;
+        camera.updateMatrixWorld();
+        const n = s.world.clone().project(camera), r = el.getBoundingClientRect();
+        ray.setFromCamera(new THREE.Vector2(n.x, n.y), camera);
+        let seen = false;
+        for (let o: THREE.Object3D | null = ray.intersectObject(model, true)[0]?.object ?? null; o && !seen; o = o.parent) seen = partOf(o.name) === s.part;
+        return { x: r.left + ((n.x + 1) / 2) * r.width, y: r.top + ((1 - n.y) / 2) * r.height, visible: seen && Math.abs(n.x) <= 1 && Math.abs(n.y) <= 1 };
+      },
+      power(on = !powered) { powered = on; host.style.filter = powered ? "" : "brightness(0)"; dirty = true; return powered; },
+      kickstand(out = !standOut) { standOut = out; dirty = true; return standOut; },
+    };
 
     let powered = true, standOut = false;
     type Mode = null | "orbit" | "pan" | "pinch" | { wheel: "systemWheel" | "appWheel"; acc: number; turned: boolean; back: boolean };
@@ -313,7 +440,7 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
 
     const down = (ev: PointerEvent) => {
       ev.preventDefault();
-      canvas.setPointerCapture(ev.pointerId);
+      try { canvas.setPointerCapture(ev.pointerId); } catch { /* a scripted pointer has nothing to capture */ }
       touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
       tip(null);
       if (touches.size === 2) {
@@ -329,6 +456,7 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
       const part = p?.part;
       if (!part) {
         mode = "orbit"; moved = 0; onShell = !!p && SHELL.test(p.name);
+        tween = null;
         canvas.style.cursor = "grabbing";
         return;
       }
@@ -340,8 +468,8 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
         // Dragging turns it one click at a time. A plain click turns the system wheel one step, or presses the in-app wheel.
         mode = { wheel: part, acc: 0, turned: false, back: part === "systemWheel" && node.systemWheel!.worldToLocal(p!.point.clone()).y > 0 };
         canvas.style.cursor = part === "systemWheel" ? "ns-resize" : "ew-resize";
-      } else if (part === "power") { powered = !powered; host.style.filter = powered ? "" : "brightness(0)"; dirty = true; }
-      else if (part === "kickstand") { standOut = !standOut; dirty = true; }
+      } else if (part === "power") twin.power();
+      else if (part === "kickstand") twin.kickstand();
       else emit({ c: part as Control });
     };
     const move = (ev: PointerEvent) => {
@@ -375,11 +503,11 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
         }
       } else if (ev.pointerType === "mouse" && !ev.buttons) {
         const n = toNdc(ev);
-        view.toTiltY = n.x * 0.07;
-        view.toTiltX = -n.y * 0.05;
+        // Outside the studio the Device leans a little towards the pointer.
+        if (!studio) { view.toTiltY = n.x * 0.07; view.toTiltX = -n.y * 0.05; }
         const part = pick(ev)?.part;
         canvas.style.cursor = part ? "pointer" : "grab";
-        tip(part ? LABEL[part] : null, ev);
+        if (!studio) tip(part ? LABEL[part] : null, ev);
         dirty = true;
       }
     };
@@ -439,11 +567,24 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
         toZoom = 1;
         toPan.set(0, 0);
       }
+      if (tween) {
+        // A timed camera move: exact, so the same script always gives the same video.
+        const k = tween.dur ? Math.min(1, (now - tween.t0) / tween.dur) : 1, e = tween.ease(k), { from, to } = tween;
+        const mix = (a: number, b: number) => a + (b - a) * e;
+        view.yaw = view.toYaw = mix(from.yaw, to.yaw);
+        view.pitch = view.toPitch = mix(from.pitch, to.pitch);
+        zoom = toZoom = Math.exp(mix(Math.log(from.zoom), Math.log(to.zoom))); // even speed on a zoom
+        pan.set(mix(from.x, to.x), mix(from.y, to.y));
+        toPan.copy(pan);
+        if (k >= 1) tween = null;
+        moving = true;
+      }
       zoom = damp(zoom, toZoom, 12);
       pan.set(damp(pan.x, toPan.x, 12), damp(pan.y, toPan.y, 12));
       camera.position.set(pan.x, pan.y, fitDist / zoom);
       view.yaw = damp(view.yaw, view.toYaw, 12);
       view.pitch = damp(view.pitch, view.toPitch, 12);
+      shadow.visible = live.current.shadow;
       view.tiltX = damp(view.tiltX, view.toTiltX, 7);
       view.tiltY = damp(view.tiltY, view.toTiltY, 7);
       rig.rotation.set(view.pitch + view.tiltX, view.yaw + view.tiltY, 0);
@@ -479,6 +620,24 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
         if (wanted) moving = true;
       }
 
+      for (let i = ringList.length - 1; i >= 0; i--) {
+        const r = ringList[i], s = spot(r.target);
+        const still = r.hold && micHeld;
+        if (still) r.t0 = now; // a held mic keeps its ring until it is let go
+        const k = Math.min(1, (now - r.t0) / 520);
+        if (k >= 1 || !s) {
+          scene.remove(r.sprite);
+          r.sprite.material.dispose();
+          ringList.splice(i, 1);
+        } else {
+          const grow = 1 - (1 - k) ** 3;
+          r.sprite.position.copy(s.world);
+          r.sprite.scale.setScalar(2 * r.size * (still ? 1.5 + 0.12 * Math.sin(now / 130) : 1.1 + 0.9 * grow));
+          r.sprite.material.opacity = still ? 0.6 : 0.75 * (1 - k) ** 1.5;
+        }
+        moving = true;
+      }
+
       if (!moving) return;
       renderer.render(scene, camera);
       css.render(scene, camera);
@@ -494,6 +653,7 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
       live.current.poke = () => { };
       live.current.zoomBy = () => { };
       host.style.filter = "";
+      ringMap.dispose();
       scene.traverse(o => {
         const m = o as THREE.Mesh;
         m.geometry?.dispose();
@@ -507,13 +667,13 @@ export default function Device3D({ open, want, resetView, onToggleOpen, onFail, 
     };
   }, []);
 
-  return <div className="stage3d" ref={stage}>
+  return <div className={"stage3d" + (studio ? " studio" : "")} ref={stage}>
     {createPortal(children, host)}
     {!loaded && <div className="stage3d-note">Loading the Device model…</div>}
-    <div className="stage3d-tip" ref={label} />
-    <div className="stage3d-zoom">
+    {!studio && <div className="stage3d-tip" ref={label} />}
+    {!studio && <div className="stage3d-zoom">
       <button aria-label="Zoom out" onClick={() => live.current.zoomBy(1 / 1.5)}>−</button>
       <button aria-label="Zoom in" onClick={() => live.current.zoomBy(1.5)}>+</button>
-    </div>
+    </div>}
   </div>;
 }

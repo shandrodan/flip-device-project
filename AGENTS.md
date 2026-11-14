@@ -29,9 +29,10 @@ Product name: TBD.
 | `apps/server` | Node backend: WebSocket server, task agents, voice |
 | `apps/pc-agent` | Small agent on the laptop, reached over Tailscale |
 | `packages/protocol` | Shared WebSocket message types. Every app imports these. |
-| `docs/` | SHAPE, STACK, APPS, DEMO |
+| `docs/` | SHAPE, STACK, APPS, DEMO, STUDIO |
 | `docs/adr/` | One file per decision. Read before changing direction. |
 | `device-controls.md` | The physical controls. The UI is button-only (ADR 0007). |
+| `apps/device/studio` | Studio recorder: stills and video of the 3D twin, scripted (see `docs/STUDIO.md`) |
 | `renders/` | Blender scripts and exported renders |
 | `pitch/` | Slides, video, demo script |
 | `docker/` | Container setup for the device-side demo |

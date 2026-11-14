@@ -5,6 +5,7 @@ dist/
 *.log
 .DS_Store
 renders/out/*.blend1
+renders/studio/
 apps/server/data/
 .flip/
 !.env.example

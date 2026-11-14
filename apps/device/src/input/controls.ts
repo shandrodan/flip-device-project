@@ -117,7 +117,11 @@ export function useActiveHints(): Hints {
     fn => { hintSubs.add(fn); return () => hintSubs.delete(fn); },
     () => hintVersion,
   );
-  // Hints merge downwards: a screen's hints sit on top of the global ones (mic, wheel, back).
+  return activeHints();
+}
+
+/** What each control does right now. Hints merge downwards: a screen's hints sit on top of the global ones (mic, wheel, back). */
+export function activeHints(): Hints {
   const out: Hints = {};
   for (const e of ordered()) {
     const h = e.hints.current;

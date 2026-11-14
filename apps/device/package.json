@@ -7,7 +7,8 @@
     "dev": "vite --host",
     "build": "tsc -p . && vite build",
     "preview": "vite preview --host",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p . && tsc -p studio",
+    "studio": "tsx studio/cli.ts"
   },
   "dependencies": {
     "@app/protocol": "workspace:*",
@@ -17,10 +18,14 @@
     "three": "0.187.0"
   },
   "devDependencies": {
+    "@types/node": "22.10.2",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "@types/three": "0.187.0",
     "@vitejs/plugin-react": "4.3.4",
+    "ffmpeg-static": "5.2.0",
+    "playwright-core": "1.49.1",
+    "tsx": "4.19.2",
     "typescript": "5.6.3",
     "vite": "5.4.11"
   }
