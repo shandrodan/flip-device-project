@@ -13,6 +13,7 @@ Our shared words. Use them exactly in code, docs, issues and the pitch.
 | **Suggestion** | A task the device proposes from a note. Accepted with one press. |
 | **Task** | A unit of work, either kept as a todo or handed to an agent. |
 | **Project** | A named list of tasks in the To-Do app. A task with no project sits in Inbox. |
+| **Build** | The app where you talk and an agent builds a web app on your machine, with a live preview. With no Task agent of its own, the main agent works there. |
 | **Task agent** | A server-side agent that owns one kind of work. A Device app has one or more assigned Task agents. Other agents send app work to one of them. |
 | **Coding agent** | A coding tool running on your own machine (Claude Code, Codex, OpenCode, …). The PC agent reports it; the Dock shows it. Not a Task agent. |
 | **PC agent** | The small program on the user's laptop that executes actions sent over Tailscale. |

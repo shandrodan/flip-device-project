@@ -29,6 +29,12 @@ export const TODO_SAMPLES = [
   { text: "ask the mail agent to reply to Rasa about the venue Wi-Fi", clean: "Ask the mail agent to reply to Rasa about the venue Wi-Fi." },
   { text: "buy AA batteries for the haptic test rig", clean: "Buy AA batteries for the haptic test rig." },
 ];
+/** Build rehearsal lines (ADR 0021): small, visible changes to the project in the preview. */
+export const BUILD_SAMPLES = [
+  { text: "add a waitlist form under the hero with an email field", clean: "Add a waitlist form under the hero with an email field." },
+  { text: "make the hero dark and the button yellow", clean: "Make the hero dark and the button yellow." },
+  { text: "add three feature cards dump delegate and approve", clean: "Add three feature cards: Dump, Delegate and Approve." },
+];
 const NAMES = ["Scout", "Juniper", "Echo", "Pixel", "Maple", "Orbit"];
 /** Rehearsal lines for dictating a longer field, such as an agent's personality (ADR 0017). */
 const TEXTS = [
@@ -89,6 +95,12 @@ export function nextTodoSample() {
   let i = 0;
   try { i = Number(localStorage.getItem("flip-todo-sample") || 0) % TODO_SAMPLES.length; localStorage.setItem("flip-todo-sample", String((i + 1) % TODO_SAMPLES.length)); } catch { /* ignore */ }
   return TODO_SAMPLES[i];
+}
+
+export function nextBuildSample() {
+  let i = 0;
+  try { i = Number(localStorage.getItem("flip-build-sample") || 0) % BUILD_SAMPLES.length; localStorage.setItem("flip-build-sample", String((i + 1) % BUILD_SAMPLES.length)); } catch { /* ignore */ }
+  return BUILD_SAMPLES[i];
 }
 
 export async function startCapture(source: VoiceSource, o: Opts): Promise<Capture> {

@@ -8,7 +8,7 @@
 // The server is the source of truth. After every change it broadcasts a full `snapshot`
 // (the state is small), plus a few event messages for things the screen reacts to at once.
 
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /* ============================== Basic words ============================== */
 
@@ -17,8 +17,15 @@ export type PermissionMode = "manual" | "auto" | "full";
 export type Hosting = "cloud" | "vm" | "self";
 export type DeviceState = "idle" | "listening" | "thinking" | "acting" | "awaiting-approval" | "done" | "error";
 export type ClientKind = "device" | "dock";
-export const APP_IDS = ["notes", "todo", "focus", "agents", "settings"] as const;
+export const APP_IDS = ["notes", "todo", "focus", "agents", "settings", "build"] as const;
 export type AppId = (typeof APP_IDS)[number];
+/**
+ * Apps that may have no assigned Task agent (ADR 0021). With none, the main agent does the app's work.
+ * Every other app keeps at least one (ADR 0015).
+ */
+export const MAIN_FALLBACK_APPS: readonly AppId[] = ["build"];
+/** The fewest Task agents an app may have: 0 for a main-fallback app, otherwise 1. */
+export const minAppAgents = (app: AppId) => (MAIN_FALLBACK_APPS.includes(app) ? 0 : 1);
 
 /** Hard-rule categories. Always need an approval press, except in Full mode (ADR 0004). */
 export type RiskKind = "send" | "delete" | "pay" | "leave";
@@ -75,6 +82,8 @@ export interface Task {
   sourceTaskId?: string;
   sourceCallId?: string;
   appRequest?: { app: AppId; tool: "read_app" | "change_app"; input: Record<string, unknown> };
+  /** The Device app whose screen the voice request came from, e.g. "build" (ADR 0021). */
+  app?: AppId;
   requestMessageId?: string;
   depth?: number;
   status: TaskStatus;
@@ -200,6 +209,20 @@ export interface CodingAgent {
   since: string;
 }
 
+/**
+ * The Build app (ADR 0021): one project on the user's machine and its dev server, shown as a live
+ * preview on the Device. `rev` goes up after every Build task, so the preview reloads.
+ */
+export interface BuildState {
+  /** Project folder on the machine, as a ~/ path. */
+  dir: string;
+  /** Short project name shown on the Device. */
+  name: string;
+  /** What the Device loads in the preview frame, e.g. http://100.x.y.z:5173. Null until a dev server runs. */
+  previewUrl: string | null;
+  rev: number;
+}
+
 export interface Settings {
   permissionMode: PermissionMode;
   hosting: Hosting;
@@ -232,6 +255,8 @@ export interface Snapshot {
   machines: Machine[];
   /** Coding agents on your machines, newest activity first (ADR 0020). Missing from older servers. */
   coding?: CodingAgent[];
+  /** The Build app's project (ADR 0021). Missing from older servers. */
+  build?: BuildState;
   settings: Settings;
   focus: Focus;
   limits: Limits;

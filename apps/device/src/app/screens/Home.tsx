@@ -20,6 +20,7 @@ import { APP_TONE, botsOf, toneVars, type Tone } from "../tone";
 export const APPS: { fn: AppId; icon: ReactNode; about: string }[] = [
   { fn: "notes", icon: Ico.notes, about: "Talk, and the agent files it in the right note" },
   { fn: "todo", icon: Ico.tasks, about: "Today’s tasks" },
+  { fn: "build", icon: Ico.build, about: "Talk, and watch your app change" },
   { fn: "agents", icon: Ico.agents, about: "What every bot is doing" },
   { fn: "focus", icon: Ico.focus, about: "Focus timer" },
   { fn: "settings", icon: Ico.settings, about: "Keys, machines, modes" },
@@ -205,7 +206,7 @@ export function Home() {
     .map(c => c.kind === "app" ? FN_LABEL[c.fn] : c.kind === "bot" ? c.agent.name : "");
 
   const name = cur.kind === "app" ? FN_LABEL[cur.fn] : cur.kind === "bot" ? cur.agent.name : "New bot";
-  const about = cur.kind === "app" ? `${cur.about} · ${snap.appAgents[cur.fn].map(id => snap.agents.find(agent => agent.id === id)?.name ?? "Unavailable").join(", ")}`
+  const about = cur.kind === "app" ? `${cur.about} · ${snap.appAgents[cur.fn].map(id => snap.agents.find(agent => agent.id === id)?.name ?? "Unavailable").join(", ") || "Main agent"}`
     : cur.kind === "bot" ? (() => { const w = workOf(cur.agent.id); return w ? (w.status === "running" ? "Working: " : "Waiting: ") + w.title : cur.agent.role; })()
     : "Your main agent builds it from what you say";
 

@@ -113,6 +113,16 @@ The behavior of each control depends on the currently selected mode. Locations a
 - **Microphone:** Hold to say a task. It is saved as a note, then filed as a task with its day, project or agent.
 - **Task Completion:** Once a task is marked as completed, it leaves the list and waits in Completed.
 
+## Build Mode
+
+**Purpose:** Build a web app by talking and watch its live preview. The agent's bot sits in a black sidebar on the left; the preview takes the rest of the screen. See `docs/adr/0021-build-app-falls-back-to-main.md`.
+
+- **System Wheel:** Rotate to open the app flywheel and pick another function.
+- **Microphone:** Hold and say what to build or change. The sidebar widens and shows what you say; let go to send it. Build's own agent does the work, or the main agent if Build has none.
+- **A Button:** Reload the preview.
+- **B Button:** Back to Home.
+- **Push Bar:** Approves a risky step when the agent asks, such as publishing the app.
+
 ## Dock Mode (StandBy)
 
 **Purpose:** The companion screen while the Device sits in the dock (ADR 0020). Five screens: Clock, Focus, Agents (coding agents on your machines), To-Do board, and a split screen of two blocks. The D-pad and A–D buttons are out of reach when docked.

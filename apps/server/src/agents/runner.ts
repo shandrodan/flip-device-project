@@ -2,7 +2,7 @@
 // Either way every action goes through the same tools, the same gate and the same PC link.
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AppId, Task, TaskStep } from "@app/protocol";
-import { state, agentById, id, log, patchTask, pickAppAgent, save, saveNow, noteById } from "../store.js";
+import { state, agentById, id, log, patchTask, pickAppAgent, save, saveNow, noteById, servesBuild } from "../store.js";
 import { bus } from "../bus.js";
 import { requestApproval, cancelForTask, Cancelled } from "../approvals.js";
 import { machines, MachineOffline } from "../machines.js";
@@ -171,6 +171,8 @@ export function startTask(task: Task) {
         console.warn(`[task] ${task.title} failed:`, msg);
       }
     } finally {
+      // A Build task may have changed the project: the Device reloads its preview.
+      if (task.app === "build") state.build.rev++;
       running.delete(task.id);
       cancelForTask(task.id);
       saveNow();
@@ -207,6 +209,18 @@ export function resumePausedForMachines() {
 }
 
 /* ------------------------------- Claude loop ------------------------------- */
+
+/** What the agent serving the Build app needs to know (ADR 0021). */
+function buildBrief(fromBuild: boolean) {
+  const b = state.build;
+  return [
+    fromBuild ? "This request comes from the Build app: the user is building a web app by talking, and watches its live preview next to you." : "You also serve the Build app.",
+    `The project is ${b.name} in ${b.dir} on the user's machine. Use the build_* tools: paths are relative to that folder.`,
+    b.previewUrl ? `The Device previews ${b.previewUrl}. The dev server hot-reloads, so writing files is enough.` : "No preview is set yet. If the project has no dev server running, scaffold or start one (in the background), then call build_preview with an address the Device can reach.",
+    "Make small, working changes. Read a file before you replace it, and keep everything else in it. Publishing always goes through build_deploy.",
+    "Your final answer is shown under your bot on a tiny screen: one short sentence, at most 8 words, e.g. 'Waitlist form added'.",
+  ].join("\n");
+}
 
 async function runAppRequest(ctx: Ctx): Promise<string> {
   const request = ctx.task.appRequest!;
@@ -246,6 +260,7 @@ async function runModel(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string> 
     agent.id === "main"
       ? "You are the main Task agent. Use list_agents and send_agent_message to assign parts to other Task agents. Check their replies before you answer the user."
       : "You can use list_agents and send_agent_message to ask another Task agent for a distinct part. Do not send a request back to its sender.",
+    ...(task.app === "build" || servesBuild(agent.id) ? [buildBrief(task.app === "build")] : []),
     "Each Device app has one or more assigned Task agents. Use read_app or change_app when work needs an app. The server sends that work to one assigned agent and waits for its result. Do not ask another agent to bypass an app agent.",
     "",
     `Machines:\n${machineLines}`,

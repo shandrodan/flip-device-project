@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect } from "react";
 import type { AppId, Snapshot } from "@app/protocol";
 import type { VoiceSource } from "../voice/capture";
 
-export type Fn = "home" | "notes" | "todo" | "agents" | "focus" | "settings" | "dock";
+export type Fn = "home" | "notes" | "todo" | "build" | "agents" | "focus" | "settings" | "dock";
 export type Route =
   | { name: "suggest"; noteId: string }
   | { name: "note"; noteId: string }
@@ -12,10 +12,10 @@ export type Route =
   | { name: "appAgents"; app: AppId; start?: "add" | "change" | "delete" }
   | { name: "agentLook"; agentId: string };
 
-export const HANDHELD_FNS: Fn[] = ["home", "notes", "todo", "agents", "focus", "settings"];
+export const HANDHELD_FNS: Fn[] = ["home", "notes", "todo", "build", "agents", "focus", "settings"];
 // device-controls.md: docked, the system wheel steps through the companion functions.
 export const DOCK_FNS: Fn[] = ["dock", "agents", "focus", "todo"];
-export const FN_LABEL: Record<Fn, string> = { home: "Home", notes: "Notes", todo: "To-Do", agents: "Agents", focus: "Focus", settings: "Settings", dock: "Dock" };
+export const FN_LABEL: Record<Fn, string> = { home: "Home", notes: "Notes", todo: "To-Do", build: "Build", agents: "Agents", focus: "Focus", settings: "Settings", dock: "Dock" };
 
 export type TalkTarget =
   | { kind: "note" }

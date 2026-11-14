@@ -2,7 +2,7 @@
 // selected cell stays in view on the comb. Wheel or D-pad picks a row, A chooses, B or D closes.
 // While it is open on a bot, holding the mic talks to that bot.
 import { useState, type ReactNode } from "react";
-import { AGENT_NAME_MAX, AGENT_PERSONALITY_MAX, APP_IDS, type Agent, type AppId } from "@app/protocol";
+import { AGENT_NAME_MAX, AGENT_PERSONALITY_MAX, APP_IDS, minAppAgents, type Agent, type AppId } from "@app/protocol";
 import { useControls, step, LAYER } from "../input/controls";
 import { net } from "../net/client";
 import { FN_LABEL, useApp, useTalkTarget } from "./context";
@@ -29,12 +29,14 @@ export function CellMenu({ cell, onClose }: { cell: MenuCell; onClose(): void })
     const free = snap.agents.filter(a => a.id !== "main" && !APP_IDS.some(app => snap.appAgents[app].includes(a.id)));
     const manage = (start: "add" | "change" | "delete") => () => { onClose(); push({ name: "appAgents", app: cell.fn, start }); };
     title = FN_LABEL[cell.fn];
-    sub = `${members.length} Task agent${members.length === 1 ? "" : "s"}: ${members.map(nameOf).join(", ")}`;
+    // Build with no agent of its own falls back to the main agent (ADR 0021).
+    sub = members.length ? `${members.length} Task agent${members.length === 1 ? "" : "s"}: ${members.map(nameOf).join(", ")}` : "Main agent works here until you add one";
     items = [
       { label: "Open", run: () => { onClose(); go(cell.fn); } },
       { label: "Add agent", detail: "Give it a free agent or make a new one.", run: manage("add") },
-      { label: "Change agent", detail: "Swap one agent for a free one.", off: free.length ? undefined : "No free agent. Add a new agent first.", run: manage("change") },
-      { label: "Delete agent", detail: "Asks for the push bar.", off: members.length > 1 ? undefined : "Add another agent before deleting the last one.", run: manage("delete") },
+      { label: "Change agent", detail: "Swap one agent for a free one.", off: !members.length ? "No agent to change. Add one first." : free.length ? undefined : "No free agent. Add a new agent first.", run: manage("change") },
+      { label: "Delete agent", detail: members.length > minAppAgents(cell.fn) && members.length === 1 ? "Asks for the push bar. Main agent takes over." : "Asks for the push bar.",
+        off: !members.length ? "No agent to delete." : members.length > minAppAgents(cell.fn) ? undefined : "Add another agent before deleting the last one.", run: manage("delete") },
     ];
   } else {
     const a = cell.agent;
@@ -50,7 +52,7 @@ export function CellMenu({ cell, onClose }: { cell: MenuCell; onClose(): void })
       ...(a.id === "main" ? [] : app ? [] : [{ label: "Join an app", detail: "It takes that app’s work.", run: () => { setView("apps"); setSel(0); } }]),
       ...(fixed ? [] : [{
         label: "Delete agent", detail: "Asks for the push bar.",
-        off: app && snap.appAgents[app].length === 1 ? `It’s the last ${FN_LABEL[app]} agent. Add another first.` : undefined,
+        off: app && snap.appAgents[app].length <= minAppAgents(app) ? `It’s the last ${FN_LABEL[app]} agent. Add another first.` : undefined,
         run: needOnline("delete an agent", () => { net.send({ type: "agent.delete", agentId: a.id }); onClose(); }),
       }]),
     ];
@@ -60,7 +62,7 @@ export function CellMenu({ cell, onClose }: { cell: MenuCell; onClose(): void })
     title = `${agent.name} joins…`;
     sub = "Pick the app it works for.";
     items = APP_IDS.map(app => ({
-      label: FN_LABEL[app], detail: snap.appAgents[app].map(nameOf).join(", "),
+      label: FN_LABEL[app], detail: snap.appAgents[app].map(nameOf).join(", ") || "Main agent for now",
       run: needOnline("assign an agent", () => { net.send({ type: "app.agent.add", app, agentId: agent.id }); onClose(); }),
     }));
   }

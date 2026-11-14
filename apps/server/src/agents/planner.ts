@@ -30,6 +30,7 @@ const STOP = new Set(["the", "a", "an", "my", "old", "up", "folder", "folders", 
 export async function runPlanner(ctx: Ctx): Promise<string> {
   const title = requestText(ctx.task);
   const t = title.toLowerCase();
+  if (ctx.task.app === "build") return buildPlan(ctx);
   const ask = title.match(/^ask (.+?) to (.+)$/i);
   if (ask) {
     const name = ask[1].trim().toLowerCase();
@@ -187,4 +188,16 @@ async function writePlan(ctx: Ctx) {
   const w = await use(ctx, "write_file", { path: file, content, say: "Writing it down on your computer" });
   const opened = await show(ctx, w.data.path, "Opening it");
   return `Wrote it up in ${w.data.path}${opened ? " and opened it" : ""}.`;
+}
+
+/** Build with no AI key (ADR 0021): look at the project, then say what's missing. Writing code needs a model. */
+async function buildPlan(ctx: Ctx): Promise<string> {
+  try {
+    const r = await use(ctx, "build_list", { path: "", say: `Looking at ${state.build.name}` });
+    ctx.stepText(`${state.build.name}: ${JSON.parse(r.text).length} items`);
+  } catch (err) {
+    if (!(err instanceof ToolError)) throw err;
+    ctx.stepText(`Couldn't open ${state.build.dir}`);
+  }
+  return "Add an AI key to build. I can't write code without one.";
 }

@@ -6,6 +6,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import {
   PROTOCOL_VERSION,
   APP_IDS,
+  minAppAgents,
   AGENT_NAME_MAX,
   AGENT_PERSONALITY_MAX,
   parseDeviceMessage,
@@ -63,6 +64,7 @@ function snapshot(): Snapshot {
     approvals: state.approvals,
     machines: machines.list(),
     coding: machines.coding(),
+    build: state.build,
     settings: {
       permissionMode: state.permissionMode,
       hosting: state.hosting,
@@ -275,7 +277,7 @@ async function handle(c: Client, m: DeviceMessage) {
       const a = agentById(m.agentId);
       if (!a || (a.builtin && a.purpose !== "app")) return;
       const app = appOfAgent(a.id);
-      if (app && state.appAgents[app].length === 1) {
+      if (app && state.appAgents[app].length <= minAppAgents(app)) {
         send(c.ws, { type: "notice", text: `Add or choose another ${app} agent before deleting ${a.name}.`, tone: "warn" });
         return;
       }
@@ -283,7 +285,7 @@ async function handle(c: Client, m: DeviceMessage) {
       const ok = await requestApproval({ agentId: "main", kind: "risky", risk: "delete", title: `Delete ${a.name}?`, body: "Its open tasks move back to your list. Deleting always needs your press." });
       if (!ok) return;
       const currentApp = appOfAgent(a.id);
-      if (busyTask(a.id) || (currentApp && state.appAgents[currentApp].length === 1)) return;
+      if (busyTask(a.id) || (currentApp && state.appAgents[currentApp].length <= minAppAgents(currentApp))) return;
       for (const t of state.tasks) {
         if (t.agentId !== a.id || t.status === "done") continue;
         cancelTask(t.id);

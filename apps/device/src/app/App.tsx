@@ -15,6 +15,7 @@ import { TaskView } from "./screens/TaskView";
 import { Notes } from "./screens/Notes";
 import { NoteView } from "./screens/NoteView";
 import { Todo } from "./screens/Todo";
+import { Build } from "./screens/Build";
 import { Agents, AgentLook, AgentView, AppAgentManager, Create } from "./screens/Agents";
 import { Focus } from "./screens/Focus";
 import { Settings } from "./screens/Settings";
@@ -119,7 +120,7 @@ export function DeviceApp({ voice = defaultSource(), onWantPush, debug = null, o
   const needs = !!snap?.tasks.some(t => t.status === "held" || t.status === "paused" || t.status === "failed");
   const icons = useMemo<Record<Fn, JSX.Element>>(() => ({
     home: <Bot size={34} seed={3} state={needs ? "wide" : "idle"} fps={20} />,
-    notes: Ico.notes, todo: Ico.tasks, agents: Ico.agents, focus: Ico.focus, settings: Ico.settings, dock: Ico.dock,
+    notes: Ico.notes, todo: Ico.tasks, build: Ico.build, agents: Ico.agents, focus: Ico.focus, settings: Ico.settings, dock: Ico.dock,
   }), [needs]);
 
   // Flywheel items: handheld, Home and then every app and Task agent in Home comb order;
@@ -153,12 +154,14 @@ export function DeviceApp({ voice = defaultSource(), onWantPush, debug = null, o
   else if (fn === "home") screen = <Home />;
   else if (fn === "notes") screen = <Notes />;
   else if (fn === "todo") screen = <Todo />;
+  else if (fn === "build") screen = <Build />;
   else if (fn === "agents") screen = <Agents />;
   else if (fn === "focus") screen = <Focus />;
   else if (fn === "settings") screen = <Settings onOpenOnboarding={() => setShowOnboarding(true)} />;
   else screen = <Dock />;
 
-  const fullBleed = fn === "dock" && !route;
+  // Dock StandBy and Build own the whole screen: no status or hint bar (ADR 0020, ADR 0021).
+  const fullBleed = (fn === "dock" || fn === "build") && !route;
   // Notes and To-Do are light apps with their own status bar inside their header (ADR 0011, 0016).
   const light = (fn === "notes" || fn === "todo") && !route;
   const focusLeft = snap.focus.running && snap.focus.endsAt ? Math.max(0, Date.parse(snap.focus.endsAt) - Date.now()) : 0;

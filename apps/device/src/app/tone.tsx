@@ -15,6 +15,7 @@ export const APP_TONE: Record<AppId, Tone> = {
   agents: { bg: "#a78bfa", ink: "#4a3592" },
   focus: { bg: "#ff8a5c", ink: "#8a3414" },
   settings: { bg: "#b8c4d6", ink: "#3f4b5e" },
+  build: { bg: "#f4c534", ink: "#6b5208" }, // the caution-tape yellow around the Build preview
 };
 
 /** Bots that belong to an app besides its assigned Task agents (snapshot.appAgents). */
@@ -26,7 +27,7 @@ export const APP_BOTS: Partial<Record<AppId, string[]>> = {
 export const botsOf = (snap: Snapshot, fn: AppId) => [...new Set([...(APP_BOTS[fn] ?? []), ...snap.appAgents[fn]])];
 
 /** The app a bot is linked to, if any (the first one, in Home order). */
-export const APP_ORDER: AppId[] = ["notes", "todo", "agents", "focus", "settings"];
+export const APP_ORDER: AppId[] = ["notes", "todo", "build", "agents", "focus", "settings"];
 export function appOfBot(snap: Snapshot | undefined, agentId: string): AppId | undefined {
   return snap ? APP_ORDER.find(fn => botsOf(snap, fn).includes(agentId)) : undefined;
 }
@@ -67,6 +68,11 @@ const GLYPHS: Record<AppId, { shape: ReactNode; cut: ReactNode }> = {
       return <circle key={k} cx={12 + Math.cos(a) * 8} cy={12 + Math.sin(a) * 8} r="2.5" />;
     })}</>,
     cut: <circle cx="12" cy="12" r="3.2" fill="#000" />,
+  },
+  build: {
+    // A window with code brackets cut out of it.
+    shape: <rect x="2.5" y="3.5" width="19" height="17" rx="5" />,
+    cut: <path {...CUT} strokeWidth="2.2" d="M9.6 9l-3 3 3 3M14.4 9l3 3-3 3" />,
   },
 };
 

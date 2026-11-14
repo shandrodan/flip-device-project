@@ -13,6 +13,7 @@ import {
   type ServerMessage,
   type Snapshot,
   type AppId,
+  minAppAgents,
 } from "@app/protocol";
 
 export type Conn = "connecting" | "online" | "offline";
@@ -49,14 +50,16 @@ function persist(key: string, value: unknown) {
   }
 }
 
-const DEFAULT_APP_OWNERS: Record<AppId, string> = {
-  notes: "app_notes", todo: "app_todo", focus: "app_focus", agents: "app_agents", settings: "app_settings",
+const DEFAULT_APP_OWNERS: Record<AppId, string | null> = {
+  notes: "app_notes", todo: "app_todo", focus: "app_focus", agents: "app_agents", settings: "app_settings", build: null,
 };
 function withAppAgents(snapshot: Snapshot | null): Snapshot | null {
   if (!snapshot) return null;
   const saved = (snapshot as Partial<Snapshot> & { appOwners?: Partial<Record<AppId, string>> }).appAgents;
   const legacy = (snapshot as Snapshot & { appOwners?: Partial<Record<AppId, string>> }).appOwners;
-  const appAgents = Object.fromEntries(APP_IDS.map(app => [app, Array.isArray(saved?.[app]) && saved[app].length ? saved[app] : [legacy?.[app] ?? DEFAULT_APP_OWNERS[app]]])) as Record<AppId, string[]>;
+  // Build may have no agent of its own (ADR 0021): an empty list is kept as it is.
+  const fallback = (app: AppId) => { const id = legacy?.[app] ?? DEFAULT_APP_OWNERS[app]; return id ? [id] : []; };
+  const appAgents = Object.fromEntries(APP_IDS.map(app => [app, Array.isArray(saved?.[app]) && (saved[app].length || minAppAgents(app) === 0) ? saved[app] : fallback(app)])) as Record<AppId, string[]>;
   return { ...snapshot, appAgents };
 }
 

@@ -29,6 +29,7 @@ export function acceptVoiceMessage(target: AgentTarget, text: string, requestId:
   const task: Task = {
     id: id("t"), title: title(text), target: "agent", agentId, status: "todo", steps: [],
     requestMessageId: requestId, depth: 0, createdAt: now(), updatedAt: now(),
+    ...(target.kind === "app" ? { app: target.app } : {}),
   };
   const message: AgentMessage = {
     id: requestId, fromAgentId: "user", toAgentId: agentId, taskId: task.id,

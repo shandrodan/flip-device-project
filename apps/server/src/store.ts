@@ -2,8 +2,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { APP_IDS, type Activity, type Agent, type AgentMessage, type AppId, type ApprovalRequest, type Focus, type Limits, type Note, type PermissionMode, type Hosting, type Project, type Task } from "@app/protocol";
+import { APP_IDS, minAppAgents, type Activity, type Agent, type AgentMessage, type AppId, type ApprovalRequest, type Focus, type Limits, type Note, type PermissionMode, type Hosting, type Project, type Task } from "@app/protocol";
 import { config } from "./config.js";
+import type { BuildState } from "@app/protocol";
 
 export interface MachineConfig {
   name: string;
@@ -24,6 +25,7 @@ export interface State {
   permissionMode: PermissionMode;
   hosting: Hosting;
   machines: MachineConfig[];
+  build: BuildState;
 }
 
 export interface Secrets {
@@ -61,9 +63,16 @@ export const BUILTIN_AGENTS: Agent[] = [
   { id: "app_agents", name: "Agents app agent", purpose: "app", shape: "pebble", color: "#ff6eb4", builtin: true, seed: 98, role: "Owns the Agents app." },
   { id: "app_settings", name: "Settings agent", purpose: "app", shape: "pebble", color: "#8e8e93", builtin: true, seed: 115, role: "Owns the Settings app. It cannot read keys or set Full mode." },
 ];
-export const DEFAULT_APP_AGENTS: Record<AppId, string> = {
-  notes: "app_notes", todo: "app_todo", focus: "app_focus", agents: "app_agents", settings: "app_settings",
+/** Build has no default agent: the main agent does its work until you assign one (ADR 0021). */
+export const DEFAULT_APP_AGENTS: Record<AppId, string | null> = {
+  notes: "app_notes", todo: "app_todo", focus: "app_focus", agents: "app_agents", settings: "app_settings", build: null,
 };
+const defaultMembers = (app: AppId) => (DEFAULT_APP_AGENTS[app] ? [DEFAULT_APP_AGENTS[app]!] : []);
+
+export function defaultBuild(): BuildState {
+  const dir = config.buildDir.replace(/\/+$/, "") || "~/Flip/build";
+  return { dir, name: config.buildName || dir.split("/").pop() || "Project", previewUrl: config.buildPreviewUrl || null, rev: 0 };
+}
 
 export const PURPOSE_ROLES: Record<string, string> = {
   research: "Searches the web and writes you a short summary.",
@@ -96,7 +105,7 @@ export function defaults(): State {
     ],
     projects: DEFAULT_PROJECTS.map(p => ({ ...p })),
     agents: BUILTIN_AGENTS.map(a => ({ ...a })),
-    appAgents: Object.fromEntries(APP_IDS.map(app => [app, [DEFAULT_APP_AGENTS[app]]])) as Record<AppId, string[]>,
+    appAgents: Object.fromEntries(APP_IDS.map(app => [app, defaultMembers(app)])) as Record<AppId, string[]>,
     messages: [],
     activity: [{ at: t, agentId: "main", text: "Ready when you are" }],
     approvals: [],
@@ -105,6 +114,7 @@ export function defaults(): State {
     permissionMode: "auto",
     hosting: config.hosting,
     machines: parseMachines(),
+    build: defaultBuild(),
   };
 }
 
@@ -116,11 +126,12 @@ function load(): State {
     const s: State = { ...base, ...saved, focus: { ...base.focus, ...saved.focus }, limits: { ...base.limits, ...saved.limits } };
     for (const builtin of BUILTIN_AGENTS.filter(agent => ["main", "mail", "pc"].includes(agent.id)))
       if (!s.agents.some(agent => agent.id === builtin.id)) s.agents.push({ ...builtin });
-    const assignments = saved.appAgents ?? Object.fromEntries(APP_IDS.map(app => [app, [saved.appOwners?.[app] ?? DEFAULT_APP_AGENTS[app]]]));
+    const assignments = saved.appAgents ?? Object.fromEntries(APP_IDS.map(app => [app, saved.appOwners?.[app] ? [saved.appOwners[app]] : defaultMembers(app)]));
     const used = new Set<string>();
     s.appAgents = { ...base.appAgents };
     for (const app of APP_IDS) {
-      const raw = assignments[app];
+      // An app added after this state was saved starts with its defaults.
+      const raw = assignments[app] ?? defaultMembers(app);
       const members: string[] = [];
       for (const candidate of Array.isArray(raw) ? raw : []) {
         if (typeof candidate !== "string" || candidate === "main" || used.has(candidate)) continue;
@@ -130,8 +141,8 @@ function load(): State {
         members.push(candidate);
         used.add(candidate);
       }
-      if (!members.length) {
-        const fallback = Object.values(DEFAULT_APP_AGENTS).find(agentId => !used.has(agentId))!;
+      if (members.length < minAppAgents(app)) {
+        const fallback = Object.values(DEFAULT_APP_AGENTS).find((agentId): agentId is string => !!agentId && !used.has(agentId))!;
         const builtin = BUILTIN_AGENTS.find(agent => agent.id === fallback)!;
         if (!s.agents.some(agent => agent.id === fallback)) s.agents.push({ ...builtin });
         members.push(fallback);
@@ -149,6 +160,9 @@ function load(): State {
         : t,
     );
     s.notes = (s.notes || []).map(n => (n.suggestionState === "pending" ? { ...n, suggestionState: "none" } : n));
+    // Env wins for the project; the preview URL an agent set is kept unless env names one.
+    const build = defaultBuild();
+    s.build = { ...build, previewUrl: config.buildPreviewUrl || saved.build?.previewUrl || null, rev: saved.build?.rev ?? 0 };
     if (process.env.PC_AGENTS) s.machines = parseMachines(); // env wins over the saved list
     return s;
   } catch (err) {
@@ -205,10 +219,16 @@ export const agentById = (aid: string | null | undefined) => state.agents.find(a
 export const appOfAgent = (agentId: string) => APP_IDS.find(app => state.appAgents[app].includes(agentId));
 export function pickAppAgent(app: AppId): Agent {
   const members = state.appAgents[app].map(agentById).filter((agent): agent is Agent => !!agent);
+  // Build with no agent of its own: the main agent does the work (ADR 0021).
+  if (!members.length && minAppAgents(app) === 0) return agentById("main")!;
   if (!members.length) throw new Error(`The ${app} app has no available Task agent.`);
   const active = (agentId: string) => state.tasks.filter(task => task.agentId === agentId && ["running", "waiting", "queued", "awaiting-approval", "held"].includes(task.status)).length;
   return members.reduce((best, agent) => active(agent.id) < active(best.id) ? agent : best);
 }
+/** Whether an agent does an app's work: it is assigned, or the app has none and falls back to main (ADR 0021). */
+export const ownsApp = (app: AppId, agentId: string) =>
+  state.appAgents[app].length ? state.appAgents[app].includes(agentId) : minAppAgents(app) === 0 && agentId === "main";
+export const servesBuild = (agentId: string) => ownsApp("build", agentId);
 export const taskById = (tid: string) => state.tasks.find(t => t.id === tid);
 export const noteById = (nid: string) => state.notes.find(n => n.id === nid);
 

@@ -1,7 +1,7 @@
 /** Typed actions for the Device apps. The server owns app state and approval. */
 import { APP_IDS, type Agent, type AppId, type Note, type Task } from "@app/protocol";
 import { bus } from "../bus.js";
-import { id, now, saveNow, state } from "../store.js";
+import { id, now, ownsApp, saveNow, state } from "../store.js";
 import type { ToolDef } from "./tools.js";
 
 const SAY = { type: "string", description: "A short action line for the Device." };
@@ -13,7 +13,7 @@ export const APP_TOOLS: ToolDef[] = [
     description: "Read current data from a built-in Device app. Settings never returns keys.",
     props: { app: APP, say: SAY }, required: ["app", "say"], purposes: "all",
     async run(ctx, input, callId) {
-      if (input.app !== "dock" && APP_IDS.includes(input.app) && !state.appAgents[input.app as AppId].includes(ctx.agent.id))
+      if (input.app !== "dock" && APP_IDS.includes(input.app) && !ownsApp(input.app as AppId, ctx.agent.id))
         return ctx.delegateApp(input.app as AppId, "read_app", input, callId);
       await ctx.gate({ title: `Read ${input.app}?` });
       switch (input.app) {
@@ -22,6 +22,7 @@ export const APP_TOOLS: ToolDef[] = [
         case "focus": return { text: JSON.stringify(state.focus) };
         case "agents": return { text: JSON.stringify(state.agents.map(agent => ({ id: agent.id, name: agent.name, role: agent.role }))) };
         case "settings": return { text: JSON.stringify({ permissionMode: state.permissionMode, hosting: state.hosting }) };
+        case "build": return { text: JSON.stringify(state.build) };
         case "dock": return { text: JSON.stringify({ focus: state.focus, tasks: state.tasks.filter(task => task.status !== "done").length }) };
         default: throw new Error("Unknown Device app.");
       }
@@ -40,7 +41,7 @@ export const APP_TOOLS: ToolDef[] = [
       const action = String(input.action);
       const app = action.split(".")[0];
       if (!APP_IDS.includes(app as AppId)) throw new Error("Unknown Device app action.");
-      if (!state.appAgents[app as AppId].includes(ctx.agent.id))
+      if (!ownsApp(app as AppId, ctx.agent.id))
         return ctx.delegateApp(app as AppId, "change_app", input, callId);
       const text = typeof input.text === "string" ? input.text.trim() : "";
       const key = typeof input.id === "string" ? input.id : "";

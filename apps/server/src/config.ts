@@ -45,6 +45,12 @@ export const config = {
   pcAgents: env("PC_AGENTS", "This computer=ws://127.0.0.1:7077"),
   pcToken: env("PC_AGENT_TOKEN", "dev-token"),
 
+  // Build app (ADR 0021): the project the Build agent works on, and where its dev server shows up.
+  // The preview URL must be reachable from the Device, e.g. the laptop's Tailscale address.
+  buildDir: env("BUILD_DIR", "~/Flip/build"),
+  buildName: env("BUILD_NAME", ""),
+  buildPreviewUrl: env("BUILD_PREVIEW_URL", ""),
+
   // Mail. Without SMTP, "send" saves an .eml to ~/Flip/Outbox and opens it.
   smtpUrl: env("SMTP_URL", ""),
   mailFrom: env("MAIL_FROM", ""),

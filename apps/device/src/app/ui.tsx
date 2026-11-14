@@ -14,6 +14,7 @@ const ico = (C: typeof DocumentTextIcon, s: number) => <C width={s} height={s} a
 export const Ico = {
   notes: <AppGlyph fn="notes" />,
   tasks: <AppGlyph fn="todo" />,
+  build: <AppGlyph fn="build" />,
   agents: <AppGlyph fn="agents" />,
   focus: <AppGlyph fn="focus" />,
   settings: <AppGlyph fn="settings" />,

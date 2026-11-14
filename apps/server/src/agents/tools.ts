@@ -7,8 +7,9 @@ import type { Agent, AgentPurpose, AppId, ApprovalRequest, FsEntry, PcAction, Ri
 import { APP_IDS } from "@app/protocol";
 import nodemailer from "nodemailer";
 import { config } from "../config.js";
-import { agentById, state } from "../store.js";
+import { agentById, servesBuild, state } from "../store.js";
 import { APP_TOOLS } from "./app-tools.js";
+import { BUILD_TOOLS } from "./build-tools.js";
 
 export interface PcResult { output: string; data: any }
 
@@ -56,6 +57,7 @@ const mb = (b: number) => (b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b >= 1e3 ? 
 
 export const TOOLS: ToolDef[] = [
   ...APP_TOOLS,
+  ...BUILD_TOOLS,
   {
     name: "list_agents",
     description: "List current Task agents, their app ownership, roles and active work. Use current IDs for messages.",
@@ -299,8 +301,13 @@ function buildEml(m: { to: string; subject: string; body: string; attach: { name
   ].join("\r\n");
 }
 
+const SHELL_TOOLS = ["run_shell", "build_run", "build_deploy"];
 export function toolsFor(agent: Agent, opts: { shell: boolean }): ToolDef[] {
-  return TOOLS.filter(t => (t.purposes === "all" || t.purposes.includes(agent.purpose)) && (t.name !== "run_shell" || opts.shell));
+  // Build tools go to whoever serves the Build app now (ADR 0021), whatever its purpose.
+  const build = servesBuild(agent.id);
+  return TOOLS.filter(t =>
+    (BUILD_TOOLS.includes(t) ? build : t.purposes === "all" || t.purposes.includes(agent.purpose))
+    && (!SHELL_TOOLS.includes(t.name) || opts.shell));
 }
 
 export function toApiTool(t: ToolDef): Anthropic.Beta.BetaTool {

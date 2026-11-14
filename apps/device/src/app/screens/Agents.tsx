@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AgentPurpose, AgentShape, AppId } from "@app/protocol";
-import { AGENT_NAME_MAX, APP_IDS, RISK_LABEL } from "@app/protocol";
+import { AGENT_NAME_MAX, APP_IDS, RISK_LABEL, minAppAgents } from "@app/protocol";
 import { Bot, BudScene, SHAPE_KEYS } from "../../bot/Bot";
 import { useControls, step, type ControlEvent } from "../../input/controls";
 import { net } from "../../net/client";
@@ -113,7 +113,9 @@ export function AppAgentManager({ app, start }: { app: AppId; start?: "add" | "c
     if (phase === "menu") {
       const next = (["add", "change", "delete"] as const)[index];
       setAction(next);
-      if (next === "delete" && members.length === 1) { toast("Add or choose a replacement before deleting the last app agent."); return true; }
+      const min = minAppAgents(app);
+      if (next !== "add" && !members.length) { toast("No agent here yet. Main agent does the work. Add one first."); return true; }
+      if (next === "delete" && members.length <= min) { toast("Add or choose a replacement before deleting the last app agent."); return true; }
       choosePhase(next === "add" ? "candidate" : "member");
       return true;
     }
@@ -140,13 +142,13 @@ export function AppAgentManager({ app, start }: { app: AppId; start?: "add" | "c
   const title = phase === "menu" ? `${FN_LABEL[app]} agents` : phase === "member" ? `${action === "delete" ? "Delete" : "Change"} which agent?` : action === "add" ? "Add which agent?" : "Choose a replacement";
   return <div className="scr">
     <p className="h1 in">{title}</p>
-    <div className="mute in">{members.map(agent => agent.name).join(", ")} · {members.length} assigned</div>
+    <div className="mute in">{members.length ? `${members.map(agent => agent.name).join(", ")} · ${members.length} assigned` : "None assigned · Main agent does the work"}</div>
     <div className="scroll in in-2" style={{ position: "absolute", left: 28, right: 28, top: 104, bottom: 40 }}>
       {phase === "menu" ? [
         ["Add agent", "Assign a free agent or make a new one."],
         ["Change agent", "Replace one agent. Keep the old agent in your list."],
-        ["Delete agent", members.length === 1 ? "Add or choose a replacement first." : "Delete one agent after your approval."],
-      ].map(([label, detail], k) => <div key={label} className={"row" + (k === index ? " sel" : "")} style={{ display: "block", opacity: k === 2 && members.length === 1 ? 0.55 : 1 }}><b>{label}</b><div className="mute">{detail}</div></div>)
+        ["Delete agent", !members.length ? "No agent to delete." : members.length <= minAppAgents(app) ? "Add or choose a replacement first." : members.length === 1 ? "Delete it after your approval. Main agent takes over." : "Delete one agent after your approval."],
+      ].map(([label, detail], k) => <div key={label} className={"row" + (k === index ? " sel" : "")} style={{ display: "block", opacity: (k === 1 && !members.length) || (k === 2 && members.length <= minAppAgents(app)) ? 0.55 : 1 }}><b>{label}</b><div className="mute">{detail}</div></div>)
         : phase === "member" ? members.map((agent, k) => <div key={agent.id} className={"row" + (k === index ? " sel" : "")}><AgentBot agent={agent} size={38} state="idle" /><span><b>{agent.name}</b><br /><span className="mute">{agent.role}</span></span></div>)
           : <>{free.map((agent, k) => <div key={agent.id} className={"row" + (k === index ? " sel" : "")}><AgentBot agent={agent} size={38} state="idle" /><span><b>{agent.name}</b><br /><span className="mute">{agent.role}</span></span></div>)}
             {action === "add" && <div className={"row" + (index === free.length ? " sel" : "")}><span>{Ico.plus}</span><b>Make a new agent</b></div>}

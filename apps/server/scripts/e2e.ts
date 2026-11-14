@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
-import { PROTOCOL_VERSION, type DeviceMessage, type ServerMessage, type Snapshot } from "@app/protocol";
+import { PROTOCOL_VERSION, minAppAgents, type AppId, type DeviceMessage, type ServerMessage, type Snapshot } from "@app/protocol";
 
 const RUNS = Number(process.env.RUNS || 1);
 const PORT = 18787, PC_PORT = 17077;
@@ -31,6 +31,9 @@ function seed() {
   for (let i = 0; i < 4; i++) fs.writeFileSync(path.join(shots, `Screenshot new ${i}.png`), `new-${i}`);
   fs.writeFileSync(path.join(shots, "Screenshot new 0 copy.png"), "new-0"); // duplicate
   fs.writeFileSync(path.join(shots, "Screenshot new 1 copy.png"), "new-1"); // duplicate
+  // The Build app's project (ADR 0021).
+  fs.mkdirSync(path.join(home, "Flip", "build"), { recursive: true });
+  fs.writeFileSync(path.join(home, "Flip", "build", "index.html"), "<h1>Flip Device</h1>");
 }
 
 function start(name: string, cwd: string, env: Record<string, string>) {
@@ -101,7 +104,8 @@ async function main() {
   await until("PC agent online", () => snap?.machines.some(m => m.online));
   if (!snap!.notes.some(note => note.id === "legacy_note") || snap!.appAgents.todo[0] !== "app_todo" || !snap!.agents.some(agent => agent.id === snap!.appAgents.todo[0]))
     fail("older state lost data or did not get app owners");
-  if (new Set(Object.values(snap!.appAgents).flat()).size !== 5 || Object.values(snap!.appAgents).some(agents => !agents.length)) fail("apps did not get distinct Task agents");
+  if (new Set(Object.values(snap!.appAgents).flat()).size !== 5 || Object.entries(snap!.appAgents).some(([app, agents]) => agents.length < minAppAgents(app as AppId))) fail("apps did not get distinct Task agents");
+  if (snap!.appAgents.build.length || !snap!.build) fail("Build should start with no agent of its own");
   console.log("✓ server up, PC agent online");
 
   for (let run = 1; run <= RUNS; run++) {
@@ -296,6 +300,34 @@ async function main() {
   sendMsg({ type: "approval.press", requestId: builtinApproval.requestId, approved: true, via: "push-bar" });
   await until("default app agent deleted", () => snap?.appAgents.todo.length === 1 && snap.appAgents.todo[0] === newAppAgent.agentId);
   console.log("✓ App agent add, change, delete, least-busy routing, and one-agent minimum");
+
+  // Build (ADR 0021): no agent of its own means the main agent does the work. An assigned agent
+  // takes over, and deleting the last one hands the work back to main.
+  const buildVoice = async (streamId: string) => {
+    events.length = 0;
+    const rev = snap!.build!.rev;
+    sendMsg({ type: "voice.scripted", streamId, text: "Add a waitlist form under the hero", durationMs: 3000, target: { kind: "app", app: "build" } });
+    const accepted = await until(`${streamId} accepted`, () => events.find(e => e.type === "voice.accepted" && e.streamId === streamId));
+    if (accepted.type !== "voice.accepted") fail("Build voice was not accepted");
+    const task = await until(`${streamId} finished`, () => snap?.tasks.find(t => t.id === accepted.taskId && t.status === "done"));
+    if (task.app !== "build") fail("Build task lost its app");
+    if (!task.steps.some(st => st.text.includes("build: 1 items"))) fail(`Build task didn't look at the project: ${task.steps.map(st => st.text).join(" | ")}`);
+    await until(`${streamId} preview reload`, () => snap!.build!.rev > rev);
+    return accepted.agentId;
+  };
+  if (await buildVoice("build-main") !== "main") fail("Build with no agent didn't fall back to the main agent");
+  events.length = 0;
+  sendMsg({ type: "agent.create", app: "build", agent: { name: "Builder", purpose: "custom", shape: "squircle", color: "#f4c534" } });
+  const builder = await until("Build agent created", () => events.find(e => e.type === "agent.created"));
+  if (builder.type !== "agent.created") fail("Build agent was not created");
+  await until("Build agent assigned", () => snap?.appAgents.build.includes(builder.agentId));
+  if (await buildVoice("build-own") !== builder.agentId) fail("Build didn't use its own agent");
+  sendMsg({ type: "agent.delete", agentId: builder.agentId });
+  const builderDelete = await until("Build agent deletion approval", () => snap?.approvals.find(approval => approval.title.includes("Delete Builder")));
+  sendMsg({ type: "approval.press", requestId: builderDelete.requestId, approved: true, via: "push-bar" });
+  await until("last Build agent deleted", () => snap?.appAgents.build.length === 0);
+  if (await buildVoice("build-back") !== "main") fail("Build didn't hand the work back to the main agent");
+  console.log("✓ Build falls back to the main agent, uses its own agent once assigned, and hands back on delete");
 
   sendMsg({ type: "voice.scripted", text: "Add a todo to inspect the app map", durationMs: 3000, target: { kind: "note" } });
   const appNote = await until("app task suggestion", () => snap?.notes.find(note => note.text === "Add a todo to inspect the app map" && note.suggestionState === "ready"));
