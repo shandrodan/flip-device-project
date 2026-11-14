@@ -37,6 +37,8 @@ const AGENT_PROMPT = [
 ].join("\n");
 
 export class EngineUnavailable extends Error {}
+/** The engine's port stopped answering: it crashed or is restarting. */
+class EngineDown extends EngineUnavailable {}
 
 /** Which model the engine runs. ENGINE_MODEL ("provider/model") wins, then the saved keys. */
 export function engineModel(): EngineModel | null {
@@ -49,7 +51,10 @@ export function engineModel(): EngineModel | null {
   return null;
 }
 
+/** The OpenCode binary itself. The `.bin` shim is a shell script that would leave the engine running when killed. */
 function binary() {
+  const direct = path.join(SERVER_ROOT, "node_modules", "opencode-ai", "bin", "opencode.exe");
+  if (process.platform !== "win32" && fs.existsSync(direct)) return direct;
   return path.join(SERVER_ROOT, "node_modules", ".bin", process.platform === "win32" ? "opencode.cmd" : "opencode");
 }
 
@@ -97,6 +102,21 @@ let proc: ChildProcess | null = null;
 let baseUrl: string | null = null;
 let runningKey = "";
 let starting: { key: string; promise: Promise<string> } | null = null;
+/** The last start failed, or the engine kept exiting. Cleared by the next start that works. */
+let failure: string | null = null;
+/** Times the engine exited on its own and was started again (P0.3). */
+let restarts = 0;
+let lastRestart = 0;
+/** One automatic restart per window. A second exit inside it leaves the engine "failed" until the next request. */
+const RESTART_WINDOW = 5 * 60_000;
+
+export type EngineStatus = "opencode" | "builtin" | "starting" | "failed";
+
+/** What /health reports about the agent engine. */
+export function engineHealth(): { engine: EngineStatus; engineRestarts: number; engineError?: string } {
+  const engine: EngineStatus = !engineEnabled() ? "builtin" : proc && baseUrl ? "opencode" : starting ? "starting" : failure ? "failed" : engineModel() ? "starting" : "failed";
+  return { engine, engineRestarts: restarts, ...(engine === "failed" ? { engineError: failure ?? "No model key yet." } : {}) };
+}
 
 async function ensureEngine(model: EngineModel): Promise<string> {
   const cfg = engineConfig(model);
@@ -108,7 +128,11 @@ async function ensureEngine(model: EngineModel): Promise<string> {
   const promise = boot(cfg).then(url => {
     baseUrl = url;
     runningKey = key;
+    failure = null;
     return url;
+  }, err => {
+    failure = (err as Error).message.slice(0, 300);
+    throw err;
   }).finally(() => { if (starting?.promise === promise) starting = null; });
   starting = { key, promise };
   return promise;
@@ -138,13 +162,15 @@ function boot(cfg: Record<string, unknown>): Promise<string> {
     stdio: ["ignore", "pipe", "pipe"],
   });
   proc = child;
+  let ready = false;
   return new Promise((resolve, reject) => {
     let out = "";
     const timer = setTimeout(() => { child.kill(); reject(new EngineUnavailable("OpenCode did not start in 90 seconds.")); }, 90_000);
     const read = (chunk: Buffer) => {
       out = (out + chunk.toString()).slice(-4000);
       const match = out.match(/listening on (http:\/\/[^\s]+)/);
-      if (match) {
+      if (match && !ready) {
+        ready = true;
         clearTimeout(timer);
         console.log(`[engine] OpenCode on ${match[1]} (${String(cfg.model)})`);
         resolve(match[1].replace(/\/$/, ""));
@@ -154,12 +180,29 @@ function boot(cfg: Record<string, unknown>): Promise<string> {
     child.stdout!.on("data", read);
     child.stderr!.on("data", read);
     child.on("error", err => { clearTimeout(timer); reject(new EngineUnavailable(`OpenCode failed to start: ${err.message}`)); });
-    child.on("exit", code => {
+    child.on("exit", (code, signal) => {
       clearTimeout(timer);
-      if (proc === child) { proc = null; baseUrl = null; runningKey = ""; }
-      reject(new EngineUnavailable(`OpenCode exited (${code}). ${out.slice(-400)}`));
+      const unexpected = proc === child;
+      if (unexpected) { proc = null; baseUrl = null; runningKey = ""; }
+      reject(new EngineUnavailable(`OpenCode exited (${code ?? signal}). ${out.slice(-400)}`));
+      // Exited on its own after it was up: start it again once, so the next request does not wait (P0.3).
+      if (unexpected && ready) restartAfterExit(`OpenCode exited (${code ?? signal}).`);
     });
   });
+}
+
+function restartAfterExit(reason: string) {
+  console.warn(`[engine] ${reason}`);
+  if (Date.now() - lastRestart < RESTART_WINDOW) {
+    failure = `${reason} It exited again within ${RESTART_WINDOW / 60_000} minutes, so it starts again on the next request.`;
+    return;
+  }
+  lastRestart = Date.now();
+  restarts++;
+  const model = engineModel();
+  if (!model) return;
+  console.warn("[engine] Starting OpenCode again.");
+  ensureEngine(model).catch(err => console.warn(`[engine] Restart failed: ${(err as Error).message}`));
 }
 
 export function stopEngine() {
@@ -183,7 +226,7 @@ async function api<T>(base: string, method: string, route: string, body?: unknow
     headers: body === undefined ? undefined : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
-  });
+  }).catch(err => { throw new EngineDown(`OpenCode is not reachable: ${(err as Error).message}`); });
   if (!response.ok) throw new EngineUnavailable(`OpenCode ${method} ${route} failed (HTTP ${response.status}): ${(await response.text()).slice(0, 300)}`);
   const text = await response.text();
   return (text ? JSON.parse(text) : undefined) as T;
@@ -336,10 +379,19 @@ export interface EngineRun {
 export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: EngineRun): Promise<string> {
   const model = engineModel();
   if (!model) throw new ToolError("Add an OpenRouter or Anthropic key in Settings to use Task agents.");
-  const base = await ensureEngine(model);
+  const dir = run.directory;
+  // A crashed engine whose exit was not noticed yet: start it again and retry once (P0.3).
+  let base = await ensureEngine(model);
+  try {
+    await api(base, "GET", "/session/status", undefined, dir);
+  } catch (err) {
+    if (!(err instanceof EngineDown)) throw err;
+    console.warn(`[engine] ${err.message} Starting it again.`);
+    stopEngine();
+    base = await ensureEngine(model);
+  }
 
   // One session per agent and app keeps the agent's memory. A busy session gets a sibling.
-  const dir = run.directory;
   const key = `${ctx.agent.id}:${ctx.task.app ?? "-"}${dir ? ":build" : ""}`;
   const saved = state.engineSessions[key];
   let sessionID = saved && !busy.has(saved) ? await api<{ id: string }>(base, "GET", `/session/${saved}`, undefined, dir).then(s => s.id, () => null) : null;
@@ -370,6 +422,10 @@ export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: En
       return answer;
     }
     throw new ToolError("Too many rounds with other Task agents. Check the Task steps for work already completed.");
+  } catch (err) {
+    // Work may be half done, so a crash mid-Task never reruns it on the built-in loop.
+    if (err instanceof EngineDown) throw new ToolError("The agent engine stopped in the middle of this Task and is starting again. Check the steps, then say it again.");
+    throw err;
   } finally {
     busy.delete(sessionID);
     live.delete(sessionID);
@@ -388,7 +444,7 @@ async function prompt(base: string, sessionID: string, model: EngineModel, syste
     await sleep(400);
     if (session.fatal) return stop(session.fatal);
     if (ctl.cancelled) return stop(new Cancelled());
-    if (!proc) throw new ToolError("The agent engine stopped. Try again.");
+    if (!proc || baseUrl !== base) throw new ToolError("The agent engine stopped in the middle of this Task and is starting again. Check the steps, then say it again.");
     const status = (await api<Record<string, { type: string }>>(base, "GET", "/session/status", undefined, dir))[sessionID];
     if (status && status.type !== "idle") continue;
     const messages = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`, undefined, dir)).slice(before);

@@ -41,3 +41,11 @@ Verified in this repo, with real models through OpenRouter:
 | Real GCP deploy (`cloud-vm/up.sh`) | Written, not run: no `gcloud` in the build session. First thing to try. |
 
 Model: `deepseek/deepseek-v4.1-flash` ($0.05 in / $0.20 out per million tokens). If it disappoints on real use, `OPENROUTER_MODEL=anthropic/claude-haiku-5.5` ($0.10 / $0.50).
+
+## Overnight 2026-11-15
+
+Roadmap items built in the night run (see [REPORT-2026-11-15.md](REPORT-2026-11-15.md)). Each has a scenario in `agent-e2e.ts` that passed 3 runs in a row on DeepSeek V4.1 Flash.
+
+| Item | Status | Proof |
+| --- | --- | --- |
+| P0.3 Engine health and restart | Done | `engine-restart`: OpenCode killed between requests, the next request works. `/health` reports `engine` and `engineRestarts` |

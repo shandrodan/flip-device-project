@@ -76,7 +76,21 @@ const todos = () => snap!.tasks.filter(t => !isAppCommand(t) && t.target === "to
 const has = (list: string[], word: string) => list.some(t => new RegExp(`\\b${word}\\b`, "i").test(t));
 const flipDir = (...p: string[]) => path.join(home, "Flip", ...p);
 
-interface Scenario { name: string; turns: { target: any; text: string }[]; check(): string | null | Promise<string | null> }
+interface Scenario { name: string; before?(): Promise<void>; turns: { target: any; text: string }[]; check(): string | null | Promise<string | null> }
+const health = () => fetch(`http://127.0.0.1:${PORT}/health`).then(r => r.json() as Promise<Record<string, any>>).catch(() => ({} as Record<string, any>));
+/** Kill every OpenCode process of this test's server (they run in its engine folder). Linux only. */
+function killEngine(): number {
+  const dir = path.join(root, "data", "engine");
+  let killed = 0;
+  for (const pid of fs.readdirSync("/proc").filter(name => /^\d+$/.test(name))) {
+    try {
+      if (fs.readlinkSync(`/proc/${pid}/cwd`) !== dir) continue;
+      process.kill(Number(pid), "SIGKILL");
+      killed++;
+    } catch { /* gone, or not ours */ }
+  }
+  return killed;
+}
 const buildDir = path.join(root, "build");
 const preview = async (p = "") => {
   try {
@@ -158,6 +172,24 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    // P0.3: the engine crashes between requests; the next request still succeeds.
+    name: "engine-restart",
+    async before() {
+      if (ENGINE !== "opencode") return;
+      for (let i = 0; i < 120 && (await health()).engine !== "opencode"; i++) await sleep(500);
+      const killed = killEngine();
+      if (!killed) throw new Error("no OpenCode process found to kill");
+      await sleep(300);
+    },
+    turns: [{ target: { kind: "main" }, text: "Write a note that says Engine came back." }],
+    async check() {
+      const h = await health();
+      const note = has(notes(), "came back");
+      if (ENGINE !== "opencode") return note ? null : "note missing";
+      return note && h.engine === "opencode" && h.engineRestarts >= 1 ? null : `note ${note}, health ${JSON.stringify({ engine: h.engine, restarts: h.engineRestarts, error: h.engineError })}`;
+    },
+  },
+  {
     name: "build-static",
     turns: [{ target: { kind: "app", app: "build" }, text: "Make the Build project a one-page site called Flip Lemonade, with a big button that counts how many times it was clicked." }],
     async check() {
@@ -227,6 +259,7 @@ async function main() {
   for (const scenario of scenarios) {
     if (ONLY.length && !ONLY.includes(scenario.name)) continue;
     let last: Awaited<ReturnType<typeof ask>> | null = null;
+    await scenario.before?.();
     for (const turn of scenario.turns) last = await ask(turn.target, turn.text);
     const problem = !last?.task ? "timed out" : last.task.status !== "done" ? `Task ${last.task.status}: ${last.task.detail}` : await scenario.check();
     if (problem) failed++;
