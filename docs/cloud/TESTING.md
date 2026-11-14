@@ -17,6 +17,10 @@ Layers 3–5 need `OPENROUTER_API_KEY` (or `ANTHROPIC_API_KEY`) in the environme
 
 Spawns a real server and a real PC agent in a throwaway home folder and drives the Protocol like the Device. Uses `DEMO_PLANNER=1` and a scripted mock model, pinned to `AGENT_ENGINE=builtin`, so it is deterministic and free. It covers the old loop's behavior and every server rule (approvals, "Not now", offline machines, queues, restarts, app ownership, spoken commands). `RUNS=20` repeats the flow.
 
+## CI
+
+`.github/workflows/ci.yml` runs layers 1, 2 and 2b on every push and pull request (free), and layer 3 nightly at 02:00 UTC or by hand when the repo has an `OPENROUTER_API_KEY` secret.
+
 ## 2b. Tools on the engine (`apps/server/scripts/tools-e2e.ts`)
 
 A scripted model stands in for OpenRouter: an OpenAI-compatible server that answers each engine request with the next tool call of the scenario. Everything else is real: OpenCode, the plugin, `ctx.gate`, approvals, the server's tools, the Build project, the preview, Chromium. It records what each tool returned to the model (and whether an image came with it), so a scenario checks both the end state and what the model would have read. Free and deterministic: run it before every commit that touches a tool, and in CI.

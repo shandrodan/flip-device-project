@@ -1,0 +1,61 @@
+# Keep it green (roadmap P3.18). docs/cloud/TESTING.md has every layer.
+# Every push and pull request: types, the demo flow (scripted model) and the tools on the real engine
+# (scripted model). None of them call a real model, so they cost nothing.
+# Nightly, or by hand: the agent scenarios on a real model. Needs the OPENROUTER_API_KEY secret.
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Types
+        run: pnpm -r typecheck
+      - name: Demo flow (scripted model, built-in loop)
+        run: pnpm test:e2e
+      - name: Chromium for build_screenshot and the preview checks
+        run: pnpm --filter server exec playwright-core install --with-deps --only-shell chromium
+      - name: Tools on the engine (scripted model, real OpenCode)
+        run: pnpm --filter server test:tools
+
+  agents:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Chromium for build_screenshot and the preview checks
+        run: pnpm --filter server exec playwright-core install --with-deps --only-shell chromium
+      - name: Agent scenarios (real model)
+        if: env.OPENROUTER_API_KEY != ''
+        run: pnpm test:agents
+      - name: No key
+        if: env.OPENROUTER_API_KEY == ''
+        run: echo "::warning::Set the OPENROUTER_API_KEY secret to run the agent scenarios."
