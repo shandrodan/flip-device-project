@@ -82,13 +82,20 @@ export function AgentView({ id }: { id: string }) {
   </div>;
 }
 
+/** What a finished task said, for the screen. An app request's raw data (JSON, IDs) is for the
+ *  agent that asked; the screen shows only its short summary. */
+function answerOf(t: Task) {
+  if (!t.appRequest) return t.result || t.detail;
+  return t.detail && !/^\s*[[{]/.test(t.detail) ? t.detail : undefined;
+}
+
 /** One request, what the agent did for it, and its answer. */
 function Thread({ task }: { task: Task }) {
   const { snap } = useApp();
   const request = snap.messages?.find(m => m.id === task.requestMessageId);
   const from = request && request.fromAgentId !== "user" ? snap.agents.find(x => x.id === request.fromAgentId) : undefined;
   const asked = snap.tasks.filter(t => t.sourceTaskId === task.id).reverse();
-  const output = task.status === "done" ? task.result || task.detail : undefined;
+  const output = task.status === "done" ? answerOf(task) : undefined;
   const failed = task.status === "failed" || task.status === "paused" ? task.detail : undefined;
   return <>
     <div className="thread-row ask">
@@ -103,7 +110,7 @@ function Thread({ task }: { task: Task }) {
       const who = snap.agents.find(x => x.id === t.agentId);
       return <div key={t.id} className={"thread-row step " + (t.status === "done" ? "done" : t.status === "failed" ? "failed" : "running")}>
         {who ? <AgentBot agent={who} size={22} state={moodFor(t)} fps={20} /> : <span className="thread-dot" />}
-        <span>Asked <b>{who?.name ?? "Task agent"}</b>{t.status === "done" && (t.result || t.detail) ? <span className="mute"> · {t.result || t.detail}</span> : null}</span>
+        <span>Asked <b>{who?.name ?? "Task agent"}</b>{t.status === "done" && answerOf(t) ? <span className="mute"> · {answerOf(t)}</span> : null}</span>
       </div>;
     })}
     {ACTIVE.includes(task.status) && !task.steps.some(s => s.state === "running") && <div className="thread-row step running"><span className="thread-dot" /><span className="mute">{task.status === "queued" ? "Waiting for a slot…" : "Thinking…"}</span></div>}
@@ -114,16 +121,16 @@ function Thread({ task }: { task: Task }) {
 }
 
 /** `start` opens straight at one action (from the Home cell menu, ADR 0017); B at its first step goes back. */
-export function AppAgentManager({ app, start }: { app: AppId; start?: "add" | "change" | "delete" }) {
+export function AppAgentManager({ app, start }: { app: AppId; start?: "add" | "change" | "remove" | "delete" }) {
   const { snap, push, back, online, toast } = useApp();
   const firstPhase = !start ? "menu" : start === "add" ? "candidate" : "member";
   const [phase, setPhase] = useState<"menu" | "member" | "candidate">(firstPhase);
-  const [action, setAction] = useState<"add" | "change" | "delete">(start ?? "add");
+  const [action, setAction] = useState<"add" | "change" | "remove" | "delete">(start ?? "add");
   const [oldAgentId, setOldAgentId] = useState("");
   const [sel, setSel] = useState(0);
   const members = snap.appAgents[app].map(id => snap.agents.find(agent => agent.id === id)).filter((agent): agent is NonNullable<typeof agent> => !!agent);
   const free = snap.agents.filter(agent => agent.id !== "main" && !APP_IDS.some(other => snap.appAgents[other].includes(agent.id)));
-  const count = phase === "menu" ? 3 : phase === "member" ? members.length : free.length + (action === "add" ? 1 : 0);
+  const count = phase === "menu" ? 4 : phase === "member" ? members.length : free.length + (action === "add" ? 1 : 0);
   const index = Math.min(sel, Math.max(0, count - 1));
   const choosePhase = (next: typeof phase) => { setSel(0); setPhase(next); };
   const finish = () => start ? back() : choosePhase("menu");
@@ -134,11 +141,12 @@ export function AppAgentManager({ app, start }: { app: AppId; start?: "add" | "c
     if (n !== null) { setSel(n); return true; }
     if (e.c !== "a") return false;
     if (phase === "menu") {
-      const next = (["add", "change", "delete"] as const)[index];
+      const next = (["add", "change", "remove", "delete"] as const)[index];
       setAction(next);
       const min = minAppAgents(app);
-      if (next !== "add" && !members.length) { toast("No agent here yet. Main agent does the work. Add one first."); return true; }
+      if (next !== "add" && !members.length) { toast("No agent here yet. Omni does the work. Add one first."); return true; }
       if (next === "delete" && members.length <= min) { toast("Add or choose a replacement before deleting the last app agent."); return true; }
+      if (next === "remove" && members.length <= min) { toast("Add another agent before disconnecting the last one."); return true; }
       choosePhase(next === "add" ? "candidate" : "member");
       return true;
     }
@@ -148,6 +156,10 @@ export function AppAgentManager({ app, start }: { app: AppId; start?: "add" | "c
       if (action === "delete") {
         if (!online) { toast("Connect to the server to delete an agent."); return true; }
         net.send({ type: "agent.delete", agentId: member.id });
+        finish();
+      } else if (action === "remove") {
+        if (!online) { toast("Connect to the server to disconnect an agent."); return true; }
+        net.send({ type: "app.agent.remove", app, agentId: member.id });
         finish();
       } else { setOldAgentId(member.id); choosePhase("candidate"); }
       return true;
@@ -162,16 +174,17 @@ export function AppAgentManager({ app, start }: { app: AppId; start?: "add" | "c
     return true;
   }, { wheel: "Pick", a: "Choose", b: "Back" });
 
-  const title = phase === "menu" ? `${FN_LABEL[app]} agents` : phase === "member" ? `${action === "delete" ? "Delete" : "Change"} which agent?` : action === "add" ? "Add which agent?" : "Choose a replacement";
+  const title = phase === "menu" ? `${FN_LABEL[app]} agents` : phase === "member" ? `${action === "delete" ? "Delete" : action === "remove" ? "Disconnect" : "Change"} which agent?` : action === "add" ? "Add which agent?" : "Choose a replacement";
   return <div className="scr">
     <p className="h1 in">{title}</p>
-    <div className="mute in">{members.length ? `${members.map(agent => agent.name).join(", ")} · ${members.length} assigned` : "None assigned · Main agent does the work"}</div>
+    <div className="mute in">{members.length ? `${members.map(agent => agent.name).join(", ")} · ${members.length} assigned` : "None assigned · Omni does the work"}</div>
     <div className="scroll in in-2" style={{ position: "absolute", left: 28, right: 28, top: 104, bottom: 40 }}>
       {phase === "menu" ? [
         ["Add agent", "Assign a free agent or make a new one."],
         ["Change agent", "Replace one agent. Keep the old agent in your list."],
-        ["Delete agent", !members.length ? "No agent to delete." : members.length <= minAppAgents(app) ? "Add or choose a replacement first." : members.length === 1 ? "Delete it after your approval. Main agent takes over." : "Delete one agent after your approval."],
-      ].map(([label, detail], k) => <div key={label} className={"row" + (k === index ? " sel" : "")} style={{ display: "block", opacity: (k === 1 && !members.length) || (k === 2 && members.length <= minAppAgents(app)) ? 0.55 : 1 }}><b>{label}</b><div className="mute">{detail}</div></div>)
+        ["Disconnect agent", !members.length ? "No agent to disconnect." : members.length <= minAppAgents(app) ? "Add another agent first." : members.length === 1 ? "Keep it in your list. Omni takes over." : "Keep it in your list, free for another app."],
+        ["Delete agent", !members.length ? "No agent to delete." : members.length <= minAppAgents(app) ? "Add or choose a replacement first." : members.length === 1 ? "Delete it after your approval. Omni takes over." : "Delete one agent after your approval."],
+      ].map(([label, detail], k) => <div key={label} className={"row" + (k === index ? " sel" : "")} style={{ display: "block", opacity: (k === 1 && !members.length) || (k >= 2 && members.length <= minAppAgents(app)) ? 0.55 : 1 }}><b>{label}</b><div className="mute">{detail}</div></div>)
         : phase === "member" ? members.map((agent, k) => <div key={agent.id} className={"row" + (k === index ? " sel" : "")}><AgentBot agent={agent} size={38} state="idle" /><span><b>{agent.name}</b><br /><span className="mute">{agent.role}</span></span></div>)
           : <>{free.map((agent, k) => <div key={agent.id} className={"row" + (k === index ? " sel" : "")}><AgentBot agent={agent} size={38} state="idle" /><span><b>{agent.name}</b><br /><span className="mute">{agent.role}</span></span></div>)}
             {action === "add" && <div className={"row" + (index === free.length ? " sel" : "")}><span>{Ico.plus}</span><b>Make a new agent</b></div>}

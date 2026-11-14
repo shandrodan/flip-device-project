@@ -77,19 +77,21 @@ function shapeAt(n: number, r: number, c: number, used: Set<number>): Slot[] | n
 }
 
 /** The comb: units (an app fused with its own bots, or a lone cell) and the slot of each cell,
- *  both in reading order. Apps come first, then the other bots, then the cell that makes a new
- *  bot. Each unit takes the first place it fits, so a lone bot can fill a hole a cluster left.
- *  An app's bots are the fixed ones (tone.tsx), then every Task agent assigned to it, so adding
+ *  both in reading order. Omni, the main agent, always comes first (ADR 0030), then the apps,
+ *  then the other bots, then the cell that makes a new bot. Each unit takes the first place it fits, so a lone bot can fill a hole a cluster left.
+ *  An app's bots are the Task agents assigned to it, so adding
  *  an agent to an app on the Device links it on the comb straight away. */
 export function combLayout(snap: Snapshot) {
   const linked = new Set(APPS.flatMap(a => botsOf(snap, a.fn)));
+  const omni = snap.agents.find(g => g.id === "main");
   const raw: Cell[][] = [
+    ...(omni ? [[{ kind: "bot" as const, agent: omni }]] : []),
     ...APPS.map(a => {
       const bots = botsOf(snap, a.fn).flatMap(id => snap.agents.filter(g => g.id === id));
       const tone = bots.length ? APP_TONE[a.fn] : undefined;
       return [{ kind: "app" as const, ...a, tone }, ...bots.map(agent => ({ kind: "bot" as const, agent, tone }))];
     }),
-    ...snap.agents.filter(g => !linked.has(g.id)).map(agent => [{ kind: "bot" as const, agent }]),
+    ...snap.agents.filter(g => g.id !== "main" && !linked.has(g.id)).map(agent => [{ kind: "bot" as const, agent }]),
   ];
   const used = new Set<number>();
   const placed = raw.map(u => {
@@ -183,7 +185,7 @@ export function Home() {
   const first = running[0], ag = first && snap.agents.find(a => a.id === first.agentId);
   const line = first ? `${ag?.name ?? "An agent"} is on it: ${first.title.charAt(0).toLowerCase() + first.title.slice(1)}`
     : waiting.length ? `${waiting.length} task${waiting.length > 1 ? "s" : ""} need${waiting.length > 1 ? "" : "s"} you`
-    : "Hold the mic to talk to Main agent.";
+    : `Hold the mic to talk to ${snap.agents.find(a => a.id === "main")?.name ?? "Omni"}.`;
 
   // Columns stay put (the comb is centred in its area); only rows scroll, so the selected row
   // sits in the middle and every row is always seen whole.
@@ -206,7 +208,7 @@ export function Home() {
     .map(c => c.kind === "app" ? FN_LABEL[c.fn] : c.kind === "bot" ? c.agent.name : "");
 
   const name = cur.kind === "app" ? FN_LABEL[cur.fn] : cur.kind === "bot" ? cur.agent.name : "New bot";
-  const about = cur.kind === "app" ? `${cur.about} · ${snap.appAgents[cur.fn].map(id => snap.agents.find(agent => agent.id === id)?.name ?? "Unavailable").join(", ") || "Main agent"}`
+  const about = cur.kind === "app" ? `${cur.about} · ${snap.appAgents[cur.fn].map(id => snap.agents.find(agent => agent.id === id)?.name ?? "Unavailable").join(", ") || "Omni"}`
     : cur.kind === "bot" ? (() => { const w = workOf(cur.agent.id); return w ? (w.status === "running" ? "Working: " : "Waiting: ") + w.title : cur.agent.role; })()
     : "Your main agent builds it from what you say";
 

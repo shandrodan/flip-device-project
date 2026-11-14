@@ -20,7 +20,7 @@ pnpm dev          # Device app + server + a PC agent on this computer
 ```
 
 Open http://localhost:5173 for the Device twin, and http://localhost:5173/dock for the Dock screen.
-Hold the red mic (or Space), turn the wheels (Q/E, W/S), press A (K), B (L), C (I), D (J) and the push bar (Enter).
+Hold the red mic (or Space), turn the wheels (Q/E, Z/X), press the D-pad (arrows) and the push bar (Enter). Click A–D on the twin. S slides the Device open or closed, D puts it on the dock, F cycles debug mode.
 The Home mic talks to the main Task agent. On an agent screen it talks to that agent.
 Each Device app has one or more assigned Task agents. Select an app on Home and press D
 to add, change, or delete an agent. With another Home item selected, D opens pending Suggestions. C opens the command center.

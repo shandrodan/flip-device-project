@@ -9,7 +9,7 @@ export type Route =
   | { name: "task"; taskId: string }
   | { name: "agent"; agentId: string }
   | { name: "create"; app?: AppId }
-  | { name: "appAgents"; app: AppId; start?: "add" | "change" | "delete" }
+  | { name: "appAgents"; app: AppId; start?: "add" | "change" | "remove" | "delete" }
   | { name: "agentLook"; agentId: string };
 
 export const HANDHELD_FNS: Fn[] = ["home", "notes", "todo", "build", "agents", "focus", "settings"];

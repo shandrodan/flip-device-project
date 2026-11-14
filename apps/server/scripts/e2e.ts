@@ -271,7 +271,7 @@ async function main() {
   sendMsg({ type: "app.agent.add", app: "todo", agentId: "app_notes" });
   await until("cross-app agent rejected", () => events.find(e => e.type === "notice" && e.text.includes("already assigned to an app")));
   sendMsg({ type: "app.agent.add", app: "todo", agentId: "main" });
-  await until("main app agent rejected", () => events.find(e => e.type === "notice" && e.text.includes("Main agent coordinates work")));
+  await until("main app agent rejected", () => events.find(e => e.type === "notice" && e.text.includes("never joins an app")));
   if (snap!.appAgents.todo.length !== 1) fail("An agent joined two apps, or Main joined an app");
   sendMsg({ type: "app.agent.add", app: "todo", agentId: helperId });
   await until("second To-Do agent", () => snap?.appAgents.todo.includes(helperId));
@@ -475,6 +475,14 @@ async function main() {
   await until("repeat voice receipt", () => restartEvents.find(e => e.type === "voice.accepted" && e.streamId === "voice-main-e2e"));
   await until("same task count", () => restartSnap?.tasks.length === snap?.tasks.length);
   console.log("✓ Restart: messages stayed, waiting work paused, repeated voice made no second Task");
+
+  // The setup page resets Notes and To-Dos in one press and keeps everything else.
+  const agentsBefore = restartSnap!.agents.length;
+  const reset = await fetch(`http://127.0.0.1:${PORT}/setup`, { method: "POST", body: new URLSearchParams({ action: "resetNotesTodos" }) });
+  if (!reset.ok || !(await reset.text()).includes("Cleared")) fail("setup reset did not answer");
+  await until("Notes and To-Dos cleared", () => restartSnap?.notes.length === 0 && restartSnap.tasks.length === 0);
+  if (restartSnap!.agents.length !== agentsBefore || restartSnap!.messages.length || restartSnap!.approvals.length) fail("reset touched agents or left messages or approvals");
+  console.log("✓ Setup page reset cleared Notes and To-Dos and kept agents");
 
   ws2.close();
   serverProc.kill();

@@ -23,7 +23,7 @@ function Kiosk() {
   return <div className="kiosk"><div className="screen" style={{ transform: `scale(${k})` }}><DeviceApp /></div></div>;
 }
 
-/** /dock: the dock screen (StandBy, ADR 0020) on a second tab, same WebSocket (DEMO.md). W/S turn the wheel. */
+/** /dock: the dock screen (StandBy, ADR 0020) on a second tab, same WebSocket (DEMO.md). Z/X turn the wheel. */
 function DockPage() {
   const n = useNet();
   const [k, setK] = useState(1);

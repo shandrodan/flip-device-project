@@ -149,7 +149,7 @@ export function startTask(task: Task) {
       const recipientId = recipient.id;
       await ctx.gate({ title: `Ask ${recipient.name} to use ${app}?`, body: String(input.action ?? app).slice(0, 120) });
       const key = callId ?? `planner:app:${app}:${tool}:${JSON.stringify(input)}`;
-      const child = sendAgentMessage(task, recipientId, `${tool === "read_app" ? "Read" : "Change"} ${app}: ${String(input.action ?? app)}`, true, startTask, key, { app, tool, input });
+      const child = sendAgentMessage(task, recipientId, appRequestTitle(app, tool, input), true, startTask, key, { app, tool, input });
       await ctx.waitForChildren();
       if (child.status !== "done") throw new ToolError(child.detail ?? `The ${recipient.name} task did not finish.`);
       return { text: child.result ?? child.detail ?? "Done." };
@@ -176,7 +176,10 @@ export function startTask(task: Task) {
       const final = task.appRequest ? await runAppRequest(ctx) : hasLlm() ? await runModel(ctx, ctl) : await runPlanner(ctx);
       finishStep();
       const short = final.length > 160 ? final.slice(0, 157).replace(/\s+\S*$/, "") + "…" : final;
-      patchTask(task, { status: "done", detail: short, result: final.length > 160 ? final : undefined, completedAt: new Date().toISOString() });
+      // An app request answers with raw app data for the agent that asked. The Device only shows
+      // a short summary of it; the data stays in `result` for the asking agent.
+      if (task.appRequest) patchTask(task, { status: "done", detail: appRequestSummary(task.appRequest, final), result: final, completedAt: new Date().toISOString() });
+      else patchTask(task, { status: "done", detail: short, result: final.length > 160 ? final : undefined, completedAt: new Date().toISOString() });
       log(agent.id, `Finished: ${task.title}`);
       bus.notice(`${agent.name} finished: ${task.title}`, "happy");
     } catch (err) {
@@ -251,6 +254,30 @@ function buildBrief(fromBuild: boolean) {
     "Make small, working changes. Read a file before you replace it, and keep everything else in it. Publishing always goes through build_deploy.",
     "Your final answer is shown under your bot on a tiny screen: one short sentence, at most 8 words, e.g. 'Waitlist form added'.",
   ].join("\n");
+}
+
+const APP_LABEL: Record<AppId, string> = { notes: "Notes", todo: "To-Do", build: "Build", agents: "Agents", focus: "Focus", settings: "Settings" };
+
+/** A plain title for an app request: "Read To-Do", or the agent's own action line. */
+function appRequestTitle(app: AppId, tool: "read_app" | "change_app", input: Record<string, unknown>) {
+  const say = typeof input.say === "string" ? input.say.trim().slice(0, 60) : "";
+  if (tool === "change_app" && say) return say;
+  return `${tool === "read_app" ? "Read" : "Change"} ${APP_LABEL[app]}`;
+}
+
+/** What an app request did, in words for the Device: no JSON, no IDs. */
+function appRequestSummary(request: NonNullable<Task["appRequest"]>, text: string) {
+  if (request.tool === "read_app") {
+    const noun: Partial<Record<AppId, [string, string]>> = { notes: ["note", "notes"], todo: ["task", "tasks"], agents: ["agent", "agents"] };
+    const n = noun[request.app];
+    try {
+      const data = JSON.parse(text);
+      if (n && Array.isArray(data)) return `Read ${data.length} ${data.length === 1 ? n[0] : n[1]}`;
+    } catch { /* not JSON */ }
+    return `Read ${APP_LABEL[request.app]}`;
+  }
+  // Change results name records by ID ("Added To-Do t_ab12."). Drop the IDs.
+  return text.replace(/\s+with ID\s+\S+/g, "").replace(/\s+\b[a-z]{1,3}_[a-z0-9]{6,}\b/gi, "").replace(/\.$/, "").trim() || "Done";
 }
 
 async function runAppRequest(ctx: Ctx): Promise<string> {

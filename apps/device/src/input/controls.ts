@@ -203,15 +203,14 @@ export function wheelHandler(c: "systemWheel" | "appWheel") {
 }
 
 /* ------------------------------ Keyboard ------------------------------ */
-// Space hold = mic · Enter = push bar · K/L/I/J = A/B/C/D · arrows = D-pad
-// Q/E = system wheel · W/S = in-app wheel · D = in-app wheel press · Esc/Backspace = B
+// Space hold = mic · Enter = push bar · arrows = D-pad · Q/E = system wheel
+// Z/X = in-app wheel · V = in-app wheel press. A–D have no keys: click them on the twin.
+// S/D/F are taken by the twin page (slide, dock, debug), see sim/Simulator.tsx.
 export const KEYMAP: Record<string, ControlEvent> = {
   Enter: { c: "pushBar" },
-  KeyK: { c: "a" }, KeyL: { c: "b" }, KeyI: { c: "c" }, KeyJ: { c: "d" },
-  Escape: { c: "b" }, Backspace: { c: "b" },
   ArrowUp: { c: "up" }, ArrowDown: { c: "down" }, ArrowLeft: { c: "left" }, ArrowRight: { c: "right" },
   KeyQ: { c: "systemWheel", dir: -1 }, KeyE: { c: "systemWheel", dir: 1 },
-  KeyW: { c: "appWheel", dir: -1 }, KeyS: { c: "appWheel", dir: 1 }, KeyD: { c: "appWheelPress" },
+  KeyZ: { c: "appWheel", dir: -1 }, KeyX: { c: "appWheel", dir: 1 }, KeyV: { c: "appWheelPress" },
 };
 
 let installed = false;

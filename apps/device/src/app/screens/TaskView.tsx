@@ -57,8 +57,8 @@ export function TaskView({ id }: { id: string }) {
           </div>;
         })}
         {!t.steps.length && !t.agentId && <p className="mute" style={{ margin: 0 }}>A plain todo. Press the push bar when it’s done, or hand it to an agent with D.</p>}
-        {t.detail && <p style={{ margin: "12px 0 0", fontSize: 15.5, lineHeight: 1.45, color: s === "failed" ? "#ff8a80" : s === "done" ? "#fff" : "rgba(235,235,245,0.7)" }}>{t.detail}</p>}
-        {t.result && <p className="mute" style={{ margin: "10px 0 0", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}>{t.result}</p>}
+        {t.detail && !(t.appRequest && /^\s*[[{]/.test(t.detail)) && <p style={{ margin: "12px 0 0", fontSize: 15.5, lineHeight: 1.45, color: s === "failed" ? "#ff8a80" : s === "done" ? "#fff" : "rgba(235,235,245,0.7)" }}>{t.detail}</p>}
+        {t.result && !t.appRequest && <p className="mute" style={{ margin: "10px 0 0", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-line" }}>{t.result}</p>}
       </div>
     </div>
     {picking && <AgentPicker onPick={agentId => { setPicking(false); net.send({ type: "task.assign", taskId: t.id, agentId }); }} onClose={() => setPicking(false)} />}

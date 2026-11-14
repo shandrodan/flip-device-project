@@ -159,7 +159,7 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
   if (inlineAgent) return null;
 
   const agentName = target.kind === "agent" ? app.snap.agents.find(a => a.id === target.agentId)?.name : null;
-  const label = target.kind === "text" ? target.label : target.kind === "append" ? "Adding to the note" : target.kind === "main" ? "Talking to Main agent" : target.kind === "app" ? `Talking to a ${FN_LABEL[target.app]} agent` : target.kind === "agent" ? `Talking to ${agentName ?? "Task agent"}` : online ? "Listening" : "Listening · on device";
+  const label = target.kind === "text" ? target.label : target.kind === "append" ? "Adding to the note" : target.kind === "main" ? "Talking to Omni" : target.kind === "app" ? `Talking to a ${FN_LABEL[target.app]} agent` : target.kind === "agent" ? `Talking to ${agentName ?? "Task agent"}` : online ? "Listening" : "Listening · on device";
   return <div className="fill" style={{ background: "#000", zIndex: 20 }}>
     <div style={{ position: "absolute", left: 60, top: 92 }}><Bot state={phase === "saving" ? "think" : "listen"} level={level} size={300} seed={3} /></div>
     <div style={{ position: "absolute", left: 410, top: 110, right: 40 }}>
@@ -218,7 +218,7 @@ export function FireOverlay({ req, onWant }: { req: ApprovalRequest | null; onWa
     {fire && <>
       <div style={{ position: "absolute", left: 480, top: 96 }}>{ag ? <AgentBot agent={ag} size={290} state="warn" eyesOnly /> : <Bot size={290} state="warn" eyesOnly />}</div>
       <div className={"fire-copy in" + (nudge ? " nudge" : "")} key={nudge} style={{ animationDelay: nudge ? "0ms" : "160ms" }}>
-        <div className="label" style={{ color: "rgba(0,0,0,0.6)", marginBottom: 8 }}>{ag ? ag.name : "Main agent"} needs your press</div>
+        <div className="label" style={{ color: "rgba(0,0,0,0.6)", marginBottom: 8 }}>{ag ? ag.name : "Omni"} needs your press</div>
         <p className="say" style={{ fontSize: shown.title.length > 26 ? 36 : 42 }}>{shown.title}</p>
         {shown.preview?.command ? <>
           <p className="mute" style={{ fontSize: 14 }}>{shown.body}</p>

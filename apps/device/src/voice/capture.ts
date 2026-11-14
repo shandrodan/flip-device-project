@@ -179,7 +179,7 @@ async function startMic(o: Opts): Promise<Capture> {
       sr = new SR();
       sr.continuous = true;
       sr.interimResults = true;
-      sr.lang = navigator.language || "en-US";
+      sr.lang = "en-US"; // English only, whatever the browser's language (matches the server's Whisper)
       sr.onresult = (ev: any) => {
         interim = "";
         for (let i = ev.resultIndex; i < ev.results.length; i++) {

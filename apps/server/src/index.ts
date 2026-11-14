@@ -327,7 +327,7 @@ async function handle(c: Client, m: DeviceMessage) {
       const agent = agentById(m.agentId);
       if (!APP_IDS.includes(m.app) || !agent) return;
       if (agent.id === "main") {
-        send(c.ws, { type: "notice", text: "Main agent coordinates work. Choose another Task agent for this app.", tone: "warn" });
+        send(c.ws, { type: "notice", text: "Omni runs your other agents and never joins an app. Choose another Task agent for this app.", tone: "warn" });
         return;
       }
       if (appOfAgent(agent.id)) {
@@ -350,6 +350,20 @@ async function handle(c: Client, m: DeviceMessage) {
       saveNow();
       log("main", `${agent.name} replaced ${old.name} in ${m.app}`);
       bus.notice(`${agent.name} replaced ${old.name} in ${m.app}`, "ok");
+      break;
+    }
+    case "app.agent.remove": {
+      const agent = agentById(m.agentId);
+      if (!APP_IDS.includes(m.app) || !agent || !state.appAgents[m.app].includes(agent.id)) return;
+      if (state.appAgents[m.app].length <= minAppAgents(m.app)) {
+        send(c.ws, { type: "notice", text: `${agent.name} is the last ${m.app} agent. Add another first.`, tone: "warn" });
+        return;
+      }
+      if (busyTask(agent.id)) { send(c.ws, { type: "notice", text: `Wait for ${agent.name}'s current work to finish.`, tone: "warn" }); return; }
+      state.appAgents[m.app] = state.appAgents[m.app].filter(agentId => agentId !== agent.id);
+      saveNow();
+      log("main", `${agent.name} left ${m.app}`);
+      bus.notice(`${agent.name} left ${m.app}`, "ok");
       break;
     }
     case "machine.check":

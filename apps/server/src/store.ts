@@ -54,7 +54,7 @@ export const DEFAULT_PROJECTS: Project[] = [
 ];
 
 export const BUILTIN_AGENTS: Agent[] = [
-  { id: "main", name: "Main agent", purpose: "main", shape: "circle", color: "#f2f2f2", builtin: true, seed: 3, role: "Talks to you, runs your other agents, and makes new ones." },
+  { id: "main", name: "Omni", purpose: "main", shape: "circle", color: "#f2f2f2", builtin: true, seed: 3, role: "Talks to you, runs your other agents, and makes new ones." },
   { id: "mail", name: "Mail agent", purpose: "mail", shape: "capsule", color: "#4a9dff", builtin: true, seed: 11, role: "Drafts and sends email. Always asks before it sends." },
   { id: "pc", name: "PC agent", purpose: "pc", shape: "squircle", color: "#a78bfa", builtin: true, seed: 29, role: "Works on your machines over Tailscale. Asks before it deletes." },
   { id: "app_notes", name: "Notes agent", purpose: "app", shape: "pebble", color: "#64d2ff", builtin: true, seed: 47, role: "Owns the Notes app." },
@@ -126,6 +126,8 @@ function load(): State {
     const s: State = { ...base, ...saved, focus: { ...base.focus, ...saved.focus }, limits: { ...base.limits, ...saved.limits } };
     for (const builtin of BUILTIN_AGENTS.filter(agent => ["main", "mail", "pc"].includes(agent.id)))
       if (!s.agents.some(agent => agent.id === builtin.id)) s.agents.push({ ...builtin });
+    // The main agent's old default name becomes Omni (ADR 0030). A name the user chose stays.
+    for (const agent of s.agents) if (agent.id === "main" && agent.name === "Main agent") agent.name = "Omni";
     const assignments = saved.appAgents ?? Object.fromEntries(APP_IDS.map(app => [app, saved.appOwners?.[app] ? [saved.appOwners[app]] : defaultMembers(app)]));
     const used = new Set<string>();
     s.appAgents = { ...base.appAgents };

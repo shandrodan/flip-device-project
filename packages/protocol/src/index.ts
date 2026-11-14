@@ -323,6 +323,8 @@ export type DeviceMessage =
   | { type: "agent.update"; agentId: string; patch: AgentPatch }
   | { type: "app.agent.add"; app: AppId; agentId: string }
   | { type: "app.agent.replace"; app: AppId; oldAgentId: string; newAgentId: string }
+  // Disconnect a Task agent from an app. The agent is kept and becomes free (ADR 0028).
+  | { type: "app.agent.remove"; app: AppId; agentId: string }
   | { type: "machine.check"; machineId: string }
   | { type: "demo.reset" }
   | { type: "ping"; t: number };
@@ -440,7 +442,7 @@ export function parseDeviceMessage(raw: string): DeviceMessage | null {
       (m.audio !== undefined && (typeof m.audio !== "string" || m.audio.length > 2_500_000)) ||
       (m.mime !== undefined && (typeof m.mime !== "string" || m.mime.length > 100))
     )) return null;
-    if (m.type === "app.agent.add" && (!APP_IDS.includes(m.app) || typeof m.agentId !== "string" || !m.agentId)) return null;
+    if ((m.type === "app.agent.add" || m.type === "app.agent.remove") && (!APP_IDS.includes(m.app) || typeof m.agentId !== "string" || !m.agentId)) return null;
     if (m.type === "app.agent.replace" && (!APP_IDS.includes(m.app) || typeof m.oldAgentId !== "string" || !m.oldAgentId || typeof m.newAgentId !== "string" || !m.newAgentId)) return null;
     if (m.type === "agent.create" && m.app !== undefined && !APP_IDS.includes(m.app)) return null;
     if (m.type === "agent.update" && (typeof m.agentId !== "string" || !m.agentId || !isAgentPatch(m.patch))) return null;

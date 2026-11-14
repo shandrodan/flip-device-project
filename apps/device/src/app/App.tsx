@@ -128,7 +128,7 @@ export function DeviceApp({ voice = defaultSource(), onWantPush, debug = null, o
   const wheelItems = useMemo<WheelItem[]>(() => {
     if (!snap) return [];
     const openFn = (f: Fn) => () => { setFn(f); setStack([]); };
-    const fnItem = (f: Fn): WheelItem => ({ key: f, label: FN_LABEL[f], sub: f === "home" ? "Main agent" : "App", icon: icons[f], app: f !== "home", open: openFn(f) });
+    const fnItem = (f: Fn): WheelItem => ({ key: f, label: FN_LABEL[f], sub: f === "home" ? "Omni" : "App", icon: icons[f], app: f !== "home", open: openFn(f) });
     if (docked) return fns.map(fnItem);
     return [fnItem("home"), ...combUnits(snap).flat().flatMap((c): WheelItem[] =>
       c.kind === "app" ? [{ ...fnItem(c.fn), icon: c.icon, tone: c.tone }]

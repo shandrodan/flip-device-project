@@ -97,6 +97,32 @@ export function Simulator() {
   const docked = n.mode === "dock";
   useEffect(() => { setTrayOpen(flat || (open && !docked)); }, [flat, open, docked]);
 
+  const cycleDebug = () => setDebug(d => d === null ? "usb" : d === "usb" ? "wifi" : null);
+  const [full, setFull] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const on = () => setFull(document.fullscreenElement === root.current);
+    document.addEventListener("fullscreenchange", on);
+    return () => document.removeEventListener("fullscreenchange", on);
+  }, []);
+  const toggleFull = () => document.fullscreenElement ? document.exitFullscreen() : root.current?.requestFullscreen();
+
+  // Twin-page keys, not Device controls: S slide, D dock, F debug.
+  const keyState = useRef({ flat, docked });
+  keyState.current = { flat, docked };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.closest?.("input, textarea, select")) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      const { flat, docked } = keyState.current;
+      if (e.code === "KeyS") { e.preventDefault(); if (!flat && !docked) setOpen(o => !o); }
+      else if (e.code === "KeyD") { e.preventDefault(); net.setMode(docked ? "handheld" : "dock"); }
+      else if (e.code === "KeyF") { e.preventDefault(); cycleDebug(); }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
+
   const btn = (c: Control, cls: string, content: ReactNode, label: string) =>
     <button className={cls + (down[c] ? " down" : "")} aria-label={label} onPointerDown={e => { e.preventDefault(); emit({ c }); }}>{content}</button>;
   const L = ({ x, y, children }: { x: number; y: number; children: ReactNode }) => labels ? <span className="hw-label" style={{ left: x, top: y }}>{children}</span> : null;
@@ -107,7 +133,7 @@ export function Simulator() {
     : <DeviceApp voice={voice} onWantPush={setWant} debug={debug} onEndDebug={() => setDebug(null)} />;
   const tri = (r: number) => <PlayIcon width={16} height={16} aria-hidden="true" style={{ transform: `rotate(${r - 90}deg)` }} />;
 
-  return <div className="sim">
+  return <div className={"sim" + (full ? " full" : "")} ref={root}>
     <header className="sim-head">
       <div>
         <h1>Flip · device twin</h1>
@@ -178,17 +204,18 @@ export function Simulator() {
       <button className="pbtn" aria-pressed={docked} onClick={() => net.setMode(docked ? "handheld" : "dock")}>{docked ? "Take off dock" : "Put on dock"}</button>
       <button className="pbtn" aria-pressed={n.forcedOffline} onClick={() => net.setForcedOffline(!n.forcedOffline)}>{n.forcedOffline ? "Go online" : "Go offline"}</button>
       <button className="pbtn" aria-pressed={voice === "script"} onClick={() => setVoice(voice === "mic" ? "script" : "mic")}>Voice: {voice === "mic" ? "microphone" : "scripted"}</button>
-      <button className="pbtn" aria-pressed={!!debug} onClick={() => setDebug(debug === null ? "usb" : debug === "usb" ? "wifi" : null)}>Debug: {debug === "usb" ? "USB-C" : debug === "wifi" ? "Wi-Fi" : "off"}</button>
+      <button className="pbtn" aria-pressed={!!debug} onClick={cycleDebug}>Debug: {debug === "usb" ? "USB-C" : debug === "wifi" ? "Wi-Fi" : "off"}</button>
       {flat
         ? <button className="pbtn" aria-pressed={!labels} onClick={() => setLabels(!labels)}>{labels ? "Hide labels" : "Show labels"}</button>
         : <>
           <button className="pbtn" aria-pressed={!open || docked} disabled={docked} onClick={() => setOpen(!open)}>{open && !docked ? "Slide closed" : "Slide open"}</button>
           <button className="pbtn" onClick={() => setView(v => v + 1)}>Front view</button>
         </>}
+      <button className="pbtn" aria-pressed={full} onClick={toggleFull}>{full ? "Exit full screen" : "Full screen"}</button>
     </div>
     {remoteUrl && <BoardMonitor url={remoteUrl} />}
     <div className="keys">
-      <kbd>Space</kbd> hold mic · <kbd>Enter</kbd> push bar · <kbd>K</kbd> A · <kbd>L</kbd>/<kbd>Esc</kbd> B · <kbd>I</kbd> C · <kbd>J</kbd> D · <kbd>←↑↓→</kbd> D-pad · <kbd>Q</kbd>/<kbd>E</kbd> system wheel · <kbd>W</kbd>/<kbd>S</kbd> or scroll on the screen: in-app wheel · <kbd>D</kbd> wheel press{!flat && <> · drag to turn the Device, click its buttons, click the shell to slide it · scroll or drag a wheel to turn it · scroll or pinch to zoom, right-drag to move</>} · An Xbox controller works too (LB/RB system wheel, LT/RT in-app wheel, Start push bar, hold View for mic).
+      <kbd>Space</kbd> hold mic · <kbd>Enter</kbd> push bar · <kbd>←↑↓→</kbd> D-pad · click A–D · <kbd>Q</kbd>/<kbd>E</kbd> system wheel · <kbd>Z</kbd>/<kbd>X</kbd> or scroll on the screen: in-app wheel · <kbd>V</kbd> wheel press · <kbd>S</kbd> slide · <kbd>D</kbd> dock · <kbd>F</kbd> debug{!flat && <> · drag to turn the Device, click its buttons, click the shell to slide it · scroll or drag a wheel to turn it · scroll or pinch to zoom, right-drag to move</>} · An Xbox controller works too (LB/RB system wheel, LT/RT in-app wheel, Start push bar, hold View for mic).
     </div>
   </div>;
 }

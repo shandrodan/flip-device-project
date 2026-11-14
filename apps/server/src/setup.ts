@@ -2,7 +2,8 @@
 // your AI key, speech-to-text key, and which machines run a PC agent.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { config } from "./config.js";
-import { state, secrets, saveSecrets, save } from "./store.js";
+import { state, secrets, saveSecrets, save, saveNow } from "./store.js";
+import { cancelTask } from "./agents/runner.js";
 import { anthropicKey, openRouterKey, llmMode } from "./llm.js";
 import { sttMode } from "./voice.js";
 import { machines } from "./machines.js";
@@ -60,6 +61,16 @@ export async function handleSetup(req: IncomingMessage, res: ServerResponse, url
       save();
       machines.sync();
       msg = "Removed.";
+    } else if (action === "resetNotesTodos") {
+      // Stop agent work first so nothing writes into the cleared lists.
+      for (const task of [...state.tasks]) cancelTask(task.id);
+      const notes = state.notes.length, tasks = state.tasks.length;
+      state.notes = [];
+      state.tasks = [];
+      state.messages = [];
+      state.approvals = [];
+      saveNow();
+      msg = `Cleared ${notes} ${notes === 1 ? "Note" : "Notes"} and ${tasks} ${tasks === 1 ? "To-Do" : "To-Dos"}.`;
     }
     bus.changed();
   }
@@ -106,5 +117,10 @@ ${list.map(m => `<div class="row"><span><b>${esc(m.name)}</b><br><span class="mu
 <label>Name</label><input name="name" placeholder="MacBook Pro"><label>Address</label><input name="url" placeholder="ws://100.101.102.103:7077"><button>Add machine</button></form>
 </section>
 <section><h2>Status</h2><div class="mute">Permission mode: ${state.permissionMode} · Hosting: ${state.hosting} · Mail: ${config.smtpUrl ? "SMTP" : "Outbox (.eml)"} · Notes: ${state.notes.length} · Tasks: ${state.tasks.length}</div></section>
+<section><h2>Reset Device data</h2>
+<div class="mute">Deletes every saved Note and To-Do and stops agent work in progress. Agents, projects, settings, keys and machines stay.</div>
+<form method="post" action="/setup${tok}" onsubmit="return confirm('Delete all ${state.notes.length} Notes and ${state.tasks.length} To-Dos? This can\\'t be undone.')"><input type="hidden" name="action" value="resetNotesTodos">
+<button style="background:#ff453a;color:#fff">Reset Notes and To-Dos</button></form>
+</section>
 </main></body></html>`);
 }

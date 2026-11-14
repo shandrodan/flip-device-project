@@ -16,15 +16,19 @@ export function sttMode(): "cloud" | "local" | "device" {
   return "device";
 }
 
+/** Dumps are transcribed as English only, so Whisper never guesses another language. */
+const STT_LANGUAGE = "en";
+
 async function post(url: string, key: string, model: string, audio: Buffer, mime: string, openRouter = false): Promise<string> {
   const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : mime.includes("wav") ? "wav" : "webm";
   let body: string | FormData;
   if (openRouter) {
-    body = JSON.stringify({ model, input_audio: { data: audio.toString("base64"), format: ext } });
+    body = JSON.stringify({ model, language: STT_LANGUAGE, input_audio: { data: audio.toString("base64"), format: ext } });
   } else {
     const form = new FormData();
     form.append("file", new Blob([new Uint8Array(audio)], { type: mime || "audio/webm" }), `dump.${ext}`);
     form.append("model", model);
+    form.append("language", STT_LANGUAGE);
     form.append("response_format", "json");
     body = form;
   }

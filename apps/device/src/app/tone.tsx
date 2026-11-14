@@ -18,13 +18,9 @@ export const APP_TONE: Record<AppId, Tone> = {
   build: { bg: "#f4c534", ink: "#6b5208" }, // the caution-tape yellow around the Build preview
 };
 
-/** Bots that belong to an app besides its assigned Task agents (snapshot.appAgents). */
-export const APP_BOTS: Partial<Record<AppId, string[]>> = {
-  notes: ["main"], // the main agent hears every dump and files it in the right note
-};
-
-/** Every bot linked to an app: the fixed ones above, then its assigned Task agents. */
-export const botsOf = (snap: Snapshot, fn: AppId) => [...new Set([...(APP_BOTS[fn] ?? []), ...snap.appAgents[fn]])];
+/** Every bot linked to an app: its assigned Task agents. Omni, the main agent, is never linked
+ *  to an app (ADR 0029). */
+export const botsOf = (snap: Snapshot, fn: AppId) => snap.appAgents[fn];
 
 /** The app a bot is linked to, if any (the first one, in Home order). */
 export const APP_ORDER: AppId[] = ["notes", "todo", "build", "agents", "focus", "settings"];
