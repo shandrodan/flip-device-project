@@ -32,6 +32,12 @@ sudo -u flip -H pnpm install --filter server... --no-frozen-lockfile
 export PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 (cd "$APP/apps/server" && node node_modules/playwright-core/cli.js install --with-deps --only-shell chromium)
 chmod -R a+rX /opt/ms-playwright
+# Warm npm's cache with the Build starters' packages, so build_new installs in seconds (P1.6).
+for starter in vite-vanilla vite-react; do
+  tmp=$(mktemp -d); cp -r "$APP/apps/server/starters/$starter/." "$tmp/"; chown -R flip:flip "$tmp"
+  sudo -u flip -H bash -c "cd '$tmp' && npm install --no-audit --no-fund --loglevel=error" >/dev/null || echo "warning: could not warm the npm cache for $starter"
+  rm -rf "$tmp"
+done
 
 mkdir -p /etc/flip
 # Loaded after .env, so these win. PUBLIC_URL is how the Device reaches the server: through its own

@@ -19,6 +19,12 @@ RUN --mount=type=secret,id=ca,required=false \
   sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
   cd apps/server && node node_modules/playwright-core/cli.js install --with-deps --only-shell chromium; \
   rm -f /etc/apt/apt.conf.d/99flip-ca; rm -rf /var/lib/apt/lists/*
+# Warm npm's cache with the Build starters' packages, so build_new installs in seconds (P1.6).
+RUN --mount=type=secret,id=ca,required=false \
+  if [ -s /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca npm_config_cafile=/run/secrets/ca; fi; \
+  for starter in vite-vanilla vite-react; do \
+    tmp=$(mktemp -d) && cp -r apps/server/starters/$starter/. "$tmp/" && (cd "$tmp" && npm install --no-audit --no-fund --loglevel=error) && rm -rf "$tmp"; \
+  done
 ENV PORT=8787 DATA_DIR=/data HOSTING=self
 VOLUME /data
 EXPOSE 8787

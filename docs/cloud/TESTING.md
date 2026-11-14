@@ -27,6 +27,7 @@ A scripted model stands in for OpenRouter: an OpenAI-compatible server that answ
 | screenshot | `build_screenshot` returns the size, the element list and a PNG that reaches the model (as an "Attached media" user message after the tool result) |
 | undo | a Build Task is committed with the request as message; `build_history` lists it; `build_undo` restores `index.html` exactly |
 | errors-static | a broken edit's result carries the page error; the fixed edit says clean; the preview reloads after each edit |
+| starter | `build_new vite-react`: React renders "Lemon Stand" in the sandboxed preview in under 30 s (12 s here), committed as a new project |
 | errors-vite | with a Vite dev server: a syntax error in `src/main.js` comes back in the edit result |
 
 `SHOW=1` prints every tool result, `DUMP=1` every request's last messages, `KEEP=1` keeps the temp folder. `errors-vite` runs `npm install` (network).
@@ -51,6 +52,7 @@ Speaks real requests to real agents, presses every approval like a user, and che
 | build-look | Build: make the button bigger and centred | button area +15 % or more and centred, measured in a sandboxed 568×504 frame; no page errors; a screenshot step in the Task |
 | build-undo | Build: change the title, then "undo that" | `index.html` identical to before, an "Undo" commit in the project's git log |
 | build-errors | Build: put a syntax error in the main component on purpose, then fix it | an edit result reported the error, the agent never called `build_logs`, the component compiles |
+| build-starter | Build: start a new React app called Lemon Stand | react in package.json, Vite client through `/preview/`, under 60 s |
 | build-vite | Build: turn it into Vite + React, install, run the dev server | `vite`/`react` in package.json, Vite client through `/preview/` |
 
 Options (environment):

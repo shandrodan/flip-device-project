@@ -7,13 +7,16 @@ import type { FsEntry } from "@app/protocol";
 import { bus } from "../bus.js";
 import { checkAfterEdit } from "../build-check.js";
 import { devLog, devLogMark, devServer, insideProject, localBuild, projectDir, runInProject, startDev, stopDev } from "../build-host.js";
-import { history, undo } from "../build-git.js";
+import { commitBuild, ensureRepo, history, undo } from "../build-git.js";
+import { SERVER_ROOT } from "../config.js";
 import { shootPreview } from "../build-shot.js";
 import { saveNow, state } from "../store.js";
 import { ToolError, type ToolDef } from "./tools.js";
 
 const SAY = { type: "string", description: "What you're doing, 3 to 8 words, shown on the Device, e.g. 'Adding the waitlist form'." };
 const REL = (d: string) => ({ type: "string", description: `${d} Relative to the project folder, e.g. src/App.tsx.` });
+/** Starters in apps/server/starters (P1.6). */
+const STARTERS = ["static", "vite-vanilla", "vite-react"];
 const ASK = { type: "boolean", description: "Auto mode: true if the user would want to confirm this first." };
 
 /** A project-relative path as a ~/ path on the machine. Refuses anything that leaves the project. */
@@ -146,6 +149,41 @@ export const BUILD_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "build_new",
+    description: "Start the Build project over from a starter, ready in seconds with no download: static (HTML, CSS, JS), vite-vanilla, or vite-react. It installs from the local cache and starts the dev server for Vite starters. The old files stay in history: build_undo brings them back. Then edit the starter to build what the user asked.",
+    props: { template: { type: "string", enum: STARTERS, description: "Which starter." }, title: { type: "string", description: "The app's title, shown on the page, e.g. Lemon Stand." }, say: SAY },
+    required: ["template", "say"], purposes: "all",
+    async run(ctx, i) {
+      const template = String(i.template);
+      if (!STARTERS.includes(template)) throw new ToolError(`template is one of ${STARTERS.join(", ")}.`);
+      const title = String(i.title ?? "").replace(/[<>{}"'`$\\]/g, "").replace(/\s+/g, " ").trim().slice(0, 60) || state.build.name;
+      await ctx.gate({ askFirst: true, title: `Start ${state.build.name} over as ${template}?`, body: "Replaces the project's files. Undo brings them back." });
+      const t0 = Date.now();
+      const dir = projectDir();
+      await ensureRepo();
+      await commitBuild("Before starting over");
+      stopDev();
+      for (const name of fs.readdirSync(dir)) if (name !== ".git") fs.rmSync(path.join(dir, name), { recursive: true, force: true });
+      copyStarter(path.join(SERVER_ROOT, "starters", template), dir, title);
+      const lines = [`New ${template} project "${title}".`];
+      if (template.startsWith("vite")) {
+        ctx.step("Installing from the cache");
+        const install = await runInProject("npm install --prefer-offline --no-audit --no-fund --loglevel=error", 180_000);
+        if (!install.ok) throw new ToolError(`npm install failed:\n${install.output.slice(-1500)}`);
+        ctx.step("Starting the dev server");
+        const port = await freePort();
+        const dev = await startDev(`npx vite --host 127.0.0.1 --port ${port} --strictPort --base /preview/`, port);
+        if (!dev.ok) throw new ToolError(dev.output);
+        lines.push(`Installed, and the dev server runs on port ${port}. The Device preview shows it and hot-reloads on every edit.`);
+      } else lines.push("The Device preview shows the files as they are.");
+      await commitBuild(`New ${template} project: ${title}`);
+      state.build.rev++;
+      bus.changed();
+      lines.push(`Files: ${listFiles(dir).join(", ")}. Ready in ${Math.round((Date.now() - t0) / 1000)} s.`);
+      return { text: lines.join("\n") };
+    },
+  },
+  {
     name: "build_history",
     description: "List the latest saved changes to the Build project, newest first. Every finished Build request is saved as one change, named after what the user asked.",
     props: { say: SAY }, required: ["say"], purposes: "all",
@@ -184,8 +222,38 @@ export const BUILD_TOOLS: ToolDef[] = [
 ];
 
 /** Tools that exist only when the Build project is on this machine, and those only for the PC. */
-export const SERVER_BUILD_ONLY = ["build_serve", "build_stop", "build_logs", "build_screenshot", "build_history", "build_undo"];
+export const SERVER_BUILD_ONLY = ["build_serve", "build_stop", "build_logs", "build_screenshot", "build_history", "build_undo", "build_new"];
 export const PC_BUILD_ONLY = ["build_preview"];
+
+function copyStarter(from: string, to: string, title: string) {
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    if (entry.name === "README.md") continue;
+    const src = path.join(from, entry.name), dest = path.join(to, entry.name);
+    if (entry.isDirectory()) {
+      fs.mkdirSync(dest, { recursive: true });
+      copyStarter(src, dest, title);
+    } else fs.writeFileSync(dest, fs.readFileSync(src, "utf8").replaceAll("{{title}}", title));
+  }
+}
+
+function listFiles(dir: string, base = ""): string[] {
+  return fs.readdirSync(path.join(dir, base), { withFileTypes: true })
+    .filter(entry => entry.name !== ".git" && entry.name !== "node_modules" && entry.name !== ".gitignore")
+    .flatMap(entry => entry.isDirectory() ? listFiles(dir, path.join(base, entry.name)) : [path.join(base, entry.name)]);
+}
+
+/** The first free port from 5300 to 5399. */
+async function freePort(): Promise<number> {
+  const net = await import("node:net");
+  for (let port = 5300; port < 5400; port++) {
+    const free = await new Promise<boolean>(resolve => {
+      const server = net.createServer().once("error", () => resolve(false)).once("listening", () => server.close(() => resolve(true)));
+      server.listen(port, "127.0.0.1");
+    });
+    if (free) return port;
+  }
+  throw new ToolError("No free port from 5300 to 5399.");
+}
 
 /** A project-relative path on this machine (BUILD_HOST=server). */
 function local(rel: unknown): string {

@@ -52,3 +52,4 @@ Roadmap items built in the night run (see [REPORT-2026-11-15.md](REPORT-2026-11-
 | P1.4 `build_screenshot` | Done | `build-look`: "make the button bigger and centred", button measured before and after in a sandboxed frame, screenshot in the Task steps |
 | P1.5 Undo by voice | Done | `build-undo`: "change the title to Lemon Lab", then "undo that"; `index.html` is byte-for-byte what it was, and the history has the undo |
 | P1.7 Errors come back by themselves | Done, model run pending | `test:tools` `errors-static`, `errors-vite` 3/3 through the real engine. Agent scenario `build-errors` written; not run, the OpenRouter key hit its cap |
+| P1.6 Starters with a warm cache | Done, model run pending | `test:tools` `starter` 3/3: "start a new React app" to React rendering in the sandboxed preview in 12 s, `build_new` itself 5 s. In the server image an offline install of the React starter takes 3.5 s. Agent scenario `build-starter` written, not run |

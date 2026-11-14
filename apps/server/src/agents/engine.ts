@@ -13,7 +13,7 @@ import { anthropicKey, openRouterKey } from "../llm.js";
 import { Cancelled } from "../approvals.js";
 import { MachineOffline } from "../machines.js";
 import { save, state } from "../store.js";
-import { devLogMark } from "../build-host.js";
+import { buildEnv, devLogMark } from "../build-host.js";
 import { checkAfterEdit } from "../build-check.js";
 import { NATIVE_TOOLS } from "./native-tools.js";
 import { TOOLS, ToolError, type Ctx, type ToolDef } from "./tools.js";
@@ -168,8 +168,8 @@ function boot(cfg: Record<string, unknown>): Promise<string> {
   fs.rmSync(path.join(DIR, ".opencode", "plugin", "flip.ts"), { force: true });
   const child = spawn(binary(), ["serve", "--hostname", "127.0.0.1", "--port", "0"], {
     cwd: DIR,
-    env: {
-      ...process.env,
+    // OpenCode's bash runs the Build project's commands: the same clean environment.
+    env: buildEnv({
       OPENCODE_CONFIG_CONTENT: JSON.stringify(cfg),
       OPENCODE_DISABLE_AUTOUPDATE: "1",
       FLIP_ENGINE_URL: `http://127.0.0.1:${config.port}`,
@@ -179,7 +179,7 @@ function boot(cfg: Record<string, unknown>): Promise<string> {
       XDG_DATA_HOME: path.join(home, "data"),
       XDG_STATE_HOME: path.join(home, "state"),
       XDG_CACHE_HOME: path.join(home, "cache"),
-    },
+    }),
     stdio: ["ignore", "pipe", "pipe"],
   });
   proc = child;

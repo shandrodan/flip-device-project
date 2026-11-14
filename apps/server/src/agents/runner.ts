@@ -267,6 +267,7 @@ function buildBrief(fromBuild: boolean, native: boolean) {
       native
         ? "Work like a coding agent in that folder: read, glob and grep to look, edit to change part of a file, write for new files, bash for commands such as npm install or a build. Paths are relative to the project."
         : "Use the build_* tools: paths are relative to that folder. build_run runs commands there.",
+      "To start a new app, use build_new with a starter (static, vite-vanilla or vite-react): it is ready in seconds, with the dev server running. Then edit it.",
       "The Device preview shows the project's files directly, so plain HTML, CSS and JavaScript need no server and appear after the task. A framework app needs its dev server: install with a command, then start it with build_serve on a port from 5300 to 5399 with base path /preview/ (Vite: `npx vite --host 127.0.0.1 --port 5300 --strictPort --base /preview/`). Never start a long-running server with a plain command: it would block. build_logs shows its output.",
       "The Device shows the preview in a sandboxed frame with no same-origin access: localStorage, sessionStorage, cookies and IndexedDB throw there. Keep state in memory, or wrap storage in try/catch.",
       "Every finished Build request is saved as one change. For \"undo that\" or \"go back\", use build_undo (build_history lists the changes). Never use git reset.",

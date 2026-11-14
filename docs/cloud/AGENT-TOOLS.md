@@ -49,6 +49,7 @@ Risk is set on the tool, never by the model.
 | `build_list`, `build_read`, `build_write`, `build_run` | replaced by the above on the engine; used by the built-in loop | yes, through the PC agent |
 | `build_serve {command, port}` | starts the dev server (`--base /preview/`), streams it to the Device | no |
 | `build_stop`, `build_logs` | yes | no |
+| `build_new {template, title?}` | starts the project over from `apps/server/starters/` (`static`, `vite-vanilla`, `vite-react`): no network, installs from the npm cache warmed at setup, starts Vite with `/preview/`. Commits the old files first (undo brings them back). Asks first | no |
 | `build_history`, `build_undo {steps}` | the project is a git repository; the server commits after every Build Task (message = the spoken request). Undo is `git revert`, never a reset, so it can be undone too | no |
 | `build_screenshot {path?}` | renders `/preview/` in headless Chromium at 568×504 inside a frame sandboxed like the Device's; returns the PNG (as an image when the model takes images) plus page errors and the boxes of visible elements | no |
 | `build_preview {url}` | no | yes |

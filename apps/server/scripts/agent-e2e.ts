@@ -121,6 +121,7 @@ async function measureButton(): Promise<{ w: number; h: number; cx: number; erro
 }
 let buttonBefore: Awaited<ReturnType<typeof measureButton>> = null;
 let lastSteps: string[] = [];
+let lastSeconds = 0;
 let htmlBefore = "";
 const toolLog = path.join(root, "tools.log");
 let toolMark = 0;
@@ -305,6 +306,22 @@ const scenarios: Scenario[] = [
       return problems.length ? `${problems.join("; ")} · tools: ${calls.map(call => call.tool + (call.errors ? "!" : "")).join(", ")}` : null;
     },
   },
+  {
+    // P1.6: a new React app from a starter, running in the preview within seconds.
+    name: "build-starter",
+    turns: [{ target: { kind: "app", app: "build" }, text: "Start a new React app called Lemon Stand." }],
+    async check() {
+      const pkg = fs.existsSync(path.join(buildDir, "package.json")) ? fs.readFileSync(path.join(buildDir, "package.json"), "utf8") : "";
+      const client = await preview("@vite/client");
+      const problems = [
+        !/"react"/.test(pkg) && "no react in package.json",
+        client.status !== 200 && `vite client through /preview/: ${client.status}`,
+        !/Lemon Stand/.test(projectText()) && "title missing",
+        (lastSeconds > 60) && `took ${lastSeconds} s`,
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
 ];
 
 async function main() {
@@ -345,6 +362,7 @@ async function main() {
     await scenario.before?.();
     for (const turn of scenario.turns) last = await ask(turn.target, turn.text);
     lastSteps = last?.steps ?? [];
+    lastSeconds = last?.seconds ?? 0;
     const problem = !last?.task ? "timed out" : last.task.status !== "done" ? `Task ${last.task.status}: ${last.task.detail}` : await scenario.check();
     if (problem) failed++;
     console.log(`${problem ? "✕" : "✓"} ${scenario.name}  (${last?.seconds}s, ${last?.steps.length} steps, ${last?.approvals} presses)`);

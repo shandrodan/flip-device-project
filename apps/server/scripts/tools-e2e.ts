@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
+import { chromium } from "playwright-core";
 import { PROTOCOL_VERSION, isAppCommand, type DeviceMessage, type ServerMessage, type Snapshot } from "@app/protocol";
 
 const PORT = 18897, PC_PORT = 17187;
@@ -203,8 +204,7 @@ const scenarios: Scenario[] = [
         { tool: "write", args: { filePath: file("package.json"), content: JSON.stringify({ name: "lemonade", private: true, type: "module", devDependencies: { vite: "6.3.5" } }, null, 2) } },
         { tool: "write", args: { filePath: file("index.html"), content: "<!doctype html><title>Vite</title><div id=\"app\"></div><script type=\"module\" src=\"/src/main.js\"></script>" } },
         { tool: "write", args: { filePath: file("src/main.js"), content: ok } },
-        // Its own empty npm config: a user ~/.npmrc (allow-scripts, registries) must not change the test.
-        { tool: "bash", args: { command: `npm install --no-audit --no-fund --loglevel=error --userconfig=${path.join(root, "empty.npmrc")}`, description: "Installing Vite" } },
+        { tool: "bash", args: { command: "npm install --no-audit --no-fund --loglevel=error", description: "Installing Vite" } },
         { tool: "build_serve", args: { command: "npx vite --host 127.0.0.1 --port 5310 --strictPort --base /preview/", port: 5310, say: SAY } },
         { tool: "write", args: { filePath: file("src/main.js"), content: "document.getElementById('app').textContent = ;\n" } },
         { tool: "write", args: { filePath: file("src/main.js"), content: ok } },
@@ -222,7 +222,51 @@ const scenarios: Scenario[] = [
       return problems.length ? problems.join("; ") : null;
     },
   },
+  {
+    // P1.6: "start a new React app" reaches a running preview fast, from the warm cache.
+    name: "starter",
+    async test() {
+      const t0 = Date.now();
+      const r = await run(BUILD, "Start a new React app called Lemon Stand", [
+        { tool: "build_new", args: { template: "vite-react", title: "Lemon Stand", say: SAY } },
+        { text: "Lemon Stand is running." },
+      ]);
+      const rendered = await renderedText("Lemon Stand", 30_000);
+      const seconds = (Date.now() - t0) / 1000;
+      const pkg = fs.readFileSync(path.join(buildDir, "package.json"), "utf8");
+      const log = execFileSync("git", ["log", "--format=%s", "-3"], { cwd: buildDir }).toString();
+      const stop = await run(BUILD, "Stop the dev server", [{ tool: "build_stop", args: { say: SAY } }, { text: "Stopped." }]);
+      const problems = [
+        r.task?.status !== "done" && `task ${r.task?.status}: ${r.task?.detail}`,
+        !/"react"/.test(pkg) && "no react in package.json",
+        !rendered && "React did not render Lemon Stand in the sandboxed preview",
+        seconds > 30 && `took ${seconds.toFixed(1)} s (want under 30 s)`,
+        !/New vite-react project: Lemon Stand/.test(log) && `no commit for the new project: ${log}`,
+        stop.task?.status !== "done" && "could not stop the dev server",
+      ].filter(Boolean);
+      console.log(`    request to rendered React: ${seconds.toFixed(1)} s · ${result(r, "build_new").split("\n").pop()}`);
+      return problems.length ? `${problems.join("; ")}\n${result(r, "build_new").slice(0, 400)}` : null;
+    },
+  },
 ];
+
+/** Wait until the preview, in a frame sandboxed like the Device's, shows `word`. */
+async function renderedText(word: string, ms: number): Promise<boolean> {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 568, height: 504 } });
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      await page.setContent(`<iframe sandbox="allow-scripts allow-forms" src="http://127.0.0.1:${PORT}/preview/" style="border:0;width:568px;height:504px"></iframe>`);
+      const frame = (await (await page.waitForSelector("iframe")).contentFrame())!;
+      await frame.waitForLoadState("load").catch(() => undefined);
+      await page.waitForTimeout(700);
+      const text = await frame.evaluate(() => document.body?.innerText ?? "").catch(() => "");
+      if (text.includes(word)) return true;
+    }
+    return false;
+  } finally { await browser.close(); }
+}
 
 /* ---------------------------------- Main ---------------------------------- */
 
@@ -241,7 +285,6 @@ process.on("exit", cleanup);
 
 async function main() {
   fs.mkdirSync(path.join(home, "Flip"), { recursive: true });
-  fs.writeFileSync(path.join(root, "empty.npmrc"), "");
   await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve));
   const modelPort = (model.address() as { port: number }).port;
   start("pc", path.join(here, "../pc-agent"), { HOME: home, USERPROFILE: home, PC_AGENT_PORT: String(PC_PORT), PC_AGENT_HOST: "127.0.0.1", PC_AGENT_TOKEN: "tools", PC_AGENT_NAME: "Test laptop", PC_AGENT_ALLOW_OPEN: "0", PC_AGENT_ALLOW_SHELL: "0" });
