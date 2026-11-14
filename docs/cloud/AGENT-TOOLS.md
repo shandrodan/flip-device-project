@@ -24,6 +24,8 @@ Risk is set on the tool, never by the model.
 | `notes_create` | `texts[]` (batch, in order) | |
 | `notes_append` | `id`, `text` | |
 | `notes_replace` | `id`, `text` (full new text) | asks in Auto |
+| `notes_edit` | `id`, `find`, `replace` (every place, whole words; exact case first, then any case; a miss says what the Note says) | |
+| `notes_merge` | `ids[]` (≥ 2, in order; the first keeps the joined text, the rest are removed) | asks in Auto |
 | `notes_delete` | `ids[]` | delete |
 
 **To-Do**

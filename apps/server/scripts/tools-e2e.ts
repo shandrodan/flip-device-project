@@ -368,6 +368,39 @@ const scenarios: Scenario[] = [
       return problems.length ? problems.join("; ") : null;
     },
   },
+  {
+    // P1.12: small edits without retyping, and merging.
+    name: "notes-edit",
+    async test() {
+      const NOTES = { kind: "app", app: "notes" };
+      const idOf = (last: string, text: string) => (JSON.parse(last) as { notes: { id: string; text: string }[] }).notes.find(n => n.text.startsWith(text))!.id;
+      await run(NOTES, "Save notes", [{ tool: "notes_create", args: { texts: ["Shopping list: milk, eggs, bread, milkshake mix", "Merge part A", "Merge part B"], say: SAY } }, { text: "Saved." }]);
+      let shop = "";
+      const r = await run(NOTES, "In the shopping note, change milk to oat milk", [
+        { tool: "notes_search", args: { query: "shopping", say: SAY } },
+        last => { shop = idOf(last, "Shopping"); return { tool: "notes_edit", args: { id: shop, find: "milk", replace: "oat milk", say: SAY } }; },
+        () => ({ tool: "notes_edit", args: { id: shop, find: "butter", replace: "ghee", say: SAY } }),
+        { text: "Changed." },
+      ]);
+      let a = "", b = "";
+      const m = await run(NOTES, "Merge the two merge notes", [
+        { tool: "notes_search", args: { query: "merge part", say: SAY } },
+        last => { a = idOf(last, "Merge part A"); b = idOf(last, "Merge part B"); return { tool: "notes_merge", args: { ids: [a, b], say: SAY } }; },
+        { text: "Merged." },
+      ]);
+      const read = await run(NOTES, "Read", [{ tool: "notes_read", args: { say: SAY } }, { text: "Read." }]);
+      const all = (JSON.parse(read.results.find(x => x.tool === "notes_read")?.text ?? "{}").notes ?? []) as { id: string; text: string }[];
+      const edits = r.results.filter(x => x.tool === "notes_edit").map(x => x.text);
+      const problems = [
+        all.find(n => n.id === shop)?.text !== "Shopping list: oat milk, eggs, bread, milkshake mix" && `shopping note: ${JSON.stringify(all.find(n => n.id === shop)?.text)}`,
+        !/not in that Note\. It says/.test(edits[1] ?? "") && `missing words not explained: ${edits[1]?.slice(0, 120)}`,
+        all.find(n => n.id === a)?.text !== "Merge part A\n\nMerge part B" && `merged: ${JSON.stringify(all.find(n => n.id === a)?.text)}`,
+        all.some(n => n.id === b) && "the second Note was not removed",
+        m.presses < 1 && "merge did not ask",
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
 ];
 
 /** Wait until the preview, in a frame sandboxed like the Device's, shows `word`. */

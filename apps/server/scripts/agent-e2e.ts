@@ -271,6 +271,25 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    // P1.12: a small change in a Note without retyping it.
+    name: "notes-edit",
+    before: async () => markTools(),
+    turns: [
+      { target: { kind: "app", app: "notes" }, text: "Save a note: Shopping list: milk, eggs, bread, coffee." },
+      { target: { kind: "app", app: "notes" }, text: "In the shopping note, change milk to oat milk." },
+    ],
+    check() {
+      const note = notes().find(t => /shopping/i.test(t));
+      const used = toolsSince().map(call => call.tool);
+      const problems = [
+        !note || !/oat milk, eggs, bread, coffee/i.test(note) && `note: ${JSON.stringify(note ?? null)}`,
+        !used.includes("notes_edit") && `no notes_edit: ${used.join(", ")}`,
+        used.includes("notes_replace") && "the note was retyped with notes_replace",
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
+  {
     name: "build-static",
     turns: [{ target: { kind: "app", app: "build" }, text: "Make the Build project a one-page site called Flip Lemonade, with a big button that counts how many times it was clicked." }],
     async check() {

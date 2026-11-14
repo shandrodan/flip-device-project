@@ -42,6 +42,13 @@ export function searchNotes(query: string): { note: Note; score: number }[] {
     .sort((a, b) => b.score - a.score);
 }
 
+/** Words to find in a Note: exactly as given, then ignoring case. Whole words only at word edges. */
+function wordPattern(find: string): { exact: RegExp; loose: RegExp } {
+  const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const source = `${/^[\p{L}\p{N}]/u.test(find) ? "(?<![\\p{L}\\p{N}])" : ""}${escaped}${/[\p{L}\p{N}]$/u.test(find) ? "(?![\\p{L}\\p{N}])" : ""}`;
+  return { exact: new RegExp(source, "gu"), loose: new RegExp(source, "giu") };
+}
+
 /** Today in the server's local time, YYYY-MM-DD. */
 const localDay = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 export const TODO_FILTERS = ["all", "open", "today", "overdue", "upcoming", "no-date", "done"] as const;
@@ -176,6 +183,43 @@ const BASE_TOOLS: ToolDef[] = [
         note.editedByUser = true;
         saveNow(); bus.changed();
         return { text: `Updated Note ${note.id}.` };
+      }
+      if (action === "notes.edit") {
+        // A small change inside a long Note, without retyping it (P1.12).
+        const note = state.notes.find(item => item.id === key);
+        if (!note) throw new Error(`No Note has ID ${key || "(none)"}. Find it with notes_search and use its ID.`);
+        const find = typeof input.find === "string" ? input.find : "";
+        const replacement = typeof input.replace === "string" ? input.replace : "";
+        if (!find.trim()) throw new Error("Give the exact words to change in find.");
+        const pattern = wordPattern(find);
+        let count = (note.text.match(pattern.exact) ?? []).length;
+        let used = pattern.exact;
+        if (!count) { used = pattern.loose; count = (note.text.match(used) ?? []).length; }
+        if (!count) throw new Error(`"${find}" is not in that Note. It says: "${note.text.slice(0, 300)}". Copy the words exactly into find.`);
+        const originalText = note.text;
+        await ctx.gate({ title: "Edit this Note?", body: `${find} → ${replacement || "(removed)"}` });
+        if (note.text !== originalText || !state.notes.includes(note)) throw new Error("The Note changed. Read it again before editing.");
+        note.text = note.text.replace(used, () => replacement).replace(/[ \t]{2,}/g, " ").trim();
+        note.editedByUser = true;
+        saveNow(); bus.changed();
+        return { text: `Changed ${plural(count, "place")} in Note ${note.id}. It now says: "${note.text.slice(0, 300)}"` };
+      }
+      if (action === "notes.merge") {
+        const ids = idsOf(input);
+        if (ids.length < 2) throw new Error("Give at least two Note IDs in ids, in the order to join them.");
+        const notes = ids.map(noteId => state.notes.find(note => note.id === noteId));
+        if (notes.some(note => !note)) throw new Error("A Note was not found. Find them with notes_search and use their IDs.");
+        const [first, ...rest] = notes as Note[];
+        // The joined Notes are deleted: ask, since that is hard to undo.
+        await ctx.gate({ askFirst: true, title: `Merge ${plural(notes.length, "Note")} into one?`, body: titles(notes as Note[]) });
+        if ((notes as Note[]).some(note => !state.notes.includes(note))) throw new Error("A Note changed. Read them again before merging.");
+        first.text = (notes as Note[]).map(note => note.text.trim()).filter(Boolean).join("\n\n");
+        first.editedByUser = true;
+        for (const note of rest) first.taskIds.push(...note.taskIds.filter(taskId => !first.taskIds.includes(taskId)));
+        const gone = new Set(rest.map(note => note.id));
+        state.notes = state.notes.filter(note => !gone.has(note.id));
+        saveNow(); bus.changed();
+        return { text: `Merged ${plural(notes.length, "Note")} into Note ${first.id}.` };
       }
       if (action === "todo.create") {
         // One To-Do from text, due and projectId, or several in items: one approval for the batch.
@@ -355,6 +399,10 @@ export const APP_MANIFEST: AppToolSpec[] = [
     props: { id: { type: "string", description: "Note ID from notes_read." }, text: { type: "string", description: "Text to add." } }, required: ["id", "text"] },
   { app: "notes", name: "notes_replace", action: "notes.replace", description: "Replace the whole text of one Note. Use it to rename or rewrite a Note.",
     props: { id: { type: "string", description: "Note ID from notes_read." }, text: { type: "string", description: "The Note's complete new text." } }, required: ["id", "text"] },
+  { app: "notes", name: "notes_edit", action: "notes.edit", description: "Change some words inside one Note without retyping it: every place find appears (whole words) becomes replace. To remove words, include a neighbouring word in both.",
+    props: { id: { type: "string", description: "Note ID from notes_search or notes_read." }, find: { type: "string", description: "The exact words in the Note now, e.g. milk." }, replace: { type: "string", description: "What they become, e.g. oat milk." } }, required: ["id", "find", "replace"] },
+  { app: "notes", name: "notes_merge", action: "notes.merge", description: "Join several Notes into one, in the order given: the first keeps the joined text, the others are removed. Asks the user first.",
+    props: { ids: IDS("Note") }, required: ["ids"] },
   { app: "notes", name: "notes_delete", action: "notes.delete", description: "Delete Notes. Always asks the user with a button press.",
     props: { ids: IDS("Note") }, required: ["ids"] },
   { app: "todo", name: "todo_read", description: "List To-Dos with ID, title, status, due date and project, plus the projects with their IDs. Narrow it with filter and projectId instead of reading everything.",
