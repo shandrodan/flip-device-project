@@ -35,6 +35,16 @@ export const config = {
   suggestModel: env("SUGGEST_MODEL", "claude-opus-5-5"),
   demoPlanner: env("DEMO_PLANNER") === "1",
 
+  // Task agent engine (ADR 0032). "opencode" runs the agent loop in OpenCode on this machine;
+  // "builtin" keeps the small loop in agents/runner.ts. Without OpenCode installed, builtin runs.
+  agentEngine: (env("AGENT_ENGINE", "opencode") === "builtin" ? "builtin" : "opencode") as "opencode" | "builtin",
+  /** "provider/model" for the engine, e.g. "openrouter/anthropic/claude-haiku-5.5". Default: the saved key's model. */
+  engineModel: env("ENGINE_MODEL").trim(),
+  /** Extra OpenCode config as JSON, merged in: other providers, local models, limits. */
+  engineConfig: env("ENGINE_CONFIG").trim(),
+  /** Most model steps in one turn of the engine. */
+  engineSteps: Number(env("ENGINE_STEPS", "40")) || 40,
+
   // Speech to text. Any OpenAI-compatible /audio/transcriptions endpoint works
   // (OpenAI, Groq, or a local faster-whisper / whisper.cpp server).
   sttUrl: env("STT_URL", "https://api.openai.com/v1/audio/transcriptions"),

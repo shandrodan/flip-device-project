@@ -92,6 +92,7 @@ async function main() {
     HOSTING: "self",
     DEVICE_ACCESS_TOKEN: "",
     DEMO_PLANNER: "1",
+    AGENT_ENGINE: "builtin",
     ANTHROPIC_API_KEY: process.env.E2E_CLAUDE ? process.env.ANTHROPIC_API_KEY ?? "" : "",
     OPENROUTER_API_KEY: "",
     STT_API_KEY: "",
@@ -586,6 +587,8 @@ async function modelFlow(here: string, pcEnv: Record<string, string>, serverEnv:
       DEMO_PLANNER: "0",
       ANTHROPIC_API_KEY: "local-test-key",
       ANTHROPIC_BASE_URL: `http://127.0.0.1:${address.port}`,
+      // The mock speaks the Messages API to the built-in loop. scripts/agent-e2e.ts tests the engine (ADR 0032).
+      AGENT_ENGINE: "builtin",
     });
     const url = `ws://127.0.0.1:${PORT}/ws`;
     let snapshot: Snapshot | undefined;

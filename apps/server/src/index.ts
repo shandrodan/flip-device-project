@@ -30,6 +30,7 @@ import { voiceStart, voiceChunk, voiceEnd, voiceCancel, voiceScripted, syncOffli
 import { handleSetup } from "./setup.js";
 import { acceptVoiceMessage } from "./agents/coordination.js";
 import { serveBuildPreview } from "./build-preview.js";
+import { engineEnabled, engineModel, handleEngineHttp, stopEngine, warmEngine } from "./agents/engine.js";
 
 const SERVER_ID = id("srv");
 if (config.deviceToken && !/^[A-Za-z0-9_-]{24,}$/.test(config.deviceToken))
@@ -432,6 +433,7 @@ machines.onOnline(name => {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://x");
+  if (await handleEngineHttp(req, res, url)) return;
   if (url.pathname === "/preview") {
     res.writeHead(308, { location: "/preview/" }).end();
   } else if (url.pathname.startsWith("/preview/")) {
@@ -490,4 +492,9 @@ server.listen(config.port, config.host, () => {
   console.log(`Setup page: ${lanUrl()}/setup`);
   console.log(`Agents: ${hasLlm() ? `${llmMode()} (${agentModel()})` : config.demoPlanner ? "demo planner" : "AI key required"} · Speech to text: ${sttMode()}`);
   console.log(`Machines: ${state.machines.map(m => `${m.name} (${m.url})`).join(", ") || "none"}\n`);
+  const engine = engineModel();
+  console.log(`Agent engine: ${engineEnabled() ? `OpenCode${engine ? ` (${engine.providerID}/${engine.modelID})` : ", waiting for a key"}` : "built-in loop"}`);
+  warmEngine();
 });
+for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { stopEngine(); saveNow(); process.exit(0); });
+process.once("exit", stopEngine);

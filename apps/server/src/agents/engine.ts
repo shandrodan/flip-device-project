@@ -1,0 +1,387 @@
+// Task agents on OpenCode (ADR 0032).
+// OpenCode runs the agent loop on the server machine: planning, retries, compaction, and one
+// session per agent and app, so an agent remembers what it did. The Flip tools stay here. The
+// plugin in `engine-plugin/flip.ts` forwards each tool call back with its OpenCode session ID,
+// and this file runs it with that Task's context, gate and approval press.
+import { spawn, type ChildProcess } from "node:child_process";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import type http from "node:http";
+import path from "node:path";
+import { config, SERVER_ROOT } from "../config.js";
+import { anthropicKey, openRouterKey } from "../llm.js";
+import { Cancelled } from "../approvals.js";
+import { MachineOffline } from "../machines.js";
+import { save, state } from "../store.js";
+import { TOOLS, ToolError, type Ctx, type ToolDef } from "./tools.js";
+
+export interface EngineModel { providerID: string; modelID: string }
+
+/** OpenCode's own tools act on the server machine, not the user's. Flip tools replace them. */
+const OPENCODE_TOOLS_OFF = ["bash", "read", "glob", "grep", "edit", "write", "task", "websearch", "skill", "apply_patch", "question"];
+
+const AGENT_PROMPT = [
+  "You are an agent behind Flip, a small voice-first desk device. The user speaks a request; you do the work with tools on their Device apps and their own machines. Act like an agent, not a chat.",
+  "",
+  "How you work:",
+  "- Keep going until the request is fully done. Do not stop after one step to ask whether to continue.",
+  "- When a request has more than two steps, first write a short plan with todowrite, then work through it and keep it updated.",
+  "- Read the current state before you change it. Use the IDs tools return. Never invent an ID.",
+  "- When a tool accepts several IDs, change many items in one call instead of one call per item.",
+  "- After changes, read again and check the result matches the request. Fix it if it does not.",
+  "- When a tool fails, read the error, change your approach and try again. Give up only after a real attempt, and say what is left.",
+  "- Some tools wait for the user's button press. That is normal. Never work around an approval.",
+  "- Ask a question only when a wrong guess would be costly. Otherwise make the reasonable choice and say what you chose.",
+  "- Your final reply is shown on a tiny screen. Keep it short and concrete: what changed, where.",
+].join("\n");
+
+export class EngineUnavailable extends Error {}
+
+/** Which model the engine runs. ENGINE_MODEL ("provider/model") wins, then the saved keys. */
+export function engineModel(): EngineModel | null {
+  if (config.engineModel) {
+    const slash = config.engineModel.indexOf("/");
+    if (slash > 0) return { providerID: config.engineModel.slice(0, slash), modelID: config.engineModel.slice(slash + 1) };
+  }
+  if (openRouterKey()) return { providerID: "openrouter", modelID: config.openRouterModel };
+  if (anthropicKey()) return { providerID: "anthropic", modelID: config.agentModel };
+  return null;
+}
+
+function binary() {
+  return path.join(SERVER_ROOT, "node_modules", ".bin", process.platform === "win32" ? "opencode.cmd" : "opencode");
+}
+
+/** The engine runs when it is chosen and installed. Otherwise Task agents use the built-in loop. */
+export function engineEnabled() {
+  return config.agentEngine === "opencode" && fs.existsSync(binary());
+}
+
+function merge(base: Record<string, any>, extra: Record<string, any>): Record<string, any> {
+  const out = { ...base };
+  for (const [key, value] of Object.entries(extra))
+    out[key] = value && typeof value === "object" && !Array.isArray(value) && out[key] && typeof out[key] === "object" ? merge(out[key], value) : value;
+  return out;
+}
+
+function engineConfig(model: EngineModel) {
+  const key = model.providerID === "openrouter" ? openRouterKey() : model.providerID === "anthropic" ? anthropicKey() : "";
+  const ref = `${model.providerID}/${model.modelID}`;
+  const base = {
+    $schema: "https://opencode.ai/config.json",
+    autoupdate: false,
+    share: "disabled",
+    model: ref,
+    small_model: ref,
+    // A model missing from OpenCode's catalog still runs: it is declared here.
+    provider: { [model.providerID]: { ...(key ? { options: { apiKey: key } } : {}), models: { [model.modelID]: { name: model.modelID } } } },
+    tools: Object.fromEntries(OPENCODE_TOOLS_OFF.map(name => [name, false])),
+    agent: {
+      flip: { mode: "primary", description: "Flip Task agent", prompt: AGENT_PROMPT, steps: config.engineSteps },
+    },
+  };
+  let extra: Record<string, any> = {};
+  if (config.engineConfig) {
+    try { extra = JSON.parse(config.engineConfig); } catch { console.warn("[engine] ENGINE_CONFIG is not valid JSON, ignored."); }
+  }
+  return merge(base, extra);
+}
+
+/* --------------------------------- Process -------------------------------- */
+
+export const engineToken = crypto.randomBytes(24).toString("hex");
+const DIR = path.join(config.dataDir, "engine");
+let proc: ChildProcess | null = null;
+let baseUrl: string | null = null;
+let runningKey = "";
+let starting: { key: string; promise: Promise<string> } | null = null;
+
+async function ensureEngine(model: EngineModel): Promise<string> {
+  const cfg = engineConfig(model);
+  const key = crypto.createHash("sha256").update(JSON.stringify(cfg)).digest("hex");
+  if (proc && baseUrl && runningKey === key) return baseUrl;
+  if (starting?.key === key) return starting.promise;
+  // A new key or model restarts the engine. Its sessions are on disk and carry on.
+  stopEngine();
+  const promise = boot(cfg).then(url => {
+    baseUrl = url;
+    runningKey = key;
+    return url;
+  }).finally(() => { if (starting?.promise === promise) starting = null; });
+  starting = { key, promise };
+  return promise;
+}
+
+function boot(cfg: Record<string, unknown>): Promise<string> {
+  fs.mkdirSync(path.join(DIR, ".opencode", "plugin"), { recursive: true });
+  fs.copyFileSync(path.join(SERVER_ROOT, "engine-plugin", "flip.ts"), path.join(DIR, ".opencode", "plugin", "flip.ts"));
+  const home = path.join(DIR, "home");
+  const child = spawn(binary(), ["serve", "--hostname", "127.0.0.1", "--port", "0"], {
+    cwd: DIR,
+    env: {
+      ...process.env,
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(cfg),
+      OPENCODE_DISABLE_AUTOUPDATE: "1",
+      FLIP_ENGINE_URL: `http://127.0.0.1:${config.port}`,
+      FLIP_ENGINE_TOKEN: engineToken,
+      // OpenCode keeps its config, sessions and caches here, apart from any OpenCode the user runs.
+      XDG_CONFIG_HOME: path.join(home, "config"),
+      XDG_DATA_HOME: path.join(home, "data"),
+      XDG_STATE_HOME: path.join(home, "state"),
+      XDG_CACHE_HOME: path.join(home, "cache"),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  proc = child;
+  return new Promise((resolve, reject) => {
+    let out = "";
+    const timer = setTimeout(() => { child.kill(); reject(new EngineUnavailable("OpenCode did not start in 90 seconds.")); }, 90_000);
+    const read = (chunk: Buffer) => {
+      out = (out + chunk.toString()).slice(-4000);
+      const match = out.match(/listening on (http:\/\/[^\s]+)/);
+      if (match) {
+        clearTimeout(timer);
+        console.log(`[engine] OpenCode on ${match[1]} (${String(cfg.model)})`);
+        resolve(match[1].replace(/\/$/, ""));
+      }
+      if (process.env.ENGINE_VERBOSE) process.stdout.write(`[opencode] ${chunk}`);
+    };
+    child.stdout!.on("data", read);
+    child.stderr!.on("data", read);
+    child.on("error", err => { clearTimeout(timer); reject(new EngineUnavailable(`OpenCode failed to start: ${err.message}`)); });
+    child.on("exit", code => {
+      clearTimeout(timer);
+      if (proc === child) { proc = null; baseUrl = null; runningKey = ""; }
+      reject(new EngineUnavailable(`OpenCode exited (${code}). ${out.slice(-400)}`));
+    });
+  });
+}
+
+export function stopEngine() {
+  if (proc) proc.kill();
+  proc = null;
+  baseUrl = null;
+  runningKey = "";
+}
+
+/** Start OpenCode at server start so the first request does not wait for it. */
+export function warmEngine() {
+  const model = engineModel();
+  if (!engineEnabled() || !model) return;
+  ensureEngine(model).catch(err => console.warn(`[engine] ${(err as Error).message} Task agents use the built-in loop.`));
+}
+
+async function api<T>(base: string, method: string, route: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${base}${route}`, {
+    method,
+    headers: body === undefined ? undefined : { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new EngineUnavailable(`OpenCode ${method} ${route} failed (HTTP ${response.status}): ${(await response.text()).slice(0, 300)}`);
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/* ------------------------------ Tool calls in ------------------------------ */
+
+interface Live {
+  ctx: Ctx;
+  allowed: Set<string>;
+  queue: Promise<unknown>;
+  /** Cancelled or MachineOffline from a tool: the Task ends with it. */
+  fatal: Error | null;
+  /** Failed calls by tool, input and error. Weaker models can repeat one failing call forever. */
+  failures: Map<string, number>;
+}
+
+/** A repeated failing call first gets a nudge, then ends the Task. */
+const NUDGE_AFTER = 3, STOP_AFTER = 6;
+type CallResult = { output: string } | { error: string };
+interface PendingCall { id: string; result: CallResult | null; promise: Promise<CallResult> }
+
+const live = new Map<string, Live>();
+const calls = new Map<string, PendingCall>();
+
+/** One tool call from OpenCode, run like the built-in loop runs it. Calls of one session run in order. */
+function runCall(sessionID: string, callID: string, name: string, args: unknown): Promise<CallResult> {
+  const session = live.get(sessionID);
+  if (!session) return Promise.resolve({ error: "No Flip Task is running in this session." });
+  const run = session.queue.then(async (): Promise<CallResult> => {
+    if (session.fatal) return { error: "The Task stopped." };
+    const { ctx } = session;
+    const def = TOOLS.find(tool => tool.name === name);
+    if (!def || !session.allowed.has(name)) return { error: `${name} is not available to ${ctx.agent.name}.` };
+    const input = (args && typeof args === "object" ? args : {}) as Record<string, any>;
+    const missing = def.required.filter(key => input[key] === undefined || input[key] === null || input[key] === "");
+    if (missing.length) return { error: `Missing ${missing.join(", ")}` };
+    try {
+      ctx.step(String(input.say || def.name));
+      const out = await def.run(ctx, input, callID);
+      return { output: out.text.slice(0, 15000) || "Done." };
+    } catch (err) {
+      if (err instanceof Cancelled || err instanceof MachineOffline) {
+        session.fatal = err;
+        return { error: "The Task stopped." };
+      }
+      const message = (err as Error).message || String(err);
+      const { say: _say, ...rest } = input;
+      const key = `${name}|${JSON.stringify(rest)}|${message}`;
+      const count = (session.failures.get(key) ?? 0) + 1;
+      session.failures.set(key, count);
+      if (count >= STOP_AFTER) {
+        session.fatal = new ToolError(`I kept getting the same error and stopped: ${message}`);
+        return { error: "The Task stopped after the same call failed again." };
+      }
+      if (count >= NUDGE_AFTER)
+        return { error: `${message}\nThis exact call has now failed ${count} times. Do not repeat it. Read the error, change the input, or use another approach.` };
+      return { error: message };
+    }
+  });
+  session.queue = run.catch(() => undefined);
+  return run;
+}
+
+function readBody(req: http.IncomingMessage): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk;
+      if (body.length > 2_000_000) { reject(new Error("Too large")); req.destroy(); }
+    });
+    req.on("end", () => { try { resolve(body ? JSON.parse(body) : {}); } catch (err) { reject(err); } });
+    req.on("error", reject);
+  });
+}
+
+async function answerCall(res: http.ServerResponse, call: PendingCall) {
+  const result = call.result ?? await Promise.race([call.promise, new Promise<null>(resolve => setTimeout(() => resolve(null), 20_000))]);
+  if (result) calls.delete(call.id);
+  res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(result ? { id: call.id, done: true, ...result } : { id: call.id, done: false }));
+}
+
+/** The plugin's routes: the tool manifest and tool calls. Local, with the engine token. */
+export async function handleEngineHttp(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
+  if (!url.pathname.startsWith("/engine/")) return false;
+  const remote = req.socket.remoteAddress ?? "";
+  const local = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+  const auth = Buffer.from(req.headers.authorization ?? "");
+  const expected = Buffer.from(`Bearer ${engineToken}`);
+  if (!local || auth.length !== expected.length || !crypto.timingSafeEqual(auth, expected)) {
+    res.writeHead(403).end();
+    return true;
+  }
+  if (req.method === "GET" && url.pathname === "/engine/tools") {
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(TOOLS.map(tool => ({
+      name: tool.name, description: tool.description, props: tool.props, required: tool.required,
+    }))));
+  } else if (req.method === "POST" && url.pathname === "/engine/call") {
+    const body = await readBody(req).catch(() => null);
+    if (!body || typeof body !== "object") {
+      res.writeHead(400).end();
+      return true;
+    }
+    const call: PendingCall = { id: crypto.randomUUID(), result: null, promise: null! };
+    call.promise = runCall(String(body.sessionID), String(body.callID ?? call.id), String(body.tool), body.args)
+      .then(result => (call.result = result));
+    calls.set(call.id, call);
+    await answerCall(res, call);
+  } else if (req.method === "GET" && url.pathname.startsWith("/engine/call/")) {
+    const call = calls.get(url.pathname.slice("/engine/call/".length));
+    if (!call) res.writeHead(404).end();
+    else await answerCall(res, call);
+  } else res.writeHead(404).end();
+  return true;
+}
+
+/* --------------------------------- Running -------------------------------- */
+
+interface EngineMessage {
+  info: { id: string; role: string; time: { created: number; completed?: number }; error?: { name: string; data?: { message?: string } }; finish?: string };
+  parts: { type: string; text?: string; synthetic?: boolean }[];
+}
+
+const busy = new Set<string>();
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+export interface EngineRun {
+  system: string;
+  tools: ToolDef[];
+  /** The first message. `withHistory` is true for a new session, which has no earlier turns. */
+  firstMessage(withHistory: boolean): string;
+  /** Results of Task agents this Task asked, once they all finished; null when there were none. */
+  childResults(): Promise<string | null>;
+  webAccess: boolean;
+}
+
+/** Run one Task on OpenCode. Throws EngineUnavailable when the engine cannot run it at all. */
+export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: EngineRun): Promise<string> {
+  const model = engineModel();
+  if (!model) throw new ToolError("Add an OpenRouter or Anthropic key in Settings to use Task agents.");
+  const base = await ensureEngine(model);
+
+  // One session per agent and app keeps the agent's memory. A busy session gets a sibling.
+  const key = `${ctx.agent.id}:${ctx.task.app ?? "-"}`;
+  const saved = state.engineSessions[key];
+  let sessionID = saved && !busy.has(saved) ? await api<{ id: string }>(base, "GET", `/session/${saved}`).then(s => s.id, () => null) : null;
+  const fresh = !sessionID;
+  if (!sessionID) {
+    sessionID = (await api<{ id: string }>(base, "POST", "/session", { title: `${ctx.agent.name}${ctx.task.app ? ` · ${ctx.task.app}` : ""}` })).id;
+    if (!saved || !busy.has(saved)) { state.engineSessions[key] = sessionID; save(); }
+  }
+
+  const allowed = new Set(run.tools.map(tool => tool.name));
+  const tools: Record<string, boolean> = Object.fromEntries(TOOLS.map(tool => [tool.name, allowed.has(tool.name)]));
+  tools.webfetch = run.webAccess;
+  tools.todowrite = true;
+  const session: Live = { ctx, allowed, queue: Promise.resolve(), fatal: null, failures: new Map() };
+  busy.add(sessionID);
+  live.set(sessionID, session);
+  try {
+    let text = run.firstMessage(fresh);
+    for (let round = 0; round < 6; round++) {
+      const answer = await prompt(base, sessionID, model, run.system, tools, text, ctl, session);
+      const results = await run.childResults();
+      if (results) {
+        text = `Your Task agents finished. Use these results in your answer:\n${results}`;
+        continue;
+      }
+      return answer;
+    }
+    throw new ToolError("Too many rounds with other Task agents. Check the Task steps for work already completed.");
+  } finally {
+    busy.delete(sessionID);
+    live.delete(sessionID);
+  }
+}
+
+async function prompt(base: string, sessionID: string, model: EngineModel, system: string, tools: Record<string, boolean>, text: string, ctl: { cancelled: boolean }, session: Live): Promise<string> {
+  const before = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`)).length;
+  await api(base, "POST", `/session/${sessionID}/prompt_async`, { agent: "flip", model, system, tools, parts: [{ type: "text", text }] });
+  const stop = async (err: Error) => {
+    await api(base, "POST", `/session/${sessionID}/abort`).catch(() => undefined);
+    throw err;
+  };
+  const started = Date.now();
+  for (;;) {
+    await sleep(400);
+    if (session.fatal) return stop(session.fatal);
+    if (ctl.cancelled) return stop(new Cancelled());
+    if (!proc) throw new ToolError("The agent engine stopped. Try again.");
+    const status = (await api<Record<string, { type: string }>>(base, "GET", "/session/status"))[sessionID];
+    if (status && status.type !== "idle") continue;
+    const messages = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`)).slice(before);
+    const last = [...messages].reverse().find(message => message.info.role === "assistant");
+    if (!last?.info.time.completed) {
+      if (Date.now() - started > 60_000 && !messages.some(message => message.info.role === "assistant"))
+        throw new ToolError("The agent engine did not answer.");
+      continue;
+    }
+    if (session.fatal) throw session.fatal;
+    if (last.info.error && last.info.error.name !== "MessageAbortedError")
+      throw new ToolError(`The model failed: ${last.info.error.data?.message ?? last.info.error.name}`.slice(0, 400));
+    const answer = last.parts.filter(part => part.type === "text" && !part.synthetic).map(part => part.text ?? "").join("").trim();
+    if (!answer) throw new ToolError("The model returned no final answer. Check the Task steps for work already completed.");
+    return answer;
+  }
+}
