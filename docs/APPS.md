@@ -33,7 +33,7 @@ On screen (ADR 0016): Notes' layout in blue. Today, Inbox, Scheduled (a board of
 
 ## Build (ADR 0021)
 
-- Talk, and an agent builds a web app on your own machine. The Device shows the live preview.
+- Talk, and an agent builds a web app on your own machine. The Device shows its static files through the server preview; a verified custom dev server can replace it for framework builds.
 - On screen: a black sidebar with the agent's bot and one line (what you said, the current step, or the result). The preview takes the rest, inside a caution-tape stroke that marches while the agent works.
 - No agent of its own: the main agent works here. Add a Task agent to Build (D on Home) and its bot takes the sidebar.
 - The project is `BUILD_DIR` on the PC agent's machine (default `~/Flip/build`). Running commands needs the PC agent's `--allow-shell`. Publishing always needs the push bar.
