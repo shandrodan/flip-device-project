@@ -103,7 +103,15 @@ export function nextBuildSample() {
   return BUILD_SAMPLES[i];
 }
 
+/** Lines waiting to be "spoken": the next mic holds play them, whatever the voice source. For studio scripts. */
+const queued: { text: string; clean: string }[] = [];
+export function queueLine(text: string, clean = "") {
+  queued.push({ text, clean });
+}
+
 export async function startCapture(source: VoiceSource, o: Opts): Promise<Capture> {
+  const line = queued.shift();
+  if (line) return startScript({ ...o, line, purpose: undefined });
   return source === "mic" ? startMic(o) : startScript(o);
 }
 

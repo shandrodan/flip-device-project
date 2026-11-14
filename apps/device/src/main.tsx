@@ -1,4 +1,5 @@
-import { StrictMode, useEffect, useState } from "react";
+import "./sim/boot"; // first: studio mode takes over the timers before anything keeps one
+import { lazy, StrictMode, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { installInputs } from "./input/controls";
@@ -39,8 +40,14 @@ function DockPage() {
   </div>;
 }
 
+// Studio mode (/?studio=1) loads on its own, with Three.js: the twin as a film set.
+const Studio = lazy(() => import("./sim/StudioPage"));
+
 const path = location.pathname;
-const kiosk = new URLSearchParams(location.search).has("kiosk");
+const query = new URLSearchParams(location.search);
+const kiosk = query.has("kiosk");
+// No StrictMode in the studio: its double effects would build the 3D scene twice.
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>{path.startsWith("/dock") ? <DockPage /> : kiosk ? <Kiosk /> : <Simulator />}</StrictMode>,
+  query.has("studio") ? <Suspense fallback={null}><Studio /></Suspense>
+    : <StrictMode>{path.startsWith("/dock") ? <DockPage /> : kiosk ? <Kiosk /> : <Simulator />}</StrictMode>,
 );

@@ -146,6 +146,11 @@ export function useActiveHints(): Hints & { urgent?: Set<keyof Hints>; cued?: Se
   return Object.assign(out, { urgent, cued });
 }
 
+/** What each control does right now (the studio reads this outside React). */
+export function activeHints(): Hints {
+  return collect().out;
+}
+
 function collect() {
   // Hints merge downwards: a screen's hints sit on top of the global ones (mic, wheel, back).
   const out: Hints = {};
