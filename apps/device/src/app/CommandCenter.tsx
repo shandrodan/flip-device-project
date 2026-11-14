@@ -127,7 +127,7 @@ export function CommandCenter({ open, onClose }: { open: boolean; onClose: () =>
     a: zone === "list" ? (notes[n]?.agent ? "Open" : "") : s[front.k] ? "Turn off" : "Turn on",
     wheel: "Spin",
     dpad: zone === "list" ? "Choose" : "Spin",
-    b: "", d: "", push: "",
+    b: "", d: "", push: "", cue: ["wheel"],
   }, open, LAYER.sheet);
 
   const warn = front.k === "ts" && (!s.ts || !s.wifi);

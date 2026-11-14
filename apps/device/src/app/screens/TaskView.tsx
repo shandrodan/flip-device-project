@@ -36,6 +36,7 @@ export function TaskView({ id }: { id: string }) {
     d: s === "todo" ? "Hand to agent" : s === "paused" || s === "failed" ? "Other agent" : undefined,
     c: t.agentId && ["queued", "running", "waiting", "held", "paused", "awaiting-approval", "failed"].includes(s!) ? "Stop, keep as todo" : undefined,
     push: s === "todo" ? "Done" : undefined,
+    cue: ["push"],
     wheel: t.steps.length > 6 ? "Scroll" : undefined,
   } : null);
 

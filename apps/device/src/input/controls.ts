@@ -27,12 +27,26 @@ export interface Hints {
   d?: string;
   push?: string;
   mic?: string;
+  /** The in-app wheel. */
   wheel?: string;
+  /** The system wheel. */
+  sys?: string;
   dpad?: string;
 }
 
+/** Controls next to the screen: prompted with a glow on the screen edge they sit behind (EdgeCues). */
+export const EDGE_KEYS = ["push", "wheel", "sys", "mic"] as const;
+export type EdgeKey = typeof EDGE_KEYS[number];
+/** What a screen passes to useControls. `cue` lists the controls beside the screen that are
+ *  clearly the next thing to do here, so they glow on the screen edge. Approvals and talk glow
+ *  whatever they list. Once the user has used a glowing control for a prompt, that prompt
+ *  stops glowing for the session: they know where the control is now. */
+export type HintSpec = Hints & { cue?: EdgeKey[] };
+/** Controls on the tray, far below the screen: prompted in the hint bar. */
+export const TRAY_KEYS = ["a", "b", "c", "d", "dpad"] as const;
+
 type Handler = (e: ControlEvent) => boolean | void;
-interface Entry { id: number; layer: number; handler: { current: Handler }; hints: { current: Hints | null }; }
+interface Entry { id: number; layer: number; handler: { current: Handler }; hints: { current: HintSpec | null }; }
 
 /** Who gets a control first: higher layers win, then the most recently mounted. */
 export const LAYER = { global: 0, screen: 1, sheet: 2, approval: 3, talk: 4 } as const;
@@ -43,6 +57,10 @@ const stack: Entry[] = [];
 let hintVersion = 0;
 const hintSubs = new Set<() => void>();
 const pressSubs = new Set<(e: ControlEvent) => void>();
+
+/** Prompts the user has already answered with the control: "push:Start", "mic:Hold to dictate". */
+const learned = new Set<string>();
+const EDGE_OF: Partial<Record<Control, EdgeKey>> = { pushBar: "push", appWheel: "wheel", appWheelPress: "wheel", systemWheel: "sys", mic: "mic" };
 
 function bumpHints() {
   hintVersion++;
@@ -73,6 +91,11 @@ function click(strong: boolean) {
 /* ------------------------------ Dispatch ------------------------------ */
 export function emit(e: ControlEvent) {
   for (const s of pressSubs) s(e);
+  const k = EDGE_OF[e.c];
+  if (k && e.phase !== "up") {
+    const now = collect();
+    if (now.cued.has(k) && !now.urgent.has(k)) { learned.add(`${k}:${now.out[k]}`); bumpHints(); }
+  }
   if (e.c === "pushBar") click(true);
   else if (e.phase !== "up") click(false);
   for (const entry of ordered()) {
@@ -90,10 +113,10 @@ export function onPress(fn: (e: ControlEvent) => void) {
  * Register a control handler (topmost mounted wins). Return true when handled.
  * `hints` tell the hint bar what A/B/C/D and the push bar do right now (device-controls.md).
  */
-export function useControls(handler: Handler, hints: Hints | null = null, active = true, layer: number = LAYER.screen) {
+export function useControls(handler: Handler, hints: HintSpec | null = null, active = true, layer: number = LAYER.screen) {
   const h = useRef(handler);
   h.current = handler;
-  const hr = useRef<Hints | null>(hints);
+  const hr = useRef<HintSpec | null>(hints);
   const key = JSON.stringify(hints);
   useEffect(() => {
     hr.current = hints;
@@ -112,25 +135,54 @@ export function useControls(handler: Handler, hints: Hints | null = null, active
   }, [active]);
 }
 
-export function useActiveHints(): Hints {
+/** The hints in force right now. `cued`: edge controls that should glow (EdgeCues).
+ *  `urgent`: hints from an approval or talk layer, which breathe and keep their label. */
+export function useActiveHints(): Hints & { urgent?: Set<keyof Hints>; cued?: Set<keyof Hints> } {
   useSyncExternalStore(
     fn => { hintSubs.add(fn); return () => hintSubs.delete(fn); },
     () => hintVersion,
   );
-  return activeHints();
+  const { out, urgent, cued } = collect();
+  return Object.assign(out, { urgent, cued });
 }
 
-/** What each control does right now. Hints merge downwards: a screen's hints sit on top of the global ones (mic, wheel, back). */
+/** What each control does right now (the studio reads this outside React). */
 export function activeHints(): Hints {
+  return collect().out;
+}
+
+function collect() {
+  // Hints merge downwards: a screen's hints sit on top of the global ones (mic, wheel, back).
   const out: Hints = {};
+  const urgent = new Set<keyof Hints>(), cued = new Set<keyof Hints>();
   for (const e of ordered()) {
     const h = e.hints.current;
     if (!h) continue;
-    for (const k of Object.keys(h) as (keyof Hints)[]) if (!(k in out)) out[k] = h[k];
+    for (const k of Object.keys(h) as (keyof Hints)[]) if (k !== ("cue" as string) && !(k in out)) {
+      out[k] = h[k];
+      if (e.layer >= LAYER.approval) urgent.add(k);
+      if (e.layer >= LAYER.approval || (h.cue?.includes(k as EdgeKey) && !learned.has(`${k}:${h[k]}`))) cued.add(k);
+    }
     if (e.layer >= LAYER.approval) break; // approvals and talk own the whole bar
   }
   for (const k of Object.keys(out) as (keyof Hints)[]) if (!out[k]) delete out[k];
-  return out;
+  return { out, urgent, cued };
+}
+
+/* ------------------------------ Tray ------------------------------ */
+// The Device is a slider. Slid closed, the screen covers the tray's D-pad and A–D buttons; the
+// push bar and in-app wheel sit on the top edge either way, the system wheel on the left edge
+// (upper third closed, lower third open). Real firmware would read this from a hall sensor.
+let trayOpen = true;
+const traySubs = new Set<() => void>();
+export function setTrayOpen(open: boolean) {
+  if (open === trayOpen) return;
+  trayOpen = open;
+  for (const s of traySubs) s();
+  bumpHints();
+}
+export function useTrayOpen() {
+  return useSyncExternalStore(fn => { traySubs.add(fn); return () => traySubs.delete(fn); }, () => trayOpen);
 }
 
 /* ------------------------------ Mouse wheel ------------------------------ */

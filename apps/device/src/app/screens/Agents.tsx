@@ -258,7 +258,7 @@ export function Create({ app }: { app?: AppId }) {
     return false;
   }, stage === 0 ? { wheel: "Choose", a: "Next", b: "Cancel" }
     : stage === 1 ? { dpad: "Body", wheel: "Colour", a: "Next", b: "Back" }
-    : stage === 2 ? { mic: "Say a name", wheel: "Pick a name", a: "Make it", b: "Back", c: "Keyboard" } : {}, !typing);
+    : stage === 2 ? { mic: "Say a name", wheel: "Pick a name", cue: ["mic"], a: "Make it", b: "Back", c: "Keyboard" } : {}, !typing);
 
   if (stage === 3) return <div className="fill">
     <BudScene color={color} onDone={made} />

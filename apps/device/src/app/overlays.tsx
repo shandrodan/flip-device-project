@@ -214,9 +214,8 @@ export function FireOverlay({ req, onWant }: { req: ApprovalRequest | null; onWa
           {shown.preview.attach && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontWeight: 600 }}>{Ico.clip} {shown.preview.attach}</div>}
         </div> : <p className="mute" style={{ margin: "12px 0 6px", fontSize: 16, lineHeight: 1.45 }}>{shown.body}</p>}
         {shown.preview?.files && !shown.preview.subject && <div style={{ fontSize: 13, opacity: 0.7, lineHeight: 1.5 }}>{shown.preview.files.slice(0, 3).map(f => <div key={f} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f}</div>)}</div>}
-        <b style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16 }}>Press the push bar {Ico.arrow}</b>
+        <b style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16 }}>Press the push bar on top {<span style={{ display: "inline-flex", transform: "rotate(-90deg)" }}>{Ico.arrow}</span>}</b>
       </div>
-      <div className="press-bar" />
     </>}
   </div>;
 }

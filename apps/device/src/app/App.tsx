@@ -7,7 +7,7 @@ import { useNet, net } from "../net/client";
 import { defaultSource, nextSample, type VoiceSource } from "../voice/capture";
 import { Ctx, DOCK_FNS, FN_LABEL, HANDHELD_FNS, type AppCtx, type Fn, type Route, type TalkTarget } from "./context";
 import { FireOverlay, SoftApproval, TalkOverlay } from "./overlays";
-import { AgentBot, HintBar, Ico, useTick } from "./ui";
+import { AgentBot, EdgeCues, HintBar, Ico, useTick } from "./ui";
 import { AppWheel, type WheelItem } from "./AppWheel";
 import { Home, combUnits } from "./screens/Home";
 import { Suggest } from "./screens/Suggest";
@@ -177,8 +177,10 @@ export function DeviceApp({ voice = defaultSource(), onWantPush, debug = null, o
         </span>
       </div>}
       <div className={"main" + (fullBleed ? " full" : "")} data-fn={fn} data-route={route?.name ?? ""}>{screen}</div>
-      {/* Docked, StandBy is the whole screen (ADR 0020): no status or hint bar. */}
+      {/* Docked, StandBy is the whole screen (ADR 0020): no status or hint bar, only edge cues. */}
       {(!fullBleed || !!fire) && <HintBar ink={!!fire || light} />}
+      {/* The push bar, wheels and mic sit right beside the screen: they glow on its edge. */}
+      <EdgeCues ink={!!fire} />
       {wheel && wheelItems.length > 0 && <AppWheel items={wheelItems} start={wheelStart} dir={wheel.dir} onClose={() => setWheel(null)} />}
       {soft && !fire && <SoftApproval req={soft} />}
       <FireOverlay req={fire} onWant={() => {}} />

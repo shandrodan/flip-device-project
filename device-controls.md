@@ -21,6 +21,13 @@ The device has five physical controls:
 
 The behavior of each control depends on the currently selected mode. Locations are described from the user's perspective while facing the screen.
 
+**On-screen prompts:** The screen shows what each control does right now, where the control is.
+- **When they glow:** only when the control is clearly the next thing to do, never all the time. The push bar glows to start a focus session (not while one runs) and to finish a plain todo. The Microphone glows while a text field waits for dictation, or after a dump when you can talk again. The In-App Wheel glows where turning it is the point: Focus length, the command center, editing the Dock split screen. Plain browsing (Home, To-Do, Notes, the app flywheel) shows no glow.
+- **Once used, it stops:** after you answer a glowing prompt with its control, that prompt does not glow again: you know where the control is now. Approvals and recording are the exception: they always glow and breathe.
+- **Push Bar, In-App Wheel, System Wheel, Microphone:** they sit right beside the screen, so a prompt glows on the screen edge next to the control. The push bar is the top edge, the In-App Wheel the top-right corner, the Microphone the lower left edge. The System Wheel rides on the tray, so its glow sits in the upper third of the left edge when the Device is slid closed and moves to the lower third when it is slid open. A short label slides out with an arrow pointing at the control, then tucks away; the glow stays. When something waits on the control (an approval, a recording), the glow breathes and the label stays. Pressing the control flashes its glow.
+- **D-Pad and A–D:** they sit on the tray, far below the screen, so they keep the plain hint bar along the bottom.
+- **Slid closed or docked:** the D-Pad and A–D are covered, so they are not prompted at all.
+
 **Future Expansion:** The In-App Wheel's press functionality is reserved for future features. Developers can assign actions to it when adding new functions to the device.
 
 

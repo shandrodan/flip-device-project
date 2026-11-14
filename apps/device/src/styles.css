@@ -168,7 +168,6 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 .toast { position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 40; background: #2c2c2e; color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; white-space: nowrap; animation: toastIn 420ms var(--ease) both; max-width: 680px; overflow: hidden; text-overflow: ellipsis; }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } }
 .soft { position: absolute; left: 20px; right: 20px; bottom: 40px; z-index: 22; display: flex; align-items: center; gap: 14px; background: #1c1c1e; border-radius: 22px; padding: 12px 16px; animation: materialize 420ms var(--ease) both; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.8); }
-.press-bar { position: absolute; right: 0; top: 400px; height: 104px; width: 5px; border-radius: 4px 0 0 4px; background: #000; animation: breathe 1.4s ease-in-out infinite; z-index: 3; }
 .sheet { position: absolute; inset: 0; z-index: 21; background: rgba(0,0,0,0.6); animation: fadeIn 200ms ease both; }
 .sheet-in { position: absolute; left: 30px; right: 30px; bottom: 40px; border-radius: 24px; background: #1c1c1e; padding: 16px; animation: materialize 380ms var(--ease) both; }
 @keyframes fadeIn { from { opacity: 0; } }
@@ -186,6 +185,39 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 .g.g-mic { background: #ff453a; color: #fff; } .g.g-wheel { background: rgba(255,255,255,0.18); color: #fff; font-size: 11px; } .g.g-dpad { background: rgba(255,255,255,0.18); color: #fff; border-radius: 4px; font-size: 11px; }
 .hints.ink .g.g-wheel, .hints.ink .g.g-dpad { background: rgba(0,0,0,0.2); color: #000; }
 .hints .grow { flex: 1; }
+
+/* Edge cues: a control next to the screen is prompted by a glow on the edge it sits behind
+   (EdgeCues in ui.tsx). The label slides out from the edge, then tucks away; the glow stays. */
+.cues { position: absolute; inset: 0; pointer-events: none; z-index: 34; }
+.cue { position: absolute; --c: #5ac8fa; }
+.cue-push { --c: var(--push); } .cue-mic { --c: #ff453a; }
+.cues.ink .cue-push { --c: #fff; }
+.cue-top { top: 0; height: 0; }
+.cue-left { left: 0; top: 0; width: 0; transition: transform 560ms var(--ease), height 560ms var(--ease); }
+.cue-glow { position: absolute; border-radius: 999px; background: var(--c); opacity: 0.9;
+  box-shadow: 0 0 8px 1px var(--c), 0 0 26px 4px color-mix(in srgb, var(--c) 45%, transparent);
+  animation: cueIn 460ms var(--ease) both; transition: filter 120ms ease-out, opacity 120ms ease-out; }
+.cue-top .cue-glow { left: 0; right: 0; top: -3px; height: 6px; transform-origin: 50% 0; }
+.cue-left .cue-glow { top: 0; bottom: 0; left: -3px; width: 6px; transform-origin: 0 50%; }
+.cue-left .cue-glow { animation-name: cueInX; }
+@keyframes cueIn { from { opacity: 0; transform: scaleX(0.4); } }
+@keyframes cueInX { from { opacity: 0; transform: scaleY(0.4); } }
+/* Waiting on this control: it breathes, brighter and wider. */
+.cue.urgent .cue-glow { box-shadow: 0 0 12px 3px var(--c), 0 0 44px 12px color-mix(in srgb, var(--c) 55%, transparent);
+  animation: cueIn 460ms var(--ease) both, cueBreathe 1.2s ease-in-out 460ms infinite alternate; }
+@keyframes cueBreathe { to { opacity: 0.45; } }
+.cue.hit .cue-glow { filter: brightness(1.7); opacity: 1; }
+.cue-label { position: absolute; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 5px 10px 5px 8px; border-radius: 999px;
+  background: rgba(28,28,30,0.9); color: #fff; font: 600 12.5px/1 var(--sys); box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent), 0 6px 16px -6px rgba(0,0,0,0.6);
+  opacity: 0; transition: opacity 220ms ease-out, transform 420ms var(--ease); }
+.cue-label svg { color: var(--c); flex: none; }
+.cue-top .cue-label { top: 9px; left: 50%; transform: translate(-50%, -12px); }
+.cue-top .cue-label.on { opacity: 1; transform: translate(-50%, 0); }
+.cue-top.end .cue-label { left: auto; right: 0; transform: translateY(-12px); }
+.cue-top.end .cue-label.on { transform: none; }
+.cue-left .cue-label { left: 10px; top: 50%; transform: translate(-12px, -50%); }
+.cue-left .cue-label.on { opacity: 1; transform: translate(0, -50%); }
+@media (prefers-reduced-motion: reduce) { .cue-glow, .cue.urgent .cue-glow { animation: none; } .cue-left { transition: none; } }
 
 /* First-run guide: the same black screen, Bot, control colours and hint bar as the Device. */
 .onboarding { display: flex; align-items: center; background: #000; }
@@ -210,7 +242,6 @@ kbd { font: 600 11.5px var(--sys); padding: 1px 6px; border-radius: 5px; border:
 .onboarding-task { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 11px; width: 90px; height: 112px; border-radius: 18px; background: #2c2c2e; color: #fff; transform: rotate(7deg); }
 .onboarding-task span { font-size: 11px; font-weight: 800; letter-spacing: 0.09em; }
 .onboarding-approval-ring { display: grid; place-items: center; width: 175px; height: 175px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--push), 0 0 42px rgba(255,106,0,0.24); }
-.onboarding-push-mark { position: absolute; right: -3px; top: 110px; width: 10px; height: 95px; border-radius: 6px 0 0 6px; background: var(--push); }
 .onboarding-footer { position: absolute; left: 28px; bottom: 49px; display: flex; align-items: center; gap: 12px; font-size: 12px; }
 .onboarding-progress { display: flex; gap: 5px; }
 .onboarding-progress i { display: block; width: 19px; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.2); }

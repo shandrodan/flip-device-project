@@ -3,9 +3,9 @@ import { useApp } from "./context";
 import { AppGlyph, appOfBot, botColor, type Tone } from "./tone";
 import type { Agent, Snapshot, Task } from "@app/protocol";
 import { Bot, type BotState } from "../bot/Bot";
-import { useActiveHints, type Hints } from "../input/controls";
+import { EDGE_KEYS, TRAY_KEYS, onPress, useActiveHints, useTrayOpen, type EdgeKey, type Hints } from "../input/controls";
 import {
-  ArrowPathIcon, ArrowRightIcon, ComputerDesktopIcon,
+  ArrowLeftIcon, ArrowPathIcon, ArrowRightIcon, ArrowUpIcon, ComputerDesktopIcon,
   CheckIcon, DocumentIcon, DocumentTextIcon, MicrophoneIcon, PaperClipIcon, PlusIcon,
 } from "@heroicons/react/20/solid";
 
@@ -74,20 +74,77 @@ export function statusChip(t: Task, snap: Snapshot) {
 export const Glyph = ({ k }: { k: keyof Hints }) =>
   k === "push" ? <i className="g g-push" /> :
   k === "mic" ? <i className="g g-mic">{Ico.mic(10)}</i> :
-  k === "wheel" ? <i className="g g-wheel"><ArrowPathIcon width={11} height={11} aria-hidden="true" /></i> :
+  k === "wheel" || k === "sys" ? <i className="g g-wheel"><ArrowPathIcon width={11} height={11} aria-hidden="true" /></i> :
   k === "dpad" ? <i className="g g-dpad"><PlusIcon width={12} height={12} aria-hidden="true" /></i> :
   <i className={`g ${k}`}>{k.toUpperCase()}</i>;
 
+/** The D-pad and A–D sit on the tray, far below the screen: they keep a plain bar along the
+ *  bottom. Slid closed or docked they are out of reach, so they are not offered at all.
+ *  The controls next to the screen are shown by EdgeCues instead. */
 export function HintBar({ ink }: { ink?: boolean }) {
   const h = useActiveHints();
-  const right: (keyof Hints)[] = ["push", "c", "d", "b", "a"];
+  const reach = useTrayOpen() && !useApp()?.docked;
+  if (!reach) return null;
+  const right: (keyof Hints)[] = ["c", "d", "b", "a"];
   const item = (k: keyof Hints) => h[k] ? <span className="hint" key={k}><Glyph k={k} />{h[k]}</span> : null;
-  // Wheel and D-pad often do the same thing: one label, two glyphs.
-  const same = h.wheel && h.dpad && h.wheel === h.dpad;
+  if (!TRAY_KEYS.some(k => h[k])) return null;
   return <div className={"hints" + (ink ? " ink" : "")}>
-    {item("mic")}
-    {same ? <span className="hint"><Glyph k="wheel" /><Glyph k="dpad" />{h.wheel}</span> : <>{item("wheel")}{item("dpad")}</>}
+    {item("dpad")}
     <span className="grow" />{right.map(item)}
+  </div>;
+}
+
+/* ------------------------------ Edge cues ------------------------------ */
+// Where each control sits around the 784 × 504 screen, seen from the front. Measured on the
+// Blender model (web-render/device-handoff): the screen is 121.8 × 78 mm, centred on the housing.
+type Edge = { side: "top" | "left"; from: number; to: number };
+const SPOT = {
+  push: () => ({ side: "top", from: 14, to: 696 }), // the long bar, top edge, left of the wheel
+  wheel: () => ({ side: "top", from: 712, to: 768 }), // top edge, near the top-right corner
+  sys: (open: boolean) => open ? { side: "left", from: 313, to: 380 } : { side: "left", from: 106, to: 174 }, // rides on the tray
+  mic: () => ({ side: "left", from: 299, to: 492 }), // the red bar, lower left edge
+} satisfies Record<EdgeKey, (open: boolean) => Edge>;
+/** How long a new prompt keeps its label out before only the glow stays. Urgent ones keep it. */
+const LABEL_MS = 2600;
+
+/** One glow on the screen edge, at the control it prompts. Screens can also place one
+ *  themselves to point at a control, as the first-run guide does. */
+export function EdgeCue({ k, label, urgent }: { k: EdgeKey; label?: string; urgent?: boolean }) {
+  const open = useTrayOpen();
+  const spot = SPOT[k](open);
+  const [shown, setShown] = useState(true);
+  const [hit, setHit] = useState(0);
+  useEffect(() => {
+    setShown(true);
+    if (urgent) return;
+    const t = setTimeout(() => setShown(false), LABEL_MS);
+    return () => clearTimeout(t);
+  }, [label, urgent, open]);
+  // Pressing the control flashes its glow, so the link between the two is felt.
+  useEffect(() => onPress(e => {
+    const c = e.c === "pushBar" ? "push" : e.c === "appWheel" || e.c === "appWheelPress" ? "wheel" : e.c === "systemWheel" ? "sys" : e.c;
+    if (c === k && e.phase !== "up") setHit(Date.now());
+  }), [k]);
+  useEffect(() => {
+    if (!hit) return;
+    const t = setTimeout(() => setHit(0), 180);
+    return () => clearTimeout(t);
+  }, [hit]);
+  const top = spot.side === "top";
+  const style = top ? { left: spot.from, width: spot.to - spot.from } : { transform: `translateY(${spot.from}px)`, height: spot.to - spot.from };
+  const Arrow = top ? ArrowUpIcon : ArrowLeftIcon;
+  return <div className={`cue cue-${spot.side} cue-${k}` + (urgent ? " urgent" : "") + (hit ? " hit" : "") + (k === "wheel" ? " end" : "")} style={style} aria-hidden={!label}>
+    <i className="cue-glow" />
+    {label && <span className={"cue-label" + (shown ? " on" : "")} role="status"><Arrow width={12} height={12} aria-hidden="true" />{label}</span>}
+  </div>;
+}
+
+/** The prompts for the controls next to the screen: a glow on the edge each one sits behind,
+ *  only while that control is clearly the thing to use (see HintSpec.cue). */
+export function EdgeCues({ ink }: { ink?: boolean }) {
+  const h = useActiveHints();
+  return <div className={"cues" + (ink ? " ink" : "")}>
+    {EDGE_KEYS.map(k => h[k] && h.cued?.has(k) ? <EdgeCue key={k} k={k} label={h[k]} urgent={h.urgent?.has(k)} /> : null)}
   </div>;
 }
 

@@ -255,7 +255,7 @@ export function Notes() {
     if (e.c === "a" && cur) { setOpen(true); return true; }
     return false;
   }, dict
-    ? { mic: dict.phase === "listen" ? "Release to save" : dict.phase === "done" ? "Hold to talk again" : undefined, b: busy ? undefined : "Close" }
+    ? { mic: dict.phase === "listen" ? "Release to save" : dict.phase === "done" ? "Hold to talk again" : undefined, b: busy ? undefined : "Close", cue: ["mic"] }
     : open
       ? { wheel: "Scroll", mic: "Hold to talk", b: "Back to list", a: cur?.taskIds.length ? "Its tasks" : undefined, ...noteKeys }
       : { wheel: notes.length ? "Browse" : undefined, a: cur ? "Read full width" : undefined, mic: "Hold to talk", ...noteKeys });
