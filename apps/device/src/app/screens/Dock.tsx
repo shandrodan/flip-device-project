@@ -109,6 +109,7 @@ export function StandBy({ snap, online = true, toast }: { snap: Snapshot; online
     return false;
   }, {
     wheel: editing ? "Change" : "Screens",
+    cue: editing ? ["wheel"] : canFocus && !snap.focus.running ? ["push"] : [],
     push: editing ? "Other side" : canFocus ? (snap.focus.running ? "End focus" : "Start focus") : undefined,
   });
 
@@ -164,7 +165,7 @@ function FocusBody({ snap, visible, radius }: { snap: Snapshot; visible: boolean
     <FocusGlow snap={snap} visible={visible} radius={radius} />
     <span className="f-big tnum">{mmss(focusLeft(snap))}</span>
     <span className="f-tag">{on ? (brk ? "Break" : `Focus · round ${f.round}`) : `Ready · ${Math.round(f.lengthMs / 60000)} min`}</span>
-    <span className="f-hint">{on ? "Push bar to end" : "Push bar to start"}</span>
+    {!on && <span className="f-hint">Push bar to start</span>}
   </>;
 }
 

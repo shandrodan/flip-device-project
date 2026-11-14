@@ -89,7 +89,7 @@ export function TextEntry({ title, initial = "", max, purpose, placeholder, keyb
     return true;
   }, kb
     ? { mic: "Hold to dictate", wheel: "Keys", dpad: "Keys", a: "Type", b: text ? "Delete" : "Dictate", c: "Dictate", d: "Save", push: "" }
-    : { mic: "Hold to dictate", wheel: "", dpad: "", a: required && !text.trim() ? "" : "Save", b: "Cancel", c: "Keyboard", d: "", push: "" },
+    : { mic: "Hold to dictate", wheel: "", dpad: "", a: required && !text.trim() ? "" : "Save", b: "Cancel", c: "Keyboard", d: "", push: "", cue: ["mic"] },
     true, LAYER.sheet);
 
   return <div className={"te" + (kb ? " kb" : "")}>

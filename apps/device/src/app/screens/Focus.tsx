@@ -34,7 +34,7 @@ export function Focus() {
     }
     if (e.c === "c" && !f.running) { net.send({ type: "focus.start", minutes: 5, kind: "break" }); return true; }
     return false;
-  }, { push: f.running ? "End session" : "Start", wheel: f.running ? undefined : "Length", c: f.running ? undefined : "Break 5" });
+  }, { push: f.running ? "End session" : "Start", wheel: f.running ? undefined : "Length", cue: f.running ? [] : ["push", "wheel"], c: f.running ? undefined : "Break 5" });
 
   return <div className="scr">
     <svg width="290" height="290" style={{ position: "absolute", left: "50%", top: 40, marginLeft: -145, transform: "rotate(-90deg)" }}>
