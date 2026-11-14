@@ -26,7 +26,9 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /* ------------------------------ Scripted model ----------------------------- */
 
-type Step = { tool: string; args: Record<string, unknown> } | { text: string };
+type Move = { tool: string; args: Record<string, unknown> } | { text: string };
+/** A move, or a function of the last tool result (to use IDs a tool returned). */
+type Step = Move | ((last: string) => Move);
 /** What the model will do next, in order. A scenario fills it before it speaks. */
 let script: Step[] = [];
 /** What came back to the model: the content of each tool result, and whether it carried an image. */
@@ -34,7 +36,8 @@ const results: { tool: string; text: string; image: boolean }[] = [];
 const requests: any[] = [];
 let callCount = 0;
 
-function sse(res: http.ServerResponse, step: Step) {
+let lastResult = "";
+function sse(res: http.ServerResponse, step: Move) {
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
   const base = { id: `mock-${callCount}`, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: "mock" };
   const send = (choice: Record<string, unknown>, extra: Record<string, unknown> = {}) => res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, ...choice }], ...extra })}\n\n`);
@@ -67,8 +70,11 @@ const model = http.createServer((req, res) => {
       const content = Array.isArray(last.content) ? last.content.map((part: any) => part.text ?? "").join("") : String(last.content ?? "");
       const image = JSON.stringify(messages.slice(at)).includes("data:image/png;base64");
       results.push({ tool: last.name ?? "?", text: content, image });
+      lastResult = content;
     }
-    const next = script.shift() ?? { text: "Done." };
+    const step = script.shift() ?? { text: "Done." };
+    let next: Move;
+    try { next = typeof step === "function" ? step(lastResult) : step; } catch (err) { next = { text: `Script error: ${(err as Error).message}` }; }
     if ("tool" in next && !request.tools.some((t: any) => t.function?.name === next.tool)) {
       sse(res, { text: `Script error: the engine did not offer ${next.tool}.` });
       return;
@@ -246,6 +252,78 @@ const scenarios: Scenario[] = [
       ].filter(Boolean);
       console.log(`    request to rendered React: ${seconds.toFixed(1)} s · ${result(r, "build_new").split("\n").pop()}`);
       return problems.length ? `${problems.join("; ")}\n${result(r, "build_new").slice(0, 400)}` : null;
+    },
+  },
+  {
+    // P1.10: search instead of read-all, with 150 Notes.
+    name: "notes-search",
+    async test() {
+      const topics = ["groceries", "gym plan", "book ideas", "trip packing", "pitch outline"];
+      const filler = Array.from({ length: 140 }, (_, n) => `${topics[n % topics.length]} note ${n + 1}`);
+      const venue = Array.from({ length: 10 }, (_, n) => `Venue option ${n + 1}: call the hall about the venue deposit`);
+      const all = [...filler.slice(0, 70), ...venue, ...filler.slice(70)];
+      const seed = await run(MAIN, "Save these notes", [
+        { tool: "notes_create", args: { texts: all.slice(0, 100), say: SAY } },
+        { tool: "notes_create", args: { texts: all.slice(100), say: SAY } },
+        { text: "Saved." },
+      ]);
+      const ids = (text: string) => (JSON.parse(text).notes as { id: string }[]).map(note => note.id);
+      const r = await run(MAIN, "Delete the notes about the venue", [
+        { tool: "notes_search", args: { query: "venue", say: SAY } },
+        last => ({ tool: "notes_delete", args: { ids: ids(last), say: SAY } }),
+        { text: "Deleted the venue notes." },
+      ]);
+      const search = r.results.find(x => x.tool === "notes_search")?.text ?? "{}";
+      const found = JSON.parse(search) as { matches?: number; of?: number };
+      const before = found.of ?? 0;
+      // The Device snapshot carries the newest 80 Notes only: count on the server.
+      const after = await run(MAIN, "How many notes", [{ tool: "notes_read", args: { say: SAY } }, { text: "Counted." }]);
+      const left = JSON.parse(after.results.find(x => x.tool === "notes_read")?.text ?? "{}") as { count?: number; notes?: { text: string }[] };
+      const problems = [
+        seed.task?.status !== "done" && `seed ${seed.task?.status}: ${seed.task?.detail}`,
+        before < 150 && `only ${before} notes seeded`,
+        r.task?.status !== "done" && `task ${r.task?.status}: ${r.task?.detail}`,
+        found.matches !== 10 && `search found ${found.matches} of ${found.of}`,
+        search.length > 3000 && `search returned ${search.length} chars`,
+        left.notes?.some(note => /venue/i.test(note.text)) && "venue notes left",
+        left.count !== before - 10 && `notes ${before} → ${left.count}`,
+        (r.task?.steps.length ?? 99) >= 8 && `${r.task?.steps.length} steps`,
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
+  {
+    // P1.10: To-Do filters.
+    name: "todo-filters",
+    async test() {
+      const day = (offset: number) => { const d = new Date(Date.now() + offset * 86400_000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+      await run({ kind: "app", app: "todo" }, "Add some to-dos", [
+        { tool: "todo_create", args: { say: SAY, items: [
+          { title: "late one", due: day(-2) }, { title: "today one", due: day(0) }, { title: "soon one", due: day(3), projectId: "p_pitch" },
+          { title: "someday one" }, { title: "finished one", due: day(-1) },
+        ] } },
+        last => ({ tool: "todo_complete", args: { ids: [JSON.parse(last.slice(last.indexOf("["))).find((t: any) => t.title === "finished one").id], say: SAY } }),
+        { text: "Added." },
+      ]);
+      const read = async (args: Record<string, unknown>) => {
+        const r = await run({ kind: "app", app: "todo" }, "Read", [{ tool: "todo_read", args: { ...args, say: SAY } }, { text: "Read." }]);
+        const data = JSON.parse(r.results.find(x => x.tool === "todo_read")?.text ?? "{}") as { tasks?: { title: string }[] };
+        return (data.tasks ?? []).map(t => t.title).filter(t => / one$/.test(t)).sort().join(",");
+      };
+      const want: [Record<string, unknown>, string][] = [
+        [{ filter: "overdue" }, "late one"],
+        [{ filter: "today" }, "today one"],
+        [{ filter: "upcoming" }, "soon one"],
+        [{ filter: "no-date" }, "someday one"],
+        [{ filter: "done" }, "finished one"],
+        [{ filter: "open", projectId: "p_pitch" }, "soon one"],
+      ];
+      const problems: string[] = [];
+      for (const [args, expected] of want) {
+        const got = await read(args);
+        if (got !== expected) problems.push(`${JSON.stringify(args)} → ${got || "nothing"} (want ${expected})`);
+      }
+      return problems.length ? problems.join("; ") : null;
     },
   },
 ];

@@ -22,6 +22,50 @@ const titles = (items: { title?: string; text?: string }[]) =>
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 const SAY = { type: "string", description: "A short action line for the Device." };
+
+/* ------------------------- Search and filters (P1.10) ------------------------ */
+// Reading 200 items per step is slow and costly. Search and filters return only what matters.
+
+const STOP = new Set(["the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "about", "with", "my", "me", "all", "notes", "note", "that", "this", "is", "are"]);
+const words = (text: string) => text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+
+/** Notes that contain the query's words (a word matches the start of a word in the Note), best first. */
+export function searchNotes(query: string): { note: Note; score: number }[] {
+  const terms = [...new Set(words(query).filter(word => word.length > 1 && !STOP.has(word)))];
+  if (!terms.length) throw new Error("Give a query with at least one real word, e.g. \"venue\".");
+  return state.notes
+    .map(note => {
+      const own = words(note.text);
+      return { note, score: terms.filter(term => own.some(word => word.startsWith(term) || (term.length > 4 && word.startsWith(term.slice(0, -1))))).length };
+    })
+    .filter(hit => hit.score > 0)
+    .sort((a, b) => b.score - a.score);
+}
+
+/** Today in the server's local time, YYYY-MM-DD. */
+const localDay = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+export const TODO_FILTERS = ["all", "open", "today", "overdue", "upcoming", "no-date", "done"] as const;
+
+function filterTodos(filter: string, projectId: unknown): Task[] {
+  const today = localDay();
+  let list = todoItems();
+  if (projectId !== undefined && projectId !== null && projectId !== "") {
+    if (projectId === "inbox") list = list.filter(task => !task.projectId);
+    else if (!state.projects.some(project => project.id === projectId)) throw new Error("Unknown projectId. todo_read returns the projects with their IDs; use \"inbox\" for To-Dos with no project.");
+    else list = list.filter(task => task.projectId === projectId);
+  }
+  const open = (task: Task) => task.status !== "done";
+  switch (filter) {
+    case "all": return list;
+    case "open": return list.filter(open);
+    case "today": return list.filter(task => open(task) && task.due?.slice(0, 10) === today);
+    case "overdue": return list.filter(task => open(task) && !!task.due && task.due.slice(0, 10) < today);
+    case "upcoming": return list.filter(task => open(task) && !!task.due && task.due.slice(0, 10) > today);
+    case "no-date": return list.filter(task => open(task) && !task.due);
+    case "done": return list.filter(task => !open(task));
+    default: throw new Error(`filter is one of ${TODO_FILTERS.join(", ")}.`);
+  }
+}
 const APP = { type: "string", enum: [...APP_IDS, "dock"] };
 
 function todoLocation(input: Record<string, unknown>): Pick<Task, "due" | "projectId"> {
@@ -56,16 +100,27 @@ const BASE_TOOLS: ToolDef[] = [
         return ctx.delegateApp(input.app as AppId, "read_app", input, callId);
       await ctx.gate({ title: `Read ${input.app}?` });
       switch (input.app) {
-        case "notes": return { text: JSON.stringify({
+        case "notes": if (typeof input.query === "string") {
+          const hits = searchNotes(input.query);
+          return { text: JSON.stringify({
+            query: input.query, matches: hits.length, of: state.notes.length,
+            notes: hits.slice(0, 100).map(({ note, score }) => ({ id: note.id, text: note.text.slice(0, 400), matched: score })),
+          }) };
+        } else return { text: JSON.stringify({
           count: state.notes.length,
           notes: state.notes.slice(0, 200).map(note => ({ id: note.id, text: note.text.slice(0, 400), createdAt: note.createdAt })),
         }) };
-        case "todo": return { text: JSON.stringify({
+        case "todo": {
+          const filter = typeof input.filter === "string" && input.filter ? input.filter : "all";
+          const list = filterTodos(filter, input.projectId);
+          return { text: JSON.stringify({
           projects: state.projects.map(({ id, name }) => ({ id, name })),
-          count: todoItems().length,
-          tasks: todoItems().slice(0, 200)
+          today: localDay(), filter, ...(input.projectId ? { projectId: input.projectId } : {}),
+          count: list.length, of: todoItems().length,
+          tasks: list.slice(0, 200)
             .map(({ id, title, status, due, projectId, agentId }) => ({ id, title, status, due: due ?? null, projectId: projectId ?? null, agentId })),
-        }) };
+          }) };
+        }
         case "focus": return { text: JSON.stringify(state.focus) };
         case "agents": return { text: JSON.stringify(state.agents.map(agent => ({ id: agent.id, name: agent.name, role: agent.role }))) };
         case "settings": return { text: JSON.stringify({ permissionMode: state.permissionMode, hosting: state.hosting }) };
@@ -253,7 +308,9 @@ interface AppToolSpec {
 
 /** The Device app manifest: what an agent can do in each app. A new app adds its tools here. */
 export const APP_MANIFEST: AppToolSpec[] = [
-  { app: "notes", name: "notes_read", description: "List all Notes, newest first, with their IDs and text.", props: {}, required: [] },
+  { app: "notes", name: "notes_read", description: "List all Notes, newest first, with their IDs and text. With many Notes, use notes_search instead.", props: {}, required: [] },
+  { app: "notes", name: "notes_search", description: "Find Notes by words in their text, best matches first, with their IDs. Use it before changing or deleting Notes about a topic.",
+    props: { query: { type: "string", description: "The words to look for, e.g. \"venue\"." } }, required: ["query"] },
   { app: "notes", name: "notes_create", action: "notes.create", description: "Save new Notes. Pass every Note of the request in one call, in the order the user said them.",
     props: { texts: { type: "array", items: { type: "string" }, description: "The text of each new Note." } }, required: ["texts"] },
   { app: "notes", name: "notes_append", action: "notes.append", description: "Add text to the end of one Note.",
@@ -262,7 +319,11 @@ export const APP_MANIFEST: AppToolSpec[] = [
     props: { id: { type: "string", description: "Note ID from notes_read." }, text: { type: "string", description: "The Note's complete new text." } }, required: ["id", "text"] },
   { app: "notes", name: "notes_delete", action: "notes.delete", description: "Delete Notes. Always asks the user with a button press.",
     props: { ids: IDS("Note") }, required: ["ids"] },
-  { app: "todo", name: "todo_read", description: "List To-Dos with ID, title, status, due date and project, plus the projects with their IDs.", props: {}, required: [] },
+  { app: "todo", name: "todo_read", description: "List To-Dos with ID, title, status, due date and project, plus the projects with their IDs. Narrow it with filter and projectId instead of reading everything.",
+    props: {
+      filter: { type: "string", enum: [...TODO_FILTERS], description: "all (default), open, today, overdue (due before today, not done), upcoming, no-date, or done." },
+      projectId: { type: "string", description: "Only this project's To-Dos (a project ID, or \"inbox\")." },
+    }, required: [] },
   { app: "todo", name: "todo_create", action: "todo.create", description: "Add new To-Dos. Pass every To-Do of the request in one call, each with its own due date and project when the user gave one.",
     props: { items: { type: "array", description: "The new To-Dos.", items: { type: "object", properties: { title: { type: "string" }, due: DUE, projectId: PROJECT }, required: ["title"] } } }, required: ["items"] },
   { app: "todo", name: "todo_update", action: "todo.update", description: "Change existing To-Dos: due date, project, or title. Set every field that should change in the same call; fields you leave out stay as they are. A new title applies to one To-Do at a time.",
@@ -280,7 +341,11 @@ export const APP_TOOLS: ToolDef[] = [
     required: [...spec.required, "say"],
     purposes: "all",
     run(ctx, input, callId) {
-      if (!spec.action) return readApp.run(ctx, { app: spec.app, say: input.say }, callId);
+      if (!spec.action) {
+        // Reads pass their filters (query, filter, projectId) through to read_app.
+        const { say, ...filters } = input;
+        return readApp.run(ctx, { ...filters, app: spec.app, say }, callId);
+      }
       const { title, ...rest } = input;
       return changeApp.run(ctx, { ...rest, ...(title !== undefined ? { text: title } : {}), action: spec.action }, callId);
     },

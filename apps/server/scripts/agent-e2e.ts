@@ -36,6 +36,44 @@ function cleanup() {
 process.on("exit", cleanup);
 
 let snap: Snapshot | null = null;
+let serverProc: ChildProcess | null = null;
+let serverEnv: Record<string, string> = {};
+const stateFile = () => path.join(root, "data", "state.json");
+const savedState = () => JSON.parse(fs.readFileSync(stateFile(), "utf8")) as { notes: { id: string; text: string }[] };
+
+/** Stop the server, change its saved state, start it again and reconnect like the Device. */
+async function restartWith(mutate: (state: any) => void) {
+  const proc = serverProc!;
+  const exited = new Promise(resolve => proc.once("exit", resolve));
+  proc.kill("SIGTERM");
+  await exited;
+  const saved = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
+  mutate(saved);
+  fs.writeFileSync(stateFile(), JSON.stringify(saved));
+  ws?.close();
+  snap = null;
+  serverProc = start("server", here, serverEnv);
+  await connect();
+}
+
+async function connect() {
+  let socket: WebSocket | null = null;
+  for (let i = 0; i < 80 && !socket; i++) {
+    try {
+      const attempt = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
+      await new Promise((res, rej) => { attempt.once("open", res); attempt.once("error", rej); });
+      socket = attempt;
+    } catch { await sleep(250); }
+  }
+  if (!socket) throw new Error("server did not start");
+  ws = socket;
+  ws.on("message", raw => {
+    const m = JSON.parse(String(raw)) as ServerMessage;
+    if (m.type === "snapshot") snap = m.snapshot;
+  });
+  send({ type: "hello", deviceId: "agents", mode: "handheld", client: "device", protocol: PROTOCOL_VERSION });
+  await until(() => snap?.machines.some(m => m.online), 20_000);
+}
 let ws: WebSocket;
 const send = (m: DeviceMessage) => ws.send(JSON.stringify(m));
 async function until<T>(fn: () => T | undefined | null | false, ms: number): Promise<T | null> {
@@ -322,34 +360,44 @@ const scenarios: Scenario[] = [
       return problems.length ? problems.join("; ") : null;
     },
   },
+  {
+    // P1.10: with 150 Notes the agent searches instead of reading everything. Runs last: it restarts
+    // the server with the Notes seeded on disk (the Device snapshot only carries the newest 80).
+    name: "notes-search",
+    async before() {
+      await restartWith(saved => {
+        const topics = ["groceries", "gym plan", "book ideas", "trip packing", "pitch outline"];
+        const texts = Array.from({ length: 150 }, (_, n) => n % 15 === 7 ? `Venue option ${n}: call the hall about the venue deposit` : `${topics[n % topics.length]} note ${n}`);
+        saved.notes = texts.map((text, n) => ({ id: `n_seed${String(n).padStart(3, "0")}`, text, createdAt: new Date(Date.now() - n * 60_000).toISOString(), transcribedBy: "local", editedByUser: true, suggestionState: "none", suggestions: [], taskIds: [] }));
+      });
+    },
+    turns: [{ target: { kind: "main" }, text: "Delete the notes about the venue." }],
+    check() {
+      const left = savedState().notes;
+      const problems = [
+        left.some(note => /venue/i.test(note.text)) && `venue notes left: ${left.filter(note => /venue/i.test(note.text)).length}`,
+        left.length !== 140 && `${left.length} notes left (want 140)`,
+        lastSteps.length >= 8 && `${lastSteps.length} steps (want under 8)`,
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
 ];
 
 async function main() {
   fs.mkdirSync(flipDir(), { recursive: true });
   fs.mkdirSync(path.join(home, "Desktop"), { recursive: true });
   start("pc", path.join(here, "../pc-agent"), { HOME: home, USERPROFILE: home, PC_AGENT_PORT: String(PC_PORT), PC_AGENT_HOST: "127.0.0.1", PC_AGENT_TOKEN: "agents", PC_AGENT_NAME: "Test laptop", PC_AGENT_ALLOW_OPEN: "0", PC_AGENT_ALLOW_SHELL: "0" });
-  start("server", here, {
+  serverEnv = {
     HOST: "127.0.0.1", PORT: String(PORT), DATA_DIR: path.join(root, "data"),
     PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`, PC_AGENT_TOKEN: "agents",
     DEVICE_ACCESS_TOKEN: "", DEMO_PLANNER: "", SMTP_URL: "", STT_API_KEY: "",
     AGENT_ENGINE: ENGINE, ...(MODEL ? { ENGINE_MODEL: MODEL } : {}),
     FLIP_TOOL_LOG: toolLog, BUILD_HOST: "server", BUILD_DIR: buildDir, BUILD_NAME: "Lemonade", BUILD_PREVIEW_URL: "", PUBLIC_URL: `http://127.0.0.1:${PORT}`,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? "", ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
-  });
-  for (let i = 0; i < 80 && !ws; i++) {
-    try {
-      const socket = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
-      await new Promise((res, rej) => { socket.once("open", res); socket.once("error", rej); });
-      ws = socket;
-    } catch { await sleep(250); }
-  }
-  if (!ws) throw new Error("server did not start");
-  ws.on("message", raw => {
-    const m = JSON.parse(String(raw)) as ServerMessage;
-    if (m.type === "snapshot") snap = m.snapshot;
-  });
-  send({ type: "hello", deviceId: "agents", mode: "handheld", client: "device", protocol: PROTOCOL_VERSION });
-  await until(() => snap?.machines.some(m => m.online), 20_000);
+  };
+  serverProc = start("server", here, serverEnv);
+  await connect();
   send({ type: "settings.update", patch: { permissionMode: "auto" } });
   // Start from empty apps so the checks see only what the agents did.
   await until(() => snap, 5000);

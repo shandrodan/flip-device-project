@@ -19,7 +19,8 @@ Risk is set on the tool, never by the model.
 
 | Tool | Input | Gate |
 | --- | --- | --- |
-| `notes_read` | — | |
+| `notes_read` | — (the first 200) | |
+| `notes_search` | `query` (words; a word matches the start of a word in the Note, best matches first, at most 100) | |
 | `notes_create` | `texts[]` (batch, in order) | |
 | `notes_append` | `id`, `text` | |
 | `notes_replace` | `id`, `text` (full new text) | asks in Auto |
@@ -29,7 +30,7 @@ Risk is set on the tool, never by the model.
 
 | Tool | Input | Gate |
 | --- | --- | --- |
-| `todo_read` | — (returns To-Dos and projects) | |
+| `todo_read` | `filter?` (`all` default, `open`, `today`, `overdue`, `upcoming`, `no-date`, `done`), `projectId?` (or `"inbox"`); returns To-Dos, projects and today's date | |
 | `todo_create` | `items[]` of `{title, due?, projectId?}` | |
 | `todo_update` | `ids[]`, `due?`, `projectId?`, `title?` (title: one at a time) | |
 | `todo_complete` / `todo_reopen` | `ids[]` | |
