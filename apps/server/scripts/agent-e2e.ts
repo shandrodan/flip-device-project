@@ -225,6 +225,16 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    // P1.11: projects as tools.
+    name: "projects",
+    turns: [{ target: { kind: "app", app: "todo" }, text: "Make a project called Launch and move the two Pitch deck tasks there." }],
+    check() {
+      const launch = snap!.projects.find(p => /^launch$/i.test(p.name));
+      const moved = todos().filter(t => /venue|slides/i.test(t.title));
+      return launch && moved.length === 2 && moved.every(t => t.projectId === launch.id) ? null : `Launch ${JSON.stringify(launch ?? null)}, tasks ${JSON.stringify(moved.map(t => t.projectId))}`;
+    },
+  },
+  {
     name: "cross-app",
     turns: [{ target: { kind: "main" }, text: "Make a to-do in the Home project for every note I have, with the note's text as the title. Then delete all my notes." }],
     check() {

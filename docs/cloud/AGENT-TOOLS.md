@@ -35,6 +35,9 @@ Risk is set on the tool, never by the model.
 | `todo_update` | `ids[]`, `due?`, `projectId?`, `title?` (title: one at a time) | |
 | `todo_complete` / `todo_reopen` | `ids[]` | |
 | `todo_delete` | `ids[]` | delete |
+| `todo_project_create` | `name` (refuses a duplicate name and returns the existing ID) | |
+| `todo_project_rename` | `projectId`, `name` | |
+| `todo_project_delete` | `projectId` (its To-Dos move to Inbox) | delete |
 
 **Other apps:** `read_app {app}` (focus, agents, settings, build, dock) and `change_app {action}` with `focus.start`, `focus.stop`, `agents.create`, `settings.permission`. Settings never exposes keys or Full mode.
 

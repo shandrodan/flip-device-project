@@ -30,6 +30,7 @@ A scripted model stands in for OpenRouter: an OpenAI-compatible server that answ
 | starter | `build_new vite-react`: React renders "Lemon Stand" in the sandboxed preview in under 30 s (12 s here), committed as a new project |
 | notes-search | 150 Notes: `notes_search "venue"` returns exactly the 10 venue Notes, they are deleted, under 8 steps |
 | todo-filters | `todo_read` with each filter and with `projectId` returns exactly the right To-Dos |
+| projects | create, move To-Dos in, duplicate refused, rename, delete (push bar, To-Dos to Inbox) |
 | errors-vite | with a Vite dev server: a syntax error in `src/main.js` comes back in the edit result |
 
 `SHOW=1` prints every tool result, `DUMP=1` every request's last messages, `KEEP=1` keeps the temp folder. `errors-vite` runs `npm install` (network).
@@ -46,6 +47,7 @@ Speaks real requests to real agents, presses every approval like a user, and che
 | memory | Omni: rename the ones you kept to Alpha, Beta, Gamma | follow-up resolves "the ones you kept" |
 | todo | To-Do agent: add 5, two into Pitch deck due tomorrow, complete one, delete one | each field |
 | chain | Omni: push everything due tomorrow by a day, write a note listing them | dates moved, note written |
+| projects | To-Do agent: make a project Launch, move the two Pitch deck To-Dos there | Launch exists, both To-Dos in it |
 | cross-app | Omni: a Home to-do for every note, then delete all notes | both apps |
 | files | PC agent: make a–e.txt in ~/Flip/letters, delete b and d | files on disk |
 | engine-restart | OpenCode is killed, then Omni: write a note | the note exists, `/health` says `engine: "opencode"` and `engineRestarts ≥ 1` |

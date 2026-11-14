@@ -1,5 +1,5 @@
 /** Typed actions for the Device apps. The server owns app state and approval. */
-import { APP_IDS, isAppCommand, type Agent, type AppId, type Note, type Task } from "@app/protocol";
+import { APP_IDS, isAppCommand, type Agent, type AppId, type Note, type Project, type Task } from "@app/protocol";
 import { bus } from "../bus.js";
 import { id, now, ownsApp, patchTask, saveNow, state, taskById } from "../store.js";
 import type { ToolDef } from "./tools.js";
@@ -89,6 +89,9 @@ function todoLocation(input: Record<string, unknown>): Pick<Task, "due" | "proje
   }
   return location;
 }
+
+/** Colors for new projects, in the To-Do app's palette. */
+const PROJECT_COLORS = ["#30a46c", "#0090ff", "#e5484d", "#8e4ec6", "#e5780b", "#d6409f", "#12a594", "#ffc53d"];
 
 const BASE_TOOLS: ToolDef[] = [
   {
@@ -248,6 +251,41 @@ const BASE_TOOLS: ToolDef[] = [
         saveNow(); bus.changed();
         return { text: `Deleted ${plural(before - state.tasks.length, "To-Do")}. ${plural(todoItems().length, "To-Do")} left.` };
       }
+      if (action === "todo.project_create" || action === "todo.project_rename") {
+        const name = typeof input.name === "string" ? input.name.replace(/\s+/g, " ").trim().slice(0, 40) : "";
+        if (!name) throw new Error("Give the project's name in name.");
+        const same = state.projects.find(project => project.name.toLowerCase() === name.toLowerCase());
+        if (action === "todo.project_create") {
+          if (same) throw new Error(`A project named ${same.name} already exists with ID ${same.id}. Use that ID.`);
+          await ctx.gate({ title: `Make project ${name}?` });
+          const used = new Set(state.projects.map(project => project.color));
+          const color = PROJECT_COLORS.find(value => !used.has(value)) ?? PROJECT_COLORS[state.projects.length % PROJECT_COLORS.length];
+          const project: Project = { id: id("p"), name, color };
+          state.projects.push(project);
+          saveNow(); bus.changed();
+          return { text: `Made project ${name} with ID ${project.id}.` };
+        }
+        const project = state.projects.find(item => item.id === input.projectId);
+        if (!project) throw new Error("No project has that ID. todo_read lists the projects with their IDs.");
+        if (same && same !== project) throw new Error(`Another project is already named ${same.name} (${same.id}).`);
+        await ctx.gate({ title: `Rename ${project.name} to ${name}?` });
+        const old = project.name;
+        project.name = name;
+        saveNow(); bus.changed();
+        return { text: `Renamed project ${old} to ${name}.` };
+      }
+      if (action === "todo.project_delete") {
+        const project = state.projects.find(item => item.id === input.projectId);
+        if (!project) throw new Error("No project has that ID. todo_read lists the projects with their IDs.");
+        const inside = todoItems().filter(task => task.projectId === project.id);
+        // Deleting is a Risky action: always the push bar. Its To-Dos are kept, in Inbox.
+        await ctx.gate({ risk: "delete", title: `Delete project ${project.name}?`, body: inside.length ? `Its ${plural(inside.length, "To-Do")} move to Inbox.` : "It has no To-Dos." });
+        if (!state.projects.includes(project)) throw new Error("The project is already gone.");
+        state.projects = state.projects.filter(item => item !== project);
+        for (const task of state.tasks) if (task.projectId === project.id) patchTask(task, { projectId: null });
+        saveNow(); bus.changed();
+        return { text: `Deleted project ${project.name}. ${inside.length ? `${plural(inside.length, "To-Do")} moved to Inbox.` : ""}`.trim() };
+      }
       if (action === "focus.start") {
         const minutes = Number(input.minutes);
         if (!Number.isInteger(minutes) || minutes < 1 || minutes > 180) throw new Error("Minutes must be from 1 to 180.");
@@ -330,6 +368,12 @@ export const APP_MANIFEST: AppToolSpec[] = [
     props: { ids: IDS("To-Do"), due: DUE, projectId: PROJECT, title: { type: "string", description: "New title, for one To-Do." } }, required: ["ids"] },
   { app: "todo", name: "todo_complete", action: "todo.complete", description: "Mark To-Dos done.", props: { ids: IDS("To-Do") }, required: ["ids"] },
   { app: "todo", name: "todo_reopen", action: "todo.reopen", description: "Mark done To-Dos as not done.", props: { ids: IDS("To-Do") }, required: ["ids"] },
+  { app: "todo", name: "todo_project_create", action: "todo.project_create", description: "Make a new To-Do project. Returns its ID: move To-Dos into it with todo_update and that projectId.",
+    props: { name: { type: "string", description: "The project's name, e.g. Launch." } }, required: ["name"] },
+  { app: "todo", name: "todo_project_rename", action: "todo.project_rename", description: "Rename a To-Do project.",
+    props: { projectId: { type: "string", description: "Project ID from todo_read." }, name: { type: "string", description: "The new name." } }, required: ["projectId", "name"] },
+  { app: "todo", name: "todo_project_delete", action: "todo.project_delete", description: "Delete a To-Do project. Its To-Dos are kept and move to Inbox. Always asks the user with a button press.",
+    props: { projectId: { type: "string", description: "Project ID from todo_read." } }, required: ["projectId"] },
   { app: "todo", name: "todo_delete", action: "todo.delete", description: "Delete To-Dos. Always asks the user with a button press.", props: { ids: IDS("To-Do") }, required: ["ids"] },
 ];
 

@@ -326,6 +326,48 @@ const scenarios: Scenario[] = [
       return problems.length ? problems.join("; ") : null;
     },
   },
+  {
+    // P1.11: projects as tools.
+    name: "projects",
+    async test() {
+      const TODO = { kind: "app", app: "todo" };
+      const titleId = (last: string, title: string) => (JSON.parse(last.slice(last.indexOf("["))) as { id: string; title: string }[]).find(t => t.title === title)!.id;
+      let ids: string[] = [];
+      const seed = await run(TODO, "Add pitch tasks", [
+        { tool: "todo_create", args: { say: SAY, items: [{ title: "pitch rehearsal" }, { title: "pitch slides polish" }, { title: "scratch idea" }] } },
+        last => { ids = ["pitch rehearsal", "pitch slides polish", "scratch idea"].map(t => titleId(last, t)); return { text: "Added." }; },
+      ]);
+      const projectId = (last: string) => last.match(/ID (p_\w+)/)?.[1] ?? "missing";
+      let launch = "";
+      const r = await run(TODO, "Make a project Launch and move the two pitch tasks there", [
+        { tool: "todo_project_create", args: { name: "Launch", say: SAY } },
+        last => { launch = projectId(last); return { tool: "todo_update", args: { ids: ids.slice(0, 2), projectId: launch, say: SAY } }; },
+        { text: "Moved." },
+      ]);
+      const dup = await run(TODO, "Make Launch again", [{ tool: "todo_project_create", args: { name: "launch", say: SAY } }, { text: "Exists." }]);
+      const rename = await run(TODO, "Rename Launch to Launch week", [() => ({ tool: "todo_project_rename", args: { projectId: launch, name: "Launch week", say: SAY } }), { text: "Renamed." }]);
+      let scratch = "";
+      const del = await run(TODO, "Make a Scratch project with the idea, then delete the project", [
+        { tool: "todo_project_create", args: { name: "Scratch", say: SAY } },
+        last => { scratch = projectId(last); return { tool: "todo_update", args: { ids: [ids[2]], projectId: scratch, say: SAY } }; },
+        () => ({ tool: "todo_project_delete", args: { projectId: scratch, say: SAY } }),
+        { text: "Deleted." },
+      ]);
+      const task = (id: string) => todos().find(t => t.id === id);
+      const problems = [
+        seed.task?.status !== "done" && "seed failed",
+        r.task?.status !== "done" && `task ${r.task?.status}: ${r.task?.detail}`,
+        !ids.slice(0, 2).every(id => task(id)?.projectId === launch) && `pitch tasks in ${ids.slice(0, 2).map(id => task(id)?.projectId).join(",")} (Launch ${launch})`,
+        !/already exists with ID/.test(result(dup, "todo_project_create")) && `duplicate not refused: ${result(dup, "todo_project_create").slice(0, 120)}`,
+        snap!.projects.find(p => p.id === launch)?.name !== "Launch week" && `rename: ${JSON.stringify(snap!.projects.find(p => p.id === launch))}`,
+        rename.task?.status !== "done" && "rename failed",
+        snap!.projects.some(p => p.id === scratch) && "Scratch not deleted",
+        task(ids[2])?.projectId && `scratch idea in ${task(ids[2])?.projectId}, not Inbox`,
+        del.presses < 1 && "deleting a project did not ask for the push bar",
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
 ];
 
 /** Wait until the preview, in a frame sandboxed like the Device's, shows `word`. */
