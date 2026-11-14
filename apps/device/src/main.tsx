@@ -41,7 +41,7 @@ function DockPage() {
 }
 
 // Studio mode (/?studio=1) loads on its own, with Three.js: the twin as a film set.
-const Studio = lazy(() => import("./sim/Studio"));
+const Studio = lazy(() => import("./sim/StudioPage"));
 
 const path = location.pathname;
 const query = new URLSearchParams(location.search);

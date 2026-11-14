@@ -28,7 +28,7 @@ The hint bar at the bottom of the screen always shows what each button does righ
 - `src/net/client.ts`: the WebSocket, last snapshot cache, offline notes queue.
 - `src/voice/capture.ts`: microphone (MediaRecorder + on-device recognition) and scripted voice.
 - `src/sim/Device3D.tsx`: the 3D twin. The screen stays real DOM (CSS3DRenderer) behind a hole in the WebGL canvas. Loaded lazily, so kiosk and dock never download Three.js.
-- `src/sim/Studio.tsx`, `studio.ts`, `clock.ts`: studio mode, its `window.studio` API, and the clock a recorder can freeze and step.
+- `src/sim/StudioPage.tsx`, `studio.ts`, `clock.ts`: studio mode, its `window.studio` API, and the clock a recorder can freeze and step.
 - `studio/`: the recorder (`pnpm --filter device studio frame|record`), run by Node with a headless browser. Not part of the Device app.
 - `src/app/`: the screen shell, overlays (talk, fire approval, soft approval, function switcher) and screens.
 - `src/bot/Bot.tsx`: the agent bots, ported from `prototype/`.

@@ -2,7 +2,7 @@
 
 Studio mode turns the 3D twin into a film set: stills and video of the Device with its live screen, for the demo video. Open `/?studio=1`, or press **Studio** on the twin page.
 
-It is a render of a web app. Never present it as real hardware (ADR 0002, ADR 0022).
+It is a render of a web app. Never present it as real hardware (ADR 0002, ADR 0023).
 
 Both the model (WebGL) and the Device screen (real DOM behind it) are in every frame and every take.
 

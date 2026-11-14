@@ -1,4 +1,4 @@
-# 0022: Studio mode films the 3D twin
+# 0023: Studio mode films the 3D twin
 
 Status: Accepted
 Date: 2026-11-14
