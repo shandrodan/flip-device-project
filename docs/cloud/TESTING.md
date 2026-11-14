@@ -33,6 +33,7 @@ A scripted model stands in for OpenRouter: an OpenAI-compatible server that answ
 | projects | create, move To-Dos in, duplicate refused, rename, delete (push bar, To-Dos to Inbox) |
 | notes-edit | `notes_edit` milk → oat milk at word edges, a miss explained, `notes_merge` after a press |
 | typed-apps | `focus_start`, `focus_stop`, `agents_create` (press), `settings_permission`; `change_app` not offered to the model |
+| plan | a `todowrite` plan of three items shows as Task steps "1/3 …", "2/3 …", "3/3 …" (the scripted model waits 0.9 s per move, like a real one, so the 400 ms poll sees each state) |
 | errors-vite | with a Vite dev server: a syntax error in `src/main.js` comes back in the edit result |
 
 `SHOW=1` prints every tool result, `DUMP=1` every request's last messages, `KEEP=1` keeps the temp folder. `errors-vite` runs `npm install` (network).

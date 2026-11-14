@@ -483,11 +483,23 @@ async function prompt(base: string, sessionID: string, model: EngineModel, syste
     throw err;
   };
   const started = Date.now();
+  let shown = "";
+  let planOff = false;
   for (;;) {
     await sleep(400);
     if (session.fatal) return stop(session.fatal);
     if (ctl.cancelled) return stop(new Cancelled());
     if (!proc || baseUrl !== base) throw new ToolError("The agent engine stopped in the middle of this Task and is starting again. Check the steps, then say it again.");
+    // The agent's plan (todowrite) becomes Task steps: "2/4 Delete the old notes" (P2.14).
+    if (!planOff) {
+      const todos = await api<PlanItem[]>(base, "GET", `/session/${sessionID}/todo`, undefined, dir).catch(err => {
+        if (err instanceof EngineDown) throw err;
+        planOff = true;
+        return null;
+      });
+      const line = todos ? planLine(todos) : null;
+      if (line && line !== shown) { shown = line; session.ctx.step(line); }
+    }
     const status = (await api<Record<string, { type: string }>>(base, "GET", "/session/status", undefined, dir))[sessionID];
     if (status && status.type !== "idle") continue;
     const messages = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`, undefined, dir)).slice(before);
@@ -504,6 +516,19 @@ async function prompt(base: string, sessionID: string, model: EngineModel, syste
     if (!answer) throw new ToolError("The model returned no final answer. Check the Task steps for work already completed.");
     return answer;
   }
+}
+
+interface PlanItem { content: string; status: string }
+
+/** The plan item being worked on, as "n/total content". Null when there is no plan or it is all done. */
+export function planLine(todos: PlanItem[]): string | null {
+  const items = todos.filter(item => item.status !== "cancelled" && item.content?.trim());
+  if (items.length < 2) return null;
+  let at = items.findIndex(item => item.status === "in_progress");
+  if (at < 0) at = items.findIndex(item => item.status === "pending");
+  if (at < 0) return null;
+  const text = items[at].content.replace(/\s+/g, " ").trim();
+  return `${at + 1}/${items.length} ${text.length > 60 ? text.slice(0, 59) + "…" : text}`;
 }
 
 /* ------------------------- OpenCode's own tools in ------------------------ */

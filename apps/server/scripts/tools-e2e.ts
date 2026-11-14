@@ -26,7 +26,8 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /* ------------------------------ Scripted model ----------------------------- */
 
-type Move = { tool: string; args: Record<string, unknown> } | { text: string };
+/** `wait`: milliseconds before the model answers, like a real model thinking (lets the server poll). */
+type Move = ({ tool: string; args: Record<string, unknown> } | { text: string }) & { wait?: number };
 /** A move, or a function of the last tool result (to use IDs a tool returned). */
 type Step = Move | ((last: string) => Move);
 /** What the model will do next, in order. A scenario fills it before it speaks. */
@@ -60,6 +61,7 @@ const model = http.createServer((req, res) => {
     // Titles and summaries: requests without tools get a short text.
     if (!Array.isArray(request.tools) || !request.tools.length) { sse(res, { text: "Flip task" }); return; }
     requests.push(request);
+    if (process.env.TOOLSCHEMA) { const t = request.tools.find((x: any) => x.function?.name === process.env.TOOLSCHEMA); if (t) console.log("SCHEMA", JSON.stringify(t.function.parameters)); }
     if (process.env.DUMP) console.log("REQ", JSON.stringify(request.messages.slice(-3)).replace(/base64,[A-Za-z0-9+/=]{40,}/g, "base64,…").slice(0, 1500));
     // The newest tool result. An image comes right after it as a user message ("Attached media from tool result").
     const messages: any[] = request.messages ?? [];
@@ -79,7 +81,8 @@ const model = http.createServer((req, res) => {
       sse(res, { text: `Script error: the engine did not offer ${next.tool}.` });
       return;
     }
-    sse(res, next);
+    if (next.wait) setTimeout(() => sse(res, next), next.wait);
+    else sse(res, next);
   });
 });
 
@@ -426,6 +429,27 @@ const scenarios: Scenario[] = [
         !["focus_start", "focus_stop", "agents_create", "settings_permission", "read_app"].every(name => offered.has(name)) && `offered: ${[...offered].filter(n => /focus|agents|settings|app/.test(n)).join(", ")}`,
       ].filter(Boolean);
       return problems.length ? problems.join("; ") : null;
+    },
+  },
+  {
+    // P2.14: the agent's plan shows as Task steps, "1/3 …".
+    name: "plan",
+    async test() {
+      const todo = (current: number) => ({ tool: "todowrite", wait: 900, args: { todos: ["Save the three notes", "Delete the second one", "Check what is left"].map((content, n) => ({ content, priority: "high", status: n < current ? "completed" : n === current ? "in_progress" : "pending" })) } });
+      const r = await run(MAIN, "Save three notes, delete the second, check", [
+        todo(0),
+        { tool: "notes_create", wait: 900, args: { texts: ["Plan one", "Plan two", "Plan three"], say: SAY } },
+        todo(1),
+        { tool: "notes_search", wait: 900, args: { query: "plan two", say: SAY } },
+        todo(2),
+        { tool: "notes_read", wait: 900, args: { say: SAY } },
+        todo(3),
+        { text: "Done.", wait: 900 },
+      ]);
+      const steps = r.task?.steps.map(step => step.text) ?? [];
+      const plan = steps.filter(text => /^\d+\/\d+ /.test(text));
+      const want = ["1/3 Save the three notes", "2/3 Delete the second one", "3/3 Check what is left"];
+      return r.task?.status === "done" && JSON.stringify(plan) === JSON.stringify(want) ? null : `steps: ${JSON.stringify(steps)}`;
     },
   },
 ];
