@@ -8,7 +8,7 @@ Our shared words. Use them exactly in code, docs, issues and the pitch.
 | **Dock** | The cradle at the desk. In the hackathon: a second screen of `apps/device`. |
 | **Handheld mode** | Device off the dock, on battery. |
 | **Dock mode** | Device in the dock, acting as a companion screen. |
-| **Dump** | Speaking a raw thought into the device. Always saved as a note first. |
+| **Dump** | Speaking a raw thought into the device. Saved as a note first, unless it is a command for the open app (ADR 0031). |
 | **Note** | The saved transcript of a dump. |
 | **Suggestion** | A task the device proposes from a note. Accepted with one press. |
 | **Task** | A unit of work, either kept as a todo or handed to an agent. |

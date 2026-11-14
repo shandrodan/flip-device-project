@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
-import { PROTOCOL_VERSION, minAppAgents, type AppId, type DeviceMessage, type ServerMessage, type Snapshot, type Task } from "@app/protocol";
+import { PROTOCOL_VERSION, isAppCommand, minAppAgents, type AppId, type DeviceMessage, type ServerMessage, type Snapshot, type Task } from "@app/protocol";
 
 const RUNS = Number(process.env.RUNS || 1);
 const PORT = 18787, PC_PORT = 17077;
@@ -508,13 +508,24 @@ async function modelFlow(here: string, pcEnv: Record<string, string>, serverEnv:
     ? "Set-Content -LiteralPath 'model-result.txt' -Value 'tool worked'; Get-Content -LiteralPath 'model-result.txt'"
     : "printf 'tool worked\\n' > model-result.txt && cat model-result.txt";
   const calls: { messages: unknown[]; tools: { name: string }[]; system: string }[] = [];
+  const today = new Date().toLocaleDateString("sv-SE");
   const tool = (name: string, input: Record<string, unknown>) => ({ type: "tool_use", id: `toolu_${calls.length}`, name, input });
   const reply = (text: string) => ({ type: "text", text });
   const provider = http.createServer(async (req, res) => {
     let raw = "";
     for await (const chunk of req) raw += chunk;
     calls.push(JSON.parse(raw));
-    const turn = calls.length;
+    // Dumps in Notes and To-Do ask two short questions in parallel (ADR 0031). Answer those by prompt,
+    // and script only the agent turns, in order.
+    const system = String(calls.at(-1)!.system ?? "");
+    const json = (value: unknown) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ type: "message", role: "assistant", content: [reply(JSON.stringify(value))], stop_reason: "end_turn" }));
+    };
+    if (system.includes("Decide what their words are")) return json({ intent: "command" });
+    if (system.includes("Decide where it goes")) return json({ action: "new", noteId: "", text: "Unused.", why: "Unused" });
+    if (system.includes("Decide the action")) return json({ action: "add", title: "Unused", day: "", time: "", clearDate: false, projectId: "", agentId: "", complete: false, why: "Unused" });
+    const turn = calls.filter(call => !/Decide (what their words are|where it goes|the action)/.test(String(call.system ?? ""))).length;
     const turns = [
       () => tool("change_app", { action: "notes.create", text: "Weekly Summary", say: "Save the title in Notes" }),
       () => reply("I saved Weekly Summary in Notes."),
@@ -537,13 +548,25 @@ async function modelFlow(here: string, pcEnv: Record<string, string>, serverEnv:
       () => {
         const messages = calls.at(-1)!.messages as { content: unknown }[];
         const [result] = messages.at(-1)!.content as { content: string }[];
-        const notes = JSON.parse(result.content) as { id: string; text: string }[];
+        const { notes } = JSON.parse(result.content) as { notes: { id: string; text: string }[] };
         return tool("change_app", {
           action: "notes.replace", id: notes.find(note => note.text === "Weekly Summary")?.id,
           text: "Weekly Build Summary", say: "Replace the Note text",
         });
       },
       () => reply("I updated the Note to Weekly Build Summary."),
+      // ADR 0031: "Delete all the notes" spoken in Notes is a command for the Notes agent.
+      () => tool("read_app", { app: "notes", say: "Read every Note" }),
+      () => {
+        const messages = calls.at(-1)!.messages as { content: unknown }[];
+        const [result] = messages.at(-1)!.content as { content: string }[];
+        const { notes } = JSON.parse(result.content) as { notes: { id: string }[] };
+        return tool("change_app", { action: "notes.delete", ids: notes.map(note => note.id), say: "Delete all Notes" });
+      },
+      () => reply("I deleted your Note."),
+      // "Move this one to today" spoken in To-Do acts on the selected To-Do.
+      () => tool("change_app", { action: "todo.update", ids: [existingTodo.id], due: today, projectId: null, say: "Move it to today in Inbox" }),
+      () => reply("I moved it to today."),
     ];
     const content = turns[turn - 1]?.() ?? reply("Unexpected model request.");
     res.writeHead(200, { "content-type": "application/json" });
@@ -635,6 +658,31 @@ async function modelFlow(here: string, pcEnv: Record<string, string>, serverEnv:
       if (snapshot!.notes.find(note => note.id === noteId)?.text !== "Weekly Build Summary" || snapshot!.notes.length !== 1)
         throw new Error("The approved edit did not update the original Note.");
       console.log("✓ Main found an existing Note and edited it in place through the Notes agent after approval");
+
+      // ADR 0031: a command spoken in Notes goes to the Notes agent and is not saved as a Note.
+      send({ type: "voice.scripted", streamId: "model-notes-cmd", text: "Hey, delete all the notes", durationMs: 2000, target: { kind: "auto", openNoteId: noteId ?? null } });
+      await until(() => !!snapshot?.approvals.some(item => item.risk === "delete"));
+      const del = snapshot!.approvals.find(item => item.risk === "delete")!;
+      if (del.kind !== "risky" || del.agentId !== snapshot!.appAgents.notes[0] || snapshot!.notes.length !== 1 || snapshot!.notes.some(note => /delete/i.test(note.text)))
+        throw new Error("The spoken delete was saved as a Note, skipped the push bar, or deleted early.");
+      send({ type: "approval.press", requestId: del.requestId, approved: true, via: "push-bar" });
+      await until(() => !!snapshot?.tasks.some(task => task.requestMessageId === "model-notes-cmd" && task.status === "done"));
+      const delTask = snapshot!.tasks.find(task => task.requestMessageId === "model-notes-cmd")!;
+      // The socket handler replaces snapshot, so read it again instead of trusting the narrowed type.
+      const notesLeft = () => snapshot!.notes.length;
+      if (notesLeft() !== 0 || !isAppCommand(delTask) || delTask.detail !== "I deleted your Note.")
+        throw new Error("The Notes agent didn't delete the Notes or answer.");
+      console.log("✓ \"Delete all the notes\" in Notes went to the Notes agent, took the push bar, and saved no Note");
+
+      // A command in To-Do reaches the To-Do agent with the selected To-Do, and makes no new To-Do.
+      const todoCount = snapshot!.tasks.filter(task => !isAppCommand(task)).length;
+      send({ type: "voice.scripted", streamId: "model-todo-cmd", text: "Move this one to today and take it out of the project", durationMs: 2000, target: { kind: "task", listId: "inbox", taskId: existingTodo.id } });
+      await until(() => !!snapshot?.tasks.some(task => task.requestMessageId === "model-todo-cmd" && task.status === "done"));
+      const movedToday = snapshot!.tasks.find(task => task.id === existingTodo.id);
+      if (movedToday?.due !== today || movedToday.projectId || snapshot!.tasks.filter(task => !isAppCommand(task)).length !== todoCount
+        || !calls.some(call => JSON.stringify(call.messages).includes(`The selected To-Do is ${existingTodo.id}`)))
+        throw new Error("The To-Do agent didn't move the selected To-Do, or the command became a To-Do.");
+      console.log("✓ A command in To-Do moved the selected To-Do through the To-Do agent and added no To-Do");
     } finally {
       socket.close();
     }

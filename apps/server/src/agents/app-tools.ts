@@ -1,8 +1,25 @@
 /** Typed actions for the Device apps. The server owns app state and approval. */
-import { APP_IDS, type Agent, type AppId, type Note, type Task } from "@app/protocol";
+import { APP_IDS, isAppCommand, type Agent, type AppId, type Note, type Task } from "@app/protocol";
 import { bus } from "../bus.js";
 import { id, now, ownsApp, patchTask, saveNow, state, taskById } from "../store.js";
 import type { ToolDef } from "./tools.js";
+
+/** Statuses where an agent is mid-work. Those Tasks are not changed or deleted under it. */
+const ACTIVE = new Set<Task["status"]>(["queued", "running", "waiting", "awaiting-approval", "held"]);
+/** Tasks the To-Do app lists. Spoken commands are hidden there (ADR 0031). */
+const todoItems = () => state.tasks.filter(task => !isAppCommand(task));
+
+/** One ID in `id`, or several in `ids`. Unknown IDs fail the whole call so nothing half happens. */
+function idsOf(input: Record<string, unknown>): string[] {
+  const list = Array.isArray(input.ids) ? input.ids : typeof input.id === "string" && input.id ? [input.id] : [];
+  const ids = [...new Set(list.filter((value): value is string => typeof value === "string" && !!value))];
+  if (!ids.length) throw new Error("Give an ID in id, or several in ids, from read_app.");
+  if (ids.length > 500) throw new Error("At most 500 items per call.");
+  return ids;
+}
+const titles = (items: { title?: string; text?: string }[]) =>
+  items.slice(0, 4).map(item => `• ${(item.title ?? item.text ?? "").split("\n")[0].slice(0, 60)}`).join("\n") + (items.length > 4 ? `\n…and ${items.length - 4} more` : "");
+const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 const SAY = { type: "string", description: "A short action line for the Device." };
 const APP = { type: "string", enum: [...APP_IDS, "dock"] };
@@ -39,11 +56,15 @@ export const APP_TOOLS: ToolDef[] = [
         return ctx.delegateApp(input.app as AppId, "read_app", input, callId);
       await ctx.gate({ title: `Read ${input.app}?` });
       switch (input.app) {
-        case "notes": return { text: JSON.stringify(state.notes.slice(0, 30).map(note => ({ id: note.id, text: note.text, createdAt: note.createdAt }))) };
+        case "notes": return { text: JSON.stringify({
+          count: state.notes.length,
+          notes: state.notes.slice(0, 200).map(note => ({ id: note.id, text: note.text.slice(0, 400), createdAt: note.createdAt })),
+        }) };
         case "todo": return { text: JSON.stringify({
           projects: state.projects.map(({ id, name }) => ({ id, name })),
-          tasks: state.tasks.filter(task => task.target === "todo").slice(0, 50)
-            .map(({ id, title, status, due, projectId }) => ({ id, title, status, due: due ?? null, projectId: projectId ?? null })),
+          count: todoItems().length,
+          tasks: todoItems().slice(0, 200)
+            .map(({ id, title, status, due, projectId, agentId }) => ({ id, title, status, due: due ?? null, projectId: projectId ?? null, agentId })),
         }) };
         case "focus": return { text: JSON.stringify(state.focus) };
         case "agents": return { text: JSON.stringify(state.agents.map(agent => ({ id: agent.id, name: agent.name, role: agent.role }))) };
@@ -56,11 +77,12 @@ export const APP_TOOLS: ToolDef[] = [
   },
   {
     name: "change_app",
-    description: "Change a built-in Device app. Use notes.create to save a Note, notes.append to add text, or notes.replace to replace a Note's text. Use todo.create for new work and todo.update to rename, reschedule, or move an existing To-Do between projects. Read the app first to resolve existing Notes, To-Dos and projects by name and use the returned IDs. Omit fields the user didn't ask to change. Full permission mode and keys are user-only.",
+    description: "Change a built-in Device app. Use notes.create to save a Note, notes.append to add text, notes.replace to replace a Note's text, or notes.delete to delete Notes. Use todo.create for new work, todo.update to rename, reschedule, or move To-Dos between projects, todo.complete or todo.reopen to change whether they are done, and todo.delete to delete them. notes.delete, todo.update, todo.complete, todo.reopen and todo.delete take several IDs in ids, so one call handles 'all' or 'every' requests: never call them once per item. Read the app first to resolve existing Notes, To-Dos and projects by name and use the returned IDs. Omit fields the user didn't ask to change. Full permission mode and keys are user-only.",
     props: {
-      action: { type: "string", enum: ["notes.create", "notes.append", "notes.replace", "todo.create", "todo.update", "todo.complete", "todo.reopen", "focus.start", "focus.stop", "agents.create", "settings.permission"] },
+      action: { type: "string", enum: ["notes.create", "notes.append", "notes.replace", "notes.delete", "todo.create", "todo.update", "todo.complete", "todo.reopen", "todo.delete", "focus.start", "focus.stop", "agents.create", "settings.permission"] },
       text: { type: "string", description: "Note content or To-Do title." },
       id: { type: "string", description: "Existing Note or To-Do ID from read_app." },
+      ids: { type: "array", items: { type: "string" }, description: "Several Note or To-Do IDs from read_app, for the actions that change many at once." },
       due: { type: ["string", "null"], description: "To-Do due date as local YYYY-MM-DD or YYYY-MM-DDTHH:mm. Null clears it." },
       projectId: { type: ["string", "null"], description: "To-Do project ID from read_app. Null moves it to Inbox." },
       name: { type: "string" }, role: { type: "string" },
@@ -104,27 +126,64 @@ export const APP_TOOLS: ToolDef[] = [
         saveNow(); bus.changed();
         return { text: `Added To-Do ${task.id}.` };
       }
+      if (action === "notes.delete") {
+        const ids = idsOf(input);
+        const notes = ids.map(noteId => state.notes.find(note => note.id === noteId));
+        if (notes.some(note => !note)) throw new Error("A Note was not found. Read the app again.");
+        // Deleting is a Risky action: it always takes the push bar.
+        await ctx.gate({ risk: "delete", title: `Delete ${plural(notes.length, "Note")}?`, body: `${titles(notes as Note[])}\nYou can't undo this.` });
+        const gone = new Set(ids);
+        const before = state.notes.length;
+        state.notes = state.notes.filter(note => !gone.has(note.id));
+        saveNow(); bus.changed();
+        return { text: `Deleted ${plural(before - state.notes.length, "Note")}. ${plural(state.notes.length, "Note")} left.` };
+      }
       if (action === "todo.update") {
-        const task = taskById(key);
-        if (task?.target !== "todo") throw new Error("To-Do not found.");
+        const ids = idsOf(input);
+        const tasks = ids.map(taskById);
+        if (tasks.some(task => !task || isAppCommand(task))) throw new Error("To-Do not found. Read the app again.");
         if ("text" in input && !text) throw new Error("The new To-Do title must contain text.");
+        if (text && ids.length > 1) throw new Error("Rename one To-Do at a time.");
+        const busy = (tasks as Task[]).filter(task => ACTIVE.has(task.status));
+        if (busy.length) throw new Error(`An agent is working on ${busy.map(task => `"${task.title}"`).join(", ")}. Leave it or stop it first.`);
         const patch = { ...todoLocation(input), ...(text ? { title: text } : {}) };
         if (!Object.keys(patch).length) throw new Error("Give a new title, due date or project.");
-        await ctx.gate({ title: "Update this To-Do?", body: task.title });
-        if (taskById(key) !== task || task.target !== "todo") throw new Error("The To-Do changed. Read it again before editing.");
-        patchTask(task, patch);
+        await ctx.gate({ title: ids.length > 1 ? `Update ${plural(ids.length, "To-Do")}?` : "Update this To-Do?", body: titles(tasks as Task[]) });
+        if ((tasks as Task[]).some(task => taskById(task.id) !== task)) throw new Error("The To-Dos changed. Read them again before editing.");
+        for (const task of tasks as Task[]) patchTask(task, patch);
         saveNow(); bus.changed();
-        return { text: JSON.stringify({ id: task.id, title: task.title, due: task.due ?? null, projectId: task.projectId ?? null }) };
+        return { text: JSON.stringify((tasks as Task[]).map(task => ({ id: task.id, title: task.title, due: task.due ?? null, projectId: task.projectId ?? null }))) };
       }
       if (action === "todo.complete" || action === "todo.reopen") {
-        const task = state.tasks.find(item => item.id === key && item.target === "todo");
-        if (!task) throw new Error("To-Do not found.");
-        await ctx.gate({ title: action === "todo.complete" ? "Complete this To-Do?" : "Reopen this To-Do?", body: task.title });
-        task.status = action === "todo.complete" ? "done" : "todo";
-        task.updatedAt = now();
-        task.completedAt = task.status === "done" ? now() : undefined;
+        const ids = idsOf(input);
+        const tasks = ids.map(taskById);
+        if (tasks.some(task => !task || isAppCommand(task))) throw new Error("To-Do not found. Read the app again.");
+        const busy = (tasks as Task[]).filter(task => ACTIVE.has(task.status));
+        if (busy.length) throw new Error(`An agent is working on ${busy.map(task => `"${task.title}"`).join(", ")}. Leave it or stop it first.`);
+        const done = action === "todo.complete";
+        await ctx.gate({ title: `${done ? "Complete" : "Reopen"} ${ids.length > 1 ? plural(ids.length, "To-Do") : "this To-Do"}?`, body: titles(tasks as Task[]) });
+        for (const task of tasks as Task[]) {
+          task.status = done ? "done" : "todo";
+          if (!done) { task.target = "todo"; task.agentId = null; }
+          task.updatedAt = now();
+          task.completedAt = done ? now() : undefined;
+        }
         saveNow(); bus.changed();
-        return { text: `${task.status === "done" ? "Completed" : "Reopened"} To-Do ${task.id}.` };
+        return { text: `${done ? "Completed" : "Reopened"} ${plural(ids.length, "To-Do")}.` };
+      }
+      if (action === "todo.delete") {
+        const ids = idsOf(input);
+        const tasks = ids.map(taskById);
+        if (tasks.some(task => !task || isAppCommand(task))) throw new Error("To-Do not found. Read the app again.");
+        const busy = (tasks as Task[]).filter(task => ACTIVE.has(task.status));
+        if (busy.length) throw new Error(`An agent is working on ${busy.map(task => `"${task.title}"`).join(", ")}. Leave it or stop it first.`);
+        await ctx.gate({ risk: "delete", title: `Delete ${plural(ids.length, "To-Do")}?`, body: `${titles(tasks as Task[])}\nYou can't undo this.` });
+        const gone = new Set(ids);
+        const before = state.tasks.length;
+        state.tasks = state.tasks.filter(task => !gone.has(task.id) || ACTIVE.has(task.status));
+        for (const note of state.notes) note.taskIds = note.taskIds.filter(taskId => !gone.has(taskId));
+        saveNow(); bus.changed();
+        return { text: `Deleted ${plural(before - state.tasks.length, "To-Do")}. ${plural(todoItems().length, "To-Do")} left.` };
       }
       if (action === "focus.start") {
         const minutes = Number(input.minutes);

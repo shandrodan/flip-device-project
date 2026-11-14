@@ -4,11 +4,13 @@
 // agent appears above it on black, like Notes: it makes one task from what you said and files it.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Agent, Note, Task } from "@app/protocol";
+import { isAppCommand } from "@app/protocol";
 import { CalendarDaysIcon, CalendarIcon, CheckCircleIcon, CheckIcon, InboxIcon, PlusIcon } from "@heroicons/react/20/solid";
 import { Bot, type BotState } from "../../bot/Bot";
 import { useControls, step, LAYER } from "../../input/controls";
 import { net } from "../../net/client";
 import { startCapture, blobToBase64, nextTodoSample, type Capture, type VoiceSource } from "../../voice/capture";
+import { followView, REPLY_MS } from "./agentFollow";
 import { useApp } from "../context";
 import { AgentBot, useTick } from "../ui";
 import { PadStatus } from "./Notes";
@@ -55,7 +57,9 @@ const BASE: List[] = [
   { id: "completed", name: "Completed", icon: ico(CheckCircleIcon) },
 ];
 
-export function tasksIn(id: ListId, all: Task[]): Task[] {
+export function tasksIn(id: ListId, everything: Task[]): Task[] {
+  // A command spoken in Notes or To-Do is agent work, not a To-Do (ADR 0031).
+  const all = everything.filter(t => !isAppCommand(t));
   if (id === "completed") return all.filter(t => t.status === "done").sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
   const open = all.filter(t => t.status !== "done");
   const today = localDay();
@@ -98,8 +102,8 @@ const busyAgent = (t: Task) => !!t.agentId && ["running", "awaiting-approval", "
 
 /* ------------------------------ Dictation (same flow as Notes) ------------------------------ */
 const DONE_MS = 5000;
-type Phase = "listen" | "think" | "done" | "miss";
-interface Dict { phase: Phase; heard: string; about: string; label: string; bot: BotState }
+type Phase = "listen" | "think" | "work" | "done" | "miss";
+interface Dict { phase: Phase; heard: string; about: string; label: string; bot: BotState; reply?: string }
 const short = (s: string, n = 26) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
 
 /* ================================ Screen ================================ */
@@ -183,6 +187,18 @@ export function Todo() {
   const dLater = (fn: () => void, ms: number) => { dTimers.current.push(window.setTimeout(fn, ms)); };
   const clearD = () => { dTimers.current.forEach(clearTimeout); dTimers.current = []; stopWait.current?.(); stopWait.current = null; };
   const patch = (p: Partial<Dict>) => setDict(d => (d ? { ...d, ...p } : d));
+  // A spoken command went to the app's Task agent: follow its Task until it answers (ADR 0031).
+  const [cmd, setCmd] = useState<{ taskId: string; agentId: string } | null>(null);
+  useEffect(() => {
+    if (!cmd) return;
+    const name = snap.agents.find(a => a.id === cmd.agentId)?.name ?? "The agent";
+    const task = snap.tasks.find(t => t.id === cmd.taskId);
+    const view = followView(task, name);
+    // What the server heard, when the Device had no live transcript of its own.
+    const said = snap.messages.find(m => m.id === task?.requestMessageId)?.text;
+    patch({ phase: view.phase, bot: view.bot, label: view.label, about: view.about, reply: view.reply, ...(said && !lastDict.current?.heard ? { heard: said } : {}) });
+    if (view.phase === "done") { setCmd(null); dLater(close, REPLY_MS); }
+  }, [cmd, snap.tasks]);
 
   const close = () => {
     clearD();
@@ -192,6 +208,7 @@ export function Todo() {
       if (streaming.current) net.send({ type: "voice.cancel", streamId: streamId.current });
     }
     setDict(null);
+    setCmd(null);
     setLevel(0);
     // The new task, if it's in the open list, opens with the usual morph as the app comes back up.
     const id = landed.current;
@@ -218,6 +235,7 @@ export function Todo() {
   const miss = () => { patch({ phase: "miss", bot: "sad", about: "" }); dLater(close, 2200); };
 
   const start = () => {
+    setCmd(null);
     clearD();
     if (cap.current) { cap.current.cancel(); cap.current = null; }
     released.current = false;
@@ -278,6 +296,15 @@ export function Todo() {
 
     const sid = streamId.current, scripted = c.source === "script" || !streaming.current;
     const stop = net.on(m => {
+      const ours = scripted || ("streamId" in m && m.streamId === sid);
+      if ((m.type === "voice.accepted" || m.type === "voice.rejected") && ours) {
+        stop();
+        clearTimeout(slow);
+        stopWait.current = null;
+        if (m.type === "voice.accepted") setCmd({ taskId: m.taskId, agentId: m.agentId });
+        else { patch({ phase: "done", bot: "sad", label: "Nothing saved", about: "", reply: m.reason }); dLater(close, REPLY_MS); }
+        return;
+      }
       if (m.type !== "task.routed" || (!scripted && m.streamId !== sid)) return;
       stop();
       clearTimeout(slow);
@@ -397,8 +424,8 @@ export function Todo() {
 
   /* ---------- Render ---------- */
   const shownDict = dict ?? lastDict.current;
-  const openCount = snap.tasks.filter(t => t.status !== "done").length;
-  const doneToday = snap.tasks.filter(t => t.status === "done" && t.completedAt && new Date(t.completedAt).toDateString() === new Date().toDateString()).length;
+  const openCount = snap.tasks.filter(t => t.status !== "done" && !isAppCommand(t)).length;
+  const doneToday = snap.tasks.filter(t => !isAppCommand(t) && t.status === "done" && t.completedAt && new Date(t.completedAt).toDateString() === new Date().toDateString()).length;
   const count = board ? cols.reduce((n, c) => n + c.tasks.length, 0) : items.length;
   const lateToday = tasksIn("today", snap.tasks).some(t => tone(t) === "late");
 
@@ -409,16 +436,19 @@ export function Todo() {
         <div className="np-label">
           {shownDict.phase === "listen" ? <><i className="np-live" />Listening</>
             : shownDict.phase === "think" ? <>Thinking<span className="np-dots"><i>.</i><i>.</i><i>.</i></span></>
-            : shownDict.phase === "miss" ? "Didn’t catch that" : shownDict.label}
+            : shownDict.phase === "miss" ? "Didn’t catch that"
+            : shownDict.phase === "work" ? <>{shownDict.label}<span className="np-dots"><i>.</i><i>.</i><i>.</i></span></> : shownDict.label}
         </div>
         <div className="np-said">
           {shownDict.phase === "miss" ? <span className="np-wait">Hold the mic and talk. I’ll turn it into a task.</span>
+            : shownDict.reply ? <span className="np-reply">{shownDict.reply}</span>
             : shownDict.heard ? `“${shownDict.heard}”` : <span className="np-wait">Say what needs doing</span>}
         </div>
         {shownDict.about && <div className="np-about">{shownDict.about}</div>}
       </div>}
       {shownDict?.phase === "listen" && <span className="np-pill">Release to save</span>}
       {shownDict?.phase === "done" && <span className="np-pill">B to close</span>}
+      {shownDict?.phase === "work" && <span className="np-pill">B to hide</span>}
     </div>
 
     <div className="np-app td-app">

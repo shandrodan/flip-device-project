@@ -8,6 +8,9 @@ import { transcribe } from "./voice.js";
 import { suggestTasks } from "./suggest.js";
 import { routeDump } from "./route.js";
 import { acceptVoiceMessage } from "./agents/coordination.js";
+import { dumpIntent, type DumpApp } from "./intent.js";
+import { hasLlm } from "./llm.js";
+import { titleOf } from "./route.js";
 
 interface Stream {
   mime: string;
@@ -92,9 +95,9 @@ export async function voiceEnd(streamId: string, durationMs: number, hint?: stri
 }
 
 /** Hand speech to a Task agent. A refusal (agent gone, empty, too long) reaches the Device instead of leaving the mic busy. */
-function sendToAgent(target: Extract<VoiceTarget, { kind: "main" | "agent" | "app" }>, text: string, streamId: string) {
+function sendToAgent(target: Extract<VoiceTarget, { kind: "main" | "agent" | "app" }>, text: string, streamId: string, context?: string) {
   try {
-    const task = acceptVoiceMessage(target, text, streamId, startTask);
+    const task = acceptVoiceMessage(target, text, streamId, startTask, context);
     bus.emit({ type: "voice.accepted", streamId, taskId: task.id, agentId: task.agentId! });
   } catch (error) {
     bus.emit({ type: "voice.rejected", streamId, reason: (error as Error).message });
@@ -158,7 +161,11 @@ async function routeAuto(raw: string, openNoteId: string | null, durationMs: num
     bus.emit({ type: "state", state: "idle" });
     return;
   }
-  const r = await routeDump(text, openNoteId);
+  const open = openNoteId ? noteById(openNoteId) : undefined;
+  // Both model calls at once, so a normal Dump isn't slower. A command just drops the route.
+  const [intent, r] = await Promise.all([dumpIntent(text, "notes"), routeDump(text, openNoteId)]);
+  if (intent === "command")
+    return commandForApp("notes", text, streamId, `In the Notes app.${open ? ` The open Note is ${open.id}, "${titleOf(open)}".` : " No Note is open."}`);
   if (r.action === "append" && r.noteId && noteById(r.noteId)) {
     // A new line, so a list stays a list.
     appendToNote(r.noteId, r.text, { sep: "\n", quiet: true });
@@ -180,7 +187,12 @@ async function routeTaskDump(raw: string, listId: string | null, durationMs: num
     return;
   }
   const selected = taskId ? state.tasks.find(t => t.id === taskId) : undefined;
-  const d = await decideTask(text, listId, selected);
+  const context = `In the To-Do app. The open list is ${state.projects.find(p => p.id === listId)?.name ?? listId ?? "today"}.${selected ? ` The selected To-Do is ${selected.id}, "${selected.title}".` : " No To-Do is selected."}`;
+  // Both decisions at once, so adding a To-Do isn't slower. A command just drops the other one.
+  const [intent, d] = await Promise.all([dumpIntent(text, "todo"), decideTask(text, listId, selected)]);
+  if (intent === "command" && hasLlm()) return commandForApp("todo", text, streamId, context);
+  // Without a key, the selected To-Do can still be moved, renamed or completed by rules (ADR 0025).
+  if (intent === "command" && !(d.kind === "edit" && selected)) return commandForApp("todo", text, streamId, context);
   const note = createNote(/[.!?]$/.test(text) ? text : text + ".", by, durationMs);
   if (d.kind === "edit" && selected) return applyTaskEdit(selected, d.edit, note, streamId);
   const r = d.kind === "add" ? d.route : await routeTask(text, listId);
@@ -195,6 +207,19 @@ async function routeTaskDump(raw: string, listId: string | null, durationMs: num
   bus.emit({ type: "task.routed", taskId: task.id, noteId: note.id, label: r.label, why: r.why, streamId });
   bus.emit({ type: "state", state: "idle" });
   if (task.agentId) startTask(task);
+}
+
+/**
+ * A command spoken in Notes or To-Do goes to that app's Task agent instead of becoming a Note (ADR 0031).
+ * The agent answers on the same screen. Without an AI key nothing is saved and the Device says why.
+ */
+function commandForApp(app: DumpApp, text: string, streamId = id("voice"), context?: string) {
+  if (!hasLlm()) {
+    bus.emit({ type: "voice.rejected", streamId, reason: `That sounds like a command. Add an AI key at /setup so the ${app === "notes" ? "Notes" : "To-Do"} agent can do it. Nothing was saved.` });
+    bus.emit({ type: "state", state: "idle" });
+    return;
+  }
+  sendToAgent({ kind: "app", app }, text, streamId, context);
 }
 
 /** "Move this to Friday": the dump is still a note first, then it changes the selected task (ADR 0025). */

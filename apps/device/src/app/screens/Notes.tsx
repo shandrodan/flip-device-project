@@ -9,6 +9,7 @@ import { Bot, type BotState } from "../../bot/Bot";
 import { useControls, step } from "../../input/controls";
 import { net, useNet } from "../../net/client";
 import { startCapture, blobToBase64, nextPadSample, type Capture, type VoiceSource } from "../../voice/capture";
+import { followView, REPLY_MS } from "./agentFollow";
 import { useApp } from "../context";
 import { useTick } from "../ui";
 import { useAllNotes } from "./NoteView";
@@ -36,12 +37,12 @@ const when = (iso: string) => {
   return days < 2 ? "Yesterday" : d.toLocaleDateString([], { weekday: "long" });
 };
 
-type Phase = "listen" | "think" | "done" | "miss";
-interface Dict { phase: Phase; heard: string; about: string; label: string; bot: BotState }
+type Phase = "listen" | "think" | "work" | "done" | "miss";
+interface Dict { phase: Phase; heard: string; about: string; label: string; bot: BotState; reply?: string }
 type Flip = { from: string; dir: 1 | -1; k: number };
 
 export function Notes() {
-  const { voice, toast, push, online } = useApp();
+  const { snap, voice, toast, push, online } = useApp();
   const notes = useAllNotes();
   const [selId, setSelId] = useState<string | null>(notes[0]?.id ?? null);
   const found = notes.findIndex(n => n.id === selId);
@@ -95,6 +96,18 @@ export function Notes() {
   const later = (fn: () => void, ms: number) => { timers.current.push(window.setTimeout(fn, ms)); };
   const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; stopWait.current?.(); stopWait.current = null; };
   const patch = (p: Partial<Dict>) => setDict(d => (d ? { ...d, ...p } : d));
+  // A spoken command went to the app's Task agent: follow its Task until it answers (ADR 0031).
+  const [cmd, setCmd] = useState<{ taskId: string; agentId: string } | null>(null);
+  useEffect(() => {
+    if (!cmd) return;
+    const name = snap.agents.find(a => a.id === cmd.agentId)?.name ?? "The agent";
+    const task = snap.tasks.find(t => t.id === cmd.taskId);
+    const view = followView(task, name);
+    // What the server heard, when the Device had no live transcript of its own.
+    const said = snap.messages.find(m => m.id === task?.requestMessageId)?.text;
+    patch({ phase: view.phase, bot: view.bot, label: view.label, about: view.about, reply: view.reply, ...(said && !lastDict.current?.heard ? { heard: said } : {}) });
+    if (view.phase === "done") { setCmd(null); later(close, REPLY_MS); }
+  }, [cmd, snap.tasks]);
 
   const close = () => {
     clearTimers();
@@ -104,6 +117,7 @@ export function Notes() {
       if (streaming.current) net.send({ type: "voice.cancel", streamId: streamId.current });
     }
     setDict(null);
+    setCmd(null);
     setLevel(0);
   };
   useEffect(() => { alive.current = true; return () => { alive.current = false; close(); }; }, []);
@@ -120,6 +134,7 @@ export function Notes() {
   const miss = () => { patch({ phase: "miss", bot: "sad", about: "" }); later(close, 2200); };
 
   const start = () => {
+    setCmd(null);
     clearTimers();
     if (cap.current) { cap.current.cancel(); cap.current = null; }
     released.current = false;
@@ -191,6 +206,15 @@ export function Notes() {
 
     const sid = streamId.current, scripted = c.source === "script" || !streaming.current;
     const stop = net.on(m => {
+      const ours = scripted || ("streamId" in m && m.streamId === sid);
+      if ((m.type === "voice.accepted" || m.type === "voice.rejected") && ours) {
+        stop();
+        clearTimeout(slow);
+        stopWait.current = null;
+        if (m.type === "voice.accepted") setCmd({ taskId: m.taskId, agentId: m.agentId });
+        else { patch({ phase: "done", bot: "sad", label: "Nothing saved", about: "", reply: m.reason }); later(close, REPLY_MS); }
+        return;
+      }
       if (m.type !== "note.routed" || (!scripted && m.streamId !== sid)) return;
       stop();
       clearTimeout(slow);
@@ -272,16 +296,19 @@ export function Notes() {
         <div className="np-label">
           {shown.phase === "listen" ? <><i className="np-live" />Listening</>
             : shown.phase === "think" ? <>Thinking<span className="np-dots"><i>.</i><i>.</i><i>.</i></span></>
-            : shown.phase === "miss" ? "Didn’t catch that" : shown.label}
+            : shown.phase === "miss" ? "Didn’t catch that"
+            : shown.phase === "work" ? <>{shown.label}<span className="np-dots"><i>.</i><i>.</i><i>.</i></span></> : shown.label}
         </div>
         <div className="np-said">
           {shown.phase === "miss" ? <span className="np-wait">Hold the mic and talk. I’ll keep it as a note.</span>
+            : shown.reply ? <span className="np-reply">{shown.reply}</span>
             : shown.heard ? `“${shown.heard}”` : <span className="np-wait">Say what’s on your mind</span>}
         </div>
         {shown.about && <div className="np-about">{shown.about}</div>}
       </div>}
       {shown?.phase === "listen" && <span className="np-pill">Release to save</span>}
       {shown?.phase === "done" && <span className="np-pill">B to close</span>}
+      {shown?.phase === "work" && <span className="np-pill">B to hide</span>}
     </div>
 
     <div className="np-app">

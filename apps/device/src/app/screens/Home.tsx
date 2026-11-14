@@ -9,6 +9,7 @@
 // Blue D on an app or a bot opens its menu over the left column (ADR 0017).
 import { useState, type ReactNode } from "react";
 import type { Agent, AppId, Snapshot } from "@app/protocol";
+import { isAppCommand } from "@app/protocol";
 import { Bot } from "../../bot/Bot";
 import { useControls, step } from "../../input/controls";
 import { useApp, useTalkTarget, FN_LABEL } from "../context";
@@ -136,7 +137,7 @@ export function Home() {
   const waiting = active.filter(t => ["held", "paused", "awaiting-approval"].includes(t.status));
   const running = active.filter(t => t.status === "running");
   const pending = snap.notes.find(n => n.suggestionState === "ready");
-  const todo = snap.tasks.filter(t => t.status !== "done").length;
+  const todo = snap.tasks.filter(t => t.status !== "done" && !isAppCommand(t)).length;
 
   const { units, slots } = combLayout(snap);
   const cells: Cell[] = units.flat(), pos = slots.flat();

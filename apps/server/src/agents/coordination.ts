@@ -31,7 +31,7 @@ export function conversationFor(task: Task, request: AgentMessage | undefined) {
 }
 
 /** Accept one voice request. The request ID makes reconnect and replay safe. */
-export function acceptVoiceMessage(target: AgentTarget, text: string, requestId: string, start: Start): Task {
+export function acceptVoiceMessage(target: AgentTarget, text: string, requestId: string, start: Start, context?: string): Task {
   const existing = state.messages.find(message => message.id === requestId);
   if (existing) {
     const task = state.tasks.find(item => item.id === existing.taskId);
@@ -45,6 +45,7 @@ export function acceptVoiceMessage(target: AgentTarget, text: string, requestId:
     id: id("t"), title: title(text), target: "agent", agentId, status: "todo", steps: [],
     requestMessageId: requestId, depth: 0, createdAt: now(), updatedAt: now(),
     ...(target.kind === "app" ? { app: target.app } : {}),
+    ...(context ? { voiceContext: context } : {}),
   };
   const message: AgentMessage = {
     id: requestId, fromAgentId: "user", toAgentId: agentId, taskId: task.id,

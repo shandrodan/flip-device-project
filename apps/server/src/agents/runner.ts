@@ -1,7 +1,7 @@
 // Runs one task with its agent using the configured model or the built-in planner.
 // Either way every action goes through the same tools, the same gate and the same PC link.
 import type Anthropic from "@anthropic-ai/sdk";
-import type { AppId, Task, TaskStep } from "@app/protocol";
+import { isAppCommand, type AppId, type Task, type TaskStep } from "@app/protocol";
 import { state, agentById, appOfAgent, id, log, ownsApp, patchTask, pickAppAgent, save, saveNow, noteById, servesBuild } from "../store.js";
 import { bus } from "../bus.js";
 import { requestApproval, cancelForTask, Cancelled } from "../approvals.js";
@@ -181,7 +181,8 @@ export function startTask(task: Task) {
       if (task.appRequest) patchTask(task, { status: "done", detail: appRequestSummary(task.appRequest, final), result: final, completedAt: new Date().toISOString() });
       else patchTask(task, { status: "done", detail: short, result: final.length > 160 ? final : undefined, completedAt: new Date().toISOString() });
       log(agent.id, `Finished: ${task.title}`);
-      bus.notice(`${agent.name} finished: ${task.title}`, "happy");
+      // A command spoken in Notes or To-Do answers on that screen's band already (ADR 0031).
+      if (!isAppCommand(task)) bus.notice(`${agent.name} finished: ${task.title}`, "happy");
     } catch (err) {
       for (const child of state.tasks.filter(item => item.parentTaskId === task.id)) cancelTask(child.id);
       if (err instanceof Cancelled) {
@@ -333,7 +334,7 @@ async function runModel(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string> 
 
   const history = conversationFor(task, request);
   const messages: Anthropic.Beta.BetaMessageParam[] = [
-    { role: "user", content: `${history.length ? `Previous exchanges (context only):\n${JSON.stringify(history)}\n\n` : ""}${request?.fromAgentId === "user" ? "Latest request from the user" : request ? `Request from Task agent ${agentById(request.fromAgentId)?.name ?? request.fromAgentId}` : "Task"}: ${requestText(task)}` + (note ? `\n\nFrom the user's voice note: "${note.text}"` : "") },
+    { role: "user", content: `${history.length ? `Previous exchanges (context only):\n${JSON.stringify(history)}\n\n` : ""}${request?.fromAgentId === "user" ? "Latest request from the user" : request ? `Request from Task agent ${agentById(request.fromAgentId)?.name ?? request.fromAgentId}` : "Task"}: ${requestText(task)}` + (note ? `\n\nFrom the user's voice note: "${note.text}"` : "") + (task.voiceContext ? `\n\nOn screen: ${task.voiceContext}` : "") },
   ];
 
   ctx.step("Read the task");

@@ -85,6 +85,8 @@ export interface Task {
   /** The Device app whose screen the voice request came from, e.g. "build" (ADR 0021). */
   app?: AppId;
   requestMessageId?: string;
+  /** What was on screen when a command was spoken in Notes or To-Do, e.g. the selected To-Do (ADR 0031). */
+  voiceContext?: string;
   depth?: number;
   status: TaskStatus;
   steps: TaskStep[];
@@ -483,3 +485,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     return null;
   }
 }
+
+/** A command spoken in Notes or To-Do and run by that app's Task agent (ADR 0031). Not a To-Do of its own. */
+export const isAppCommand = (task: Pick<Task, "requestMessageId" | "app">) =>
+  !!task.requestMessageId && (task.app === "notes" || task.app === "todo");

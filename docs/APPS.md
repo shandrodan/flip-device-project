@@ -22,7 +22,7 @@ Flow:
 4. The device suggests actions ("this looks like 2 tasks"). One press accepts.
 5. An accepted task goes to an agent, or to a todo list.
 
-On screen (ADR 0011): the list on the left, the open note on a ruled pad on the right. Hold the mic and just talk: the main agent reads the open note and files what you said there, in another note it clearly belongs to, or in a new note. "Add to this note …" and "new note …" force it. The result stays on screen for 5 seconds. On Home the mic talks to the main Task agent instead (ADR 0012).
+On screen (ADR 0011): the list on the left, the open note on a ruled pad on the right. Hold the mic and just talk: the main agent reads the open note and files what you said there, in another note it clearly belongs to, or in a new note. "Add to this note …" and "new note …" force it. The result stays on screen for 5 seconds. A command ("delete all the notes", "summarise my notes") goes to the Notes agent instead and is not saved; its steps and answer show in the same band (ADR 0031). On Home the mic talks to the main Task agent instead (ADR 0012).
 
 Rules:
 - Cloud re-transcription only replaces the text if the user hasn't edited the note.
@@ -33,7 +33,7 @@ Rules:
 - Tasks from notes or voice.
 - Each task can be handed to an agent or kept as a plain todo.
 
-On screen (ADR 0016): Notes' layout in blue. Today, Inbox, Scheduled (a board of days) and Completed, then projects. The selected task opens into a card in place. Hold the mic and say a task: it's kept as a note, then filed with its day, project, or the agent you named. Our own list for now; Todoist is still open.
+On screen (ADR 0016): Notes' layout in blue. Today, Inbox, Scheduled (a board of days) and Completed, then projects. The selected task opens into a card in place. Hold the mic and say a task: it's kept as a note, then filed with its day, project, or the agent you named. A command ("move everything in Inbox to today", "delete the completed ones", "what's due today?") goes to the To-Do agent instead, with the selected task as context (ADR 0031). Our own list for now; Todoist is still open.
 
 ## Build (ADR 0021)
 
