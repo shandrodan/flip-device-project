@@ -11,6 +11,8 @@
     "dev:pc": "pnpm --filter pc-agent dev",
     "build": "pnpm --filter device build",
     "typecheck": "pnpm -r typecheck",
-    "test:e2e": "pnpm --filter server test:e2e"
+    "test:e2e": "pnpm --filter server test:e2e",
+    "test:agents": "pnpm --filter server test:agents",
+    "sim:cloud": "cloud-vm/sim/run.sh"
   }
 }

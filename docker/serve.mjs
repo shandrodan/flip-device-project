@@ -1,5 +1,6 @@
-// Tiny static server for the built Device app, no dependencies. Proxies /ws to the server
-// so the Device keeps one origin. SERVER_URL=http://server:8787 PORT=5173 node serve.mjs
+// Tiny static server for the built Device app, no dependencies. Proxies /ws, /setup, /health and the
+// Build preview (/preview/, with its hot-reload socket) to the server, so the Device keeps one origin
+// and a server on another machine needs no public port. SERVER_URL=http://server:8787 PORT=5173 node serve.mjs
 import http from "node:http";
 import net from "node:net";
 import fs from "node:fs";
@@ -12,7 +13,7 @@ const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", "
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || "/", "http://x");
-  if (url.pathname === "/setup" || url.pathname === "/health") {
+  if (url.pathname === "/setup" || url.pathname === "/health" || url.pathname === "/preview" || url.pathname.startsWith("/preview/")) {
     const up = http.request({ host: upstream.hostname, port: upstream.port || 80, path: req.url, method: req.method, headers: req.headers }, r => { res.writeHead(r.statusCode || 502, r.headers); r.pipe(res); });
     up.on("error", () => res.writeHead(502).end("server unreachable"));
     return req.pipe(up);
@@ -26,7 +27,7 @@ const server = http.createServer((req, res) => {
 
 // WebSocket pass-through: replay the upgrade request upstream and pipe both ways.
 server.on("upgrade", (req, socket, head) => {
-  if (!req.url?.startsWith("/ws")) return socket.destroy();
+  if (!req.url?.startsWith("/ws") && !req.url?.startsWith("/preview/")) return socket.destroy();
   const up = net.connect(Number(upstream.port || 80), upstream.hostname, () => {
     const headers = Object.entries(req.headers).map(([k, v]) => `${k}: ${v}`).join("\r\n");
     up.write(`${req.method} ${req.url} HTTP/1.1\r\n${headers}\r\n\r\n`);

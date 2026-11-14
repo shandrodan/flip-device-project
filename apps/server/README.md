@@ -26,3 +26,12 @@ Open `/setup` and enter an OpenRouter key, or set `OPENROUTER_API_KEY` on the se
 | `ENGINE_CONFIG` | none | JSON merged into the OpenCode config, e.g. a local model: `{"provider":{"ollama":{"npm":"@ai-sdk/openai-compatible","options":{"baseURL":"http://localhost:11434/v1"},"models":{"qwen3":{}}}}}` |
 | `ENGINE_STEPS` | `40` | Most model steps per turn. |
 | `ENGINE_VERBOSE` | off | Prints OpenCode's output. |
+
+### Build on the server (ADR 0033)
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `BUILD_HOST` | `pc` | `server` keeps the Build project on this machine: OpenCode's coding tools work in it, `build_serve` runs its dev server, `/preview/` streams it. |
+| `BUILD_DIR` | `~/Flip/build` | The project folder (on the server with `BUILD_HOST=server`). |
+
+`src/build-host.ts` runs commands and the dev server; `src/build-preview.ts` serves `/preview/`.

@@ -29,7 +29,8 @@ import { startTask, cancelTask, isRunning, resumePausedForMachines, resumeQueued
 import { voiceStart, voiceChunk, voiceEnd, voiceCancel, voiceScripted, syncOfflineNote, runSuggestions } from "./notes.js";
 import { handleSetup } from "./setup.js";
 import { acceptVoiceMessage } from "./agents/coordination.js";
-import { serveBuildPreview } from "./build-preview.js";
+import { serveBuildPreview, upgradeBuildPreview } from "./build-preview.js";
+import { restoreDev } from "./build-host.js";
 import { engineEnabled, engineModel, handleEngineHttp, stopEngine, warmEngine } from "./agents/engine.js";
 
 const SERVER_ID = id("srv");
@@ -438,7 +439,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(308, { location: "/preview/" }).end();
   } else if (url.pathname.startsWith("/preview/")) {
     if (config.deviceToken) res.setHeader("content-security-policy", "sandbox allow-scripts allow-forms");
-    await serveBuildPreview(res, url.pathname.slice("/preview/".length));
+    await serveBuildPreview(req, res, url.pathname.slice("/preview/".length));
   } else if (url.pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, clients: clients.size, llm: hasLlm(), machines: machines.list().map(m => ({ name: m.name, online: m.online })) }));
   } else if (url.pathname === "/api/snapshot") {
@@ -452,7 +453,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 const wss = new WebSocketServer({
-  server,
+  noServer: true,
   path: "/ws",
   maxPayload: 40 * 1024 * 1024,
   handleProtocols: protocols => protocols.has(deviceProtocol) ? deviceProtocol : false,
@@ -464,6 +465,13 @@ const wss = new WebSocketServer({
       return actual.length === deviceCredential.length && timingSafeEqual(actual, deviceCredential);
     });
   },
+});
+// /ws is the Device. /preview/ passes the Build dev server's hot reload through (ADR 0033).
+server.on("upgrade", (req, socket, head) => {
+  const pathname = new URL(req.url || "/", "http://x").pathname;
+  if (pathname === "/ws") wss.handleUpgrade(req, socket, head, ws => wss.emit("connection", ws, req));
+  else if (pathname.startsWith("/preview/")) upgradeBuildPreview(req, socket, head);
+  else socket.destroy();
 });
 wss.on("connection", ws => {
   const c: Client = { ws, kind: "device", mode: "handheld", deviceId: "" };
@@ -495,6 +503,7 @@ server.listen(config.port, config.host, () => {
   const engine = engineModel();
   console.log(`Agent engine: ${engineEnabled() ? `OpenCode${engine ? ` (${engine.providerID}/${engine.modelID})` : ", waiting for a key"}` : "built-in loop"}`);
   warmEngine();
+  restoreDev();
 });
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { stopEngine(); saveNow(); process.exit(0); });
 process.once("exit", stopEngine);

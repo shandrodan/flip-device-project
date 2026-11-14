@@ -76,7 +76,23 @@ const todos = () => snap!.tasks.filter(t => !isAppCommand(t) && t.target === "to
 const has = (list: string[], word: string) => list.some(t => new RegExp(`\\b${word}\\b`, "i").test(t));
 const flipDir = (...p: string[]) => path.join(home, "Flip", ...p);
 
-interface Scenario { name: string; turns: { target: any; text: string }[]; check(): string | null }
+interface Scenario { name: string; turns: { target: any; text: string }[]; check(): string | null | Promise<string | null> }
+const buildDir = path.join(root, "build");
+const preview = async (p = "") => {
+  try {
+    const r = await fetch(`http://127.0.0.1:${PORT}/preview/${p}`);
+    return { status: r.status, text: await r.text() };
+  } catch (err) { return { status: 0, text: String(err) }; }
+};
+/** Every text file in the Build project, joined, without node_modules. */
+function projectText(dir = buildDir): string {
+  if (!fs.existsSync(dir)) return "";
+  return fs.readdirSync(dir, { withFileTypes: true }).map(entry => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === "node_modules" || entry.name.startsWith(".") ? "" : projectText(full);
+    return /\.(html|css|js|jsx|ts|tsx|json)$/.test(entry.name) && fs.statSync(full).size < 200_000 ? fs.readFileSync(full, "utf8") : "";
+  }).join("\n");
+}
 const scenarios: Scenario[] = [
   {
     name: "notes",
@@ -141,6 +157,39 @@ const scenarios: Scenario[] = [
       return ok ? null : `files: ${JSON.stringify(left)}`;
     },
   },
+  {
+    name: "build-static",
+    turns: [{ target: { kind: "app", app: "build" }, text: "Make the Build project a one-page site called Flip Lemonade, with a big button that counts how many times it was clicked." }],
+    async check() {
+      const page = await preview();
+      return page.status === 200 && /Flip Lemonade/i.test(page.text) && /button/i.test(projectText()) ? null : `preview ${page.status}: ${page.text.slice(0, 160)}`;
+    },
+  },
+  {
+    name: "build-edit",
+    turns: [{ target: { kind: "app", app: "build" }, text: "Make the button green, and add a line under the title that says Fresh every day." }],
+    async check() {
+      const all = projectText();
+      return /Fresh every day/i.test(all) && /green|#[0-9a-f]{0,2}(8|9|a|b|c|d)[0-9a-f]{0,2}[0-4][0-9a-f]|rgb\(\s*\d{1,2}\s*,\s*1\d\d/i.test(all) ? null : "line or green button missing";
+    },
+  },
+  {
+    name: "build-vite",
+    turns: [{ target: { kind: "app", app: "build" }, text: "Turn the Build project into a Vite + React app. Keep the Flip Lemonade title, the tagline and the green counter button. Install it and run its dev server so I see it in the preview." }],
+    async check() {
+      const page = await preview();
+      const pkg = fs.existsSync(path.join(buildDir, "package.json")) ? fs.readFileSync(path.join(buildDir, "package.json"), "utf8") : "";
+      const client = await preview("@vite/client");
+      const problems = [
+        !/"vite"/.test(pkg) && "no vite in package.json",
+        !/"react"/.test(pkg) && "no react in package.json",
+        page.status !== 200 && `preview ${page.status}`,
+        client.status !== 200 && `vite client through /preview/: ${client.status}`,
+        !/Flip Lemonade/i.test(projectText()) && "title lost",
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
 ];
 
 async function main() {
@@ -152,6 +201,7 @@ async function main() {
     PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`, PC_AGENT_TOKEN: "agents",
     DEVICE_ACCESS_TOKEN: "", DEMO_PLANNER: "", SMTP_URL: "", STT_API_KEY: "",
     AGENT_ENGINE: ENGINE, ...(MODEL ? { ENGINE_MODEL: MODEL } : {}),
+    BUILD_HOST: "server", BUILD_DIR: buildDir, BUILD_NAME: "Lemonade", BUILD_PREVIEW_URL: "", PUBLIC_URL: `http://127.0.0.1:${PORT}`,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? "", ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
   });
   for (let i = 0; i < 80 && !ws; i++) {
@@ -178,7 +228,7 @@ async function main() {
     if (ONLY.length && !ONLY.includes(scenario.name)) continue;
     let last: Awaited<ReturnType<typeof ask>> | null = null;
     for (const turn of scenario.turns) last = await ask(turn.target, turn.text);
-    const problem = !last?.task ? "timed out" : last.task.status !== "done" ? `Task ${last.task.status}: ${last.task.detail}` : scenario.check();
+    const problem = !last?.task ? "timed out" : last.task.status !== "done" ? `Task ${last.task.status}: ${last.task.detail}` : await scenario.check();
     if (problem) failed++;
     console.log(`${problem ? "✕" : "✓"} ${scenario.name}  (${last?.seconds}s, ${last?.steps.length} steps, ${last?.approvals} presses)`);
     console.log(`    said: ${(last?.reply ?? "").replace(/\s+/g, " ").slice(0, 200)}`);

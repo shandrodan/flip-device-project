@@ -77,5 +77,15 @@ export const Flip: Plugin = async () => {
       },
     });
   }
-  return { tool: tools };
+  return {
+    tool: tools,
+    // OpenCode's own tools (read, edit, bash, …) run only where Flip allows them: the server checks the
+    // folder and asks for the approval press first. A refusal stops the call with its reason.
+    async "tool.execute.before"(input, output) {
+      if (!NATIVE.includes(input.tool)) return;
+      await call(input.sessionID, input.callID, `opencode.${input.tool}`, output.args, new AbortController().signal);
+    },
+  };
 };
+
+const NATIVE = ["read", "glob", "grep", "edit", "write", "bash", "apply_patch", "list"];

@@ -28,6 +28,8 @@ export interface State {
   build: BuildState;
   /** OpenCode session of each agent and app, "agentId:app" (ADR 0032). */
   engineSessions: Record<string, string>;
+  /** The Build dev server the agent started on this machine (BUILD_HOST=server). */
+  buildServer: { command: string; port: number } | null;
 }
 
 export interface Secrets {
@@ -118,6 +120,7 @@ export function defaults(): State {
     machines: parseMachines(),
     build: defaultBuild(),
     engineSessions: {},
+    buildServer: null,
   };
 }
 

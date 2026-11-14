@@ -13,12 +13,13 @@ import { anthropicKey, openRouterKey } from "../llm.js";
 import { Cancelled } from "../approvals.js";
 import { MachineOffline } from "../machines.js";
 import { save, state } from "../store.js";
+import { NATIVE_TOOLS } from "./native-tools.js";
 import { TOOLS, ToolError, type Ctx, type ToolDef } from "./tools.js";
 
 export interface EngineModel { providerID: string; modelID: string }
 
 /** OpenCode's own tools act on the server machine, not the user's. Flip tools replace them. */
-const OPENCODE_TOOLS_OFF = ["bash", "read", "glob", "grep", "edit", "write", "task", "websearch", "skill", "apply_patch", "question"];
+const OPENCODE_TOOLS_OFF = ["task", "websearch", "skill", "apply_patch", "question"];
 
 const AGENT_PROMPT = [
   "You are an agent behind Flip, a small voice-first desk device. The user speaks a request; you do the work with tools on their Device apps and their own machines. Act like an agent, not a chat.",
@@ -75,7 +76,8 @@ function engineConfig(model: EngineModel) {
     small_model: ref,
     // A model missing from OpenCode's catalog still runs: it is declared here.
     provider: { [model.providerID]: { ...(key ? { options: { apiKey: key } } : {}), models: { [model.modelID]: { name: model.modelID } } } },
-    tools: Object.fromEntries(OPENCODE_TOOLS_OFF.map(name => [name, false])),
+    // Flip's gate decides (the plugin's tool.execute.before hook). OpenCode never waits on its own prompt.
+    permission: { edit: "allow", bash: "allow", webfetch: "allow", doom_loop: "allow", external_directory: "deny" },
     agent: {
       flip: { mode: "primary", description: "Flip Task agent", prompt: AGENT_PROMPT, steps: config.engineSteps },
     },
@@ -113,9 +115,12 @@ async function ensureEngine(model: EngineModel): Promise<string> {
 }
 
 function boot(cfg: Record<string, unknown>): Promise<string> {
-  fs.mkdirSync(path.join(DIR, ".opencode", "plugin"), { recursive: true });
-  fs.copyFileSync(path.join(SERVER_ROOT, "engine-plugin", "flip.ts"), path.join(DIR, ".opencode", "plugin", "flip.ts"));
   const home = path.join(DIR, "home");
+  // The global plugin folder, so it loads in every folder OpenCode works in (the Build project too).
+  const plugins = path.join(home, "config", "opencode", "plugin");
+  fs.mkdirSync(plugins, { recursive: true });
+  fs.copyFileSync(path.join(SERVER_ROOT, "engine-plugin", "flip.ts"), path.join(plugins, "flip.ts"));
+  fs.rmSync(path.join(DIR, ".opencode", "plugin", "flip.ts"), { force: true });
   const child = spawn(binary(), ["serve", "--hostname", "127.0.0.1", "--port", "0"], {
     cwd: DIR,
     env: {
@@ -171,8 +176,9 @@ export function warmEngine() {
   ensureEngine(model).catch(err => console.warn(`[engine] ${(err as Error).message} Task agents use the built-in loop.`));
 }
 
-async function api<T>(base: string, method: string, route: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${base}${route}`, {
+async function api<T>(base: string, method: string, route: string, body?: unknown, directory?: string): Promise<T> {
+  const query = directory ? `${route.includes("?") ? "&" : "?"}directory=${encodeURIComponent(directory)}` : "";
+  const response = await fetch(`${base}${route}${query}`, {
     method,
     headers: body === undefined ? undefined : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -191,6 +197,8 @@ interface Live {
   queue: Promise<unknown>;
   /** Cancelled or MachineOffline from a tool: the Task ends with it. */
   fatal: Error | null;
+  /** The folder OpenCode's own file and shell tools may use (the Build project on this machine), or null. */
+  root: string | null;
   /** Failed calls by tool, input and error. Weaker models can repeat one failing call forever. */
   failures: Map<string, number>;
 }
@@ -210,6 +218,14 @@ function runCall(sessionID: string, callID: string, name: string, args: unknown)
   const run = session.queue.then(async (): Promise<CallResult> => {
     if (session.fatal) return { error: "The Task stopped." };
     const { ctx } = session;
+    if (name.startsWith("opencode.")) {
+      try {
+        return await nativeGate(session, name.slice("opencode.".length), (args && typeof args === "object" ? args : {}) as Record<string, any>);
+      } catch (err) {
+        if (err instanceof Cancelled || err instanceof MachineOffline) { session.fatal = err; return { error: "The Task stopped." }; }
+        return { error: (err as Error).message };
+      }
+    }
     const def = TOOLS.find(tool => tool.name === name);
     if (!def || !session.allowed.has(name)) return { error: `${name} is not available to ${ctx.agent.name}.` };
     const input = (args && typeof args === "object" ? args : {}) as Record<string, any>;
@@ -312,6 +328,8 @@ export interface EngineRun {
   /** Results of Task agents this Task asked, once they all finished; null when there were none. */
   childResults(): Promise<string | null>;
   webAccess: boolean;
+  /** Folder for OpenCode's own file and shell tools (the Build project on this machine). */
+  directory?: string;
 }
 
 /** Run one Task on OpenCode. Throws EngineUnavailable when the engine cannot run it at all. */
@@ -321,26 +339,29 @@ export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: En
   const base = await ensureEngine(model);
 
   // One session per agent and app keeps the agent's memory. A busy session gets a sibling.
-  const key = `${ctx.agent.id}:${ctx.task.app ?? "-"}`;
+  const dir = run.directory;
+  const key = `${ctx.agent.id}:${ctx.task.app ?? "-"}${dir ? ":build" : ""}`;
   const saved = state.engineSessions[key];
-  let sessionID = saved && !busy.has(saved) ? await api<{ id: string }>(base, "GET", `/session/${saved}`).then(s => s.id, () => null) : null;
+  let sessionID = saved && !busy.has(saved) ? await api<{ id: string }>(base, "GET", `/session/${saved}`, undefined, dir).then(s => s.id, () => null) : null;
   const fresh = !sessionID;
   if (!sessionID) {
-    sessionID = (await api<{ id: string }>(base, "POST", "/session", { title: `${ctx.agent.name}${ctx.task.app ? ` · ${ctx.task.app}` : ""}` })).id;
+    sessionID = (await api<{ id: string }>(base, "POST", "/session", { title: `${ctx.agent.name}${ctx.task.app ? ` · ${ctx.task.app}` : ""}` }, dir)).id;
     if (!saved || !busy.has(saved)) { state.engineSessions[key] = sessionID; save(); }
   }
 
   const allowed = new Set(run.tools.map(tool => tool.name));
   const tools: Record<string, boolean> = Object.fromEntries(TOOLS.map(tool => [tool.name, allowed.has(tool.name)]));
+  for (const name of [...OPENCODE_TOOLS_OFF, ...NATIVE_TOOLS]) tools[name] = false;
+  if (dir) for (const name of NATIVE_TOOLS) tools[name] = true;
   tools.webfetch = run.webAccess;
   tools.todowrite = true;
-  const session: Live = { ctx, allowed, queue: Promise.resolve(), fatal: null, failures: new Map() };
+  const session: Live = { ctx, allowed, queue: Promise.resolve(), fatal: null, failures: new Map(), root: dir ?? null };
   busy.add(sessionID);
   live.set(sessionID, session);
   try {
     let text = run.firstMessage(fresh);
     for (let round = 0; round < 6; round++) {
-      const answer = await prompt(base, sessionID, model, run.system, tools, text, ctl, session);
+      const answer = await prompt(base, sessionID, model, run.system, tools, text, ctl, session, dir);
       const results = await run.childResults();
       if (results) {
         text = `Your Task agents finished. Use these results in your answer:\n${results}`;
@@ -355,11 +376,11 @@ export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: En
   }
 }
 
-async function prompt(base: string, sessionID: string, model: EngineModel, system: string, tools: Record<string, boolean>, text: string, ctl: { cancelled: boolean }, session: Live): Promise<string> {
-  const before = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`)).length;
-  await api(base, "POST", `/session/${sessionID}/prompt_async`, { agent: "flip", model, system, tools, parts: [{ type: "text", text }] });
+async function prompt(base: string, sessionID: string, model: EngineModel, system: string, tools: Record<string, boolean>, text: string, ctl: { cancelled: boolean }, session: Live, dir?: string): Promise<string> {
+  const before = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`, undefined, dir)).length;
+  await api(base, "POST", `/session/${sessionID}/prompt_async`, { agent: "flip", model, system, tools, parts: [{ type: "text", text }] }, dir);
   const stop = async (err: Error) => {
-    await api(base, "POST", `/session/${sessionID}/abort`).catch(() => undefined);
+    await api(base, "POST", `/session/${sessionID}/abort`, undefined, dir).catch(() => undefined);
     throw err;
   };
   const started = Date.now();
@@ -368,9 +389,9 @@ async function prompt(base: string, sessionID: string, model: EngineModel, syste
     if (session.fatal) return stop(session.fatal);
     if (ctl.cancelled) return stop(new Cancelled());
     if (!proc) throw new ToolError("The agent engine stopped. Try again.");
-    const status = (await api<Record<string, { type: string }>>(base, "GET", "/session/status"))[sessionID];
+    const status = (await api<Record<string, { type: string }>>(base, "GET", "/session/status", undefined, dir))[sessionID];
     if (status && status.type !== "idle") continue;
-    const messages = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`)).slice(before);
+    const messages = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`, undefined, dir)).slice(before);
     const last = [...messages].reverse().find(message => message.info.role === "assistant");
     if (!last?.info.time.completed) {
       if (Date.now() - started > 60_000 && !messages.some(message => message.info.role === "assistant"))
@@ -384,4 +405,28 @@ async function prompt(base: string, sessionID: string, model: EngineModel, syste
     if (!answer) throw new ToolError("The model returned no final answer. Check the Task steps for work already completed.");
     return answer;
   }
+}
+
+/* ------------------------- OpenCode's own tools in ------------------------ */
+
+/** OpenCode's file and shell tools, allowed only inside the Build project, behind the same gate. */
+async function nativeGate(session: Live, tool: string, args: Record<string, any>): Promise<CallResult> {
+  const { ctx, root } = session;
+  if (!root || !NATIVE_TOOLS.includes(tool)) return { error: `${tool} is not available here. Use the Flip tools.` };
+  const target = String(args.filePath ?? args.path ?? args.workdir ?? ".");
+  const full = path.resolve(root, target);
+  if (full !== root && !full.startsWith(root + path.sep)) return { error: "Stay inside the Build project folder." };
+  const rel = path.relative(root, full) || "the project";
+  if (tool === "bash") {
+    const command = String(args.command ?? "");
+    ctx.step(String(args.description || "Running a command").slice(0, 80));
+    await ctx.gate({ askFirst: true, title: "Run this command?", body: `Server · ${state.build.dir}`, preview: { command } });
+  } else if (tool === "edit" || tool === "write") {
+    ctx.step(`${tool === "write" ? "Writing" : "Editing"} ${rel}`);
+    await ctx.gate({ title: `Write ${rel}?`, body: `In ${state.build.name}.` });
+  } else {
+    ctx.step(tool === "read" ? `Reading ${rel}` : `Searching ${args.pattern ? String(args.pattern).slice(0, 40) : rel}`);
+    await ctx.gate({ title: `Look in ${state.build.name}?` });
+  }
+  return { output: "ok" };
 }

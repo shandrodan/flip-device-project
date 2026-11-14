@@ -16,4 +16,5 @@ files=("$tmp/flip.tgz")
 [ -f apps/server/data/state.json ] && cp apps/server/data/state.json "$tmp/flip-state.json" && files+=("$tmp/flip-state.json")
 
 gcloud compute scp --zone "$ZONE" "${files[@]}" pi-vm/provision.sh "$NAME":/tmp/
-gcloud compute ssh --zone "$ZONE" "$NAME" --command "sudo bash /tmp/provision.sh"
+# SERVER_URL=http://<cloud VM internal IP>:8787 pi-vm/deploy.sh  → this VM is the Device only (cloud-vm/).
+gcloud compute ssh --zone "$ZONE" "$NAME" --command "sudo SERVER_URL='${SERVER_URL:-}' TZ_NAME='${TZ_NAME:-}' bash /tmp/provision.sh"

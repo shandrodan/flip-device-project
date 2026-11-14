@@ -9,3 +9,4 @@ renders/studio/
 apps/server/data/
 .flip/
 !.env.example
+cloud-vm/sim/out/
