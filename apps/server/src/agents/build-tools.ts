@@ -54,13 +54,10 @@ export const BUILD_TOOLS: ToolDef[] = [
   },
   {
     name: "build_run",
-    description: "Run a shell command in the Build project folder, e.g. `npm install`. It stops after 60 seconds, so start a dev server in the background: `nohup npm run dev -- --host > .dev.log 2>&1 &`. Only on a machine that allows shell. Always asks first unless Full mode is on.",
+    description: "Run a shell command in the Build project folder, e.g. `npm install`. Use commands for the PC's platform. Commands time out after 60 seconds. Only available when the PC agent allows shell.",
     props: { command: { type: "string" }, say: SAY }, required: ["command", "say"], alwaysAsk: true, purposes: "all",
     async run(ctx, i) {
-      if (!ctx.hasShell()) throw new ToolError("Shell is off on the user's machine. Ask them to start the PC agent with --allow-shell.");
-      await ctx.gate({ askFirst: true, title: "Run this in the project?", body: String(i.command) });
-      const r = await ctx.pc("shell", { command: i.command, cwd: state.build.dir });
-      return { text: `${r.output}\n${r.data?.stdout ?? ""}` };
+      return { text: await ctx.shell({ command: i.command, cwd: state.build.dir }) };
     },
   },
   {
@@ -68,10 +65,7 @@ export const BUILD_TOOLS: ToolDef[] = [
     description: "Publish the Build project with a deploy command, e.g. `npx vercel --prod --yes`. It leaves the user's machines, so it always needs the push bar. Only on a machine that allows shell.",
     props: { command: { type: "string" }, say: SAY }, required: ["command", "say"], risk: "leave", purposes: "all",
     async run(ctx, i) {
-      if (!ctx.hasShell()) throw new ToolError("Shell is off on the user's machine. Ask them to start the PC agent with --allow-shell.");
-      await ctx.gate({ risk: "leave", title: `Publish ${state.build.name}?`, body: `${i.command}\nThis puts it on the internet, so I always ask.` });
-      const r = await ctx.pc("shell", { command: i.command, cwd: state.build.dir });
-      return { text: `${r.output}\n${r.data?.stdout ?? ""}` };
+      return { text: await ctx.shell({ command: i.command, cwd: state.build.dir, publish: true }) };
     },
   },
   {

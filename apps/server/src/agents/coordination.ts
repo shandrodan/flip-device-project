@@ -15,6 +15,21 @@ export function requestText(task: Task): string {
   return state.messages.find(message => message.id === task.requestMessageId)?.text ?? task.title;
 }
 
+/** Previous completed exchanges on the same voice target, in request order. */
+export function conversationFor(task: Task, request: AgentMessage | undefined) {
+  if (request?.fromAgentId !== "user") return [];
+  const earlier = state.messages.slice(0, state.messages.indexOf(request));
+  const replies = new Map(earlier
+    .filter(message => message.kind === "reply" && message.fromAgentId === request.toAgentId && message.toAgentId === "user")
+    .map(message => [message.replyToMessageId, message.text]));
+  const taskApps = new Map(state.tasks.map(item => [item.id, item.app]));
+  return earlier.filter(message => message.kind === "request" && message.fromAgentId === "user"
+    && message.toAgentId === request.toAgentId && replies.has(message.id)
+    && taskApps.has(message.taskId) && taskApps.get(message.taskId) === task.app)
+    .slice(-5)
+    .map(message => ({ request: message.text.slice(0, 1200), reply: replies.get(message.id)!.slice(0, 1600) }));
+}
+
 /** Accept one voice request. The request ID makes reconnect and replay safe. */
 export function acceptVoiceMessage(target: AgentTarget, text: string, requestId: string, start: Start): Task {
   const existing = state.messages.find(message => message.id === requestId);
@@ -51,11 +66,12 @@ export function sendAgentMessage(parent: Task, recipientId: string, text: string
   if (!senderId || !agentById(senderId)) throw new Error("The sender is not available.");
   if (!agentById(recipientId) || recipientId === senderId) throw new Error("Choose another available Task agent.");
   const request = state.messages.find(message => message.id === parent.requestMessageId);
-  if (request?.fromAgentId === recipientId) throw new Error("Do not send this request back to its sender.");
+  if (!appRequest && request?.fromAgentId === recipientId) throw new Error("Do not send this request back to its sender.");
   if (!text.trim()) throw new Error("The message is empty.");
   if (text.length > 10_000) throw new Error("The Task agent message is too long.");
-  if ((parent.depth ?? 0) >= 2) throw new Error("This request reached its delegation limit.");
-  if (state.tasks.filter(task => task.sourceTaskId === parent.id).length >= 4)
+  // An app request runs one typed action and cannot start another model turn.
+  if (!appRequest && (parent.depth ?? 0) >= 2) throw new Error("This request reached its delegation limit.");
+  if (!appRequest && state.tasks.filter(task => task.sourceTaskId === parent.id && !task.appRequest).length >= 4)
     throw new Error("This Task already sent four requests.");
   const task: Task = {
     id: id("t"), title: title(text), target: "agent", agentId: recipientId, status: "todo", steps: [],

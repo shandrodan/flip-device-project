@@ -48,7 +48,7 @@ export function Settings({ onOpenOnboarding }: { onOpenOnboarding: () => void })
     },
     {
       key: "key", label: "AI provider · your own key", a: "Show setup page",
-      value: st.keySet ? <span className="chip ok">{st.provider === "openrouter" ? "OpenRouter" : "Anthropic"} · …{st.keyHint}</span> : <span className="chip warn">No key, using the planner</span>,
+      value: st.keySet ? <span className="chip ok">{st.provider === "openrouter" ? "OpenRouter" : "Anthropic"} · …{st.keyHint}</span> : <span className="chip warn">{snap.services.llm === "planner" ? "Demo planner" : "AI key required"}</span>,
       hint: `${st.keySet ? `${st.model} · ` : ""}Set keys at ${st.setupUrl}`,
       act: () => toast(`Open ${st.setupUrl} on your laptop`),
     },

@@ -9,6 +9,10 @@ On Home, select an app and press the blue D button to add, change, or delete a T
 One Task agent can belong to only one app. The last Task agent of an app cannot be deleted, except in Build, where the main agent takes over again.
 The Dock reads other app state and has no assigned Task agent.
 
+Task agents can read current app data and act from either a voice request or a saved Task.
+For example, the main Task agent can save a Note, and the Notes agent can look up a To-Do
+and ask the To-Do agent to move it to another project or date.
+
 ## Notes (core of the demo)
 
 Flow:

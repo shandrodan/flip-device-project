@@ -149,7 +149,7 @@ export interface ApprovalRequest {
   risk?: RiskKind;
   title: string; // "Can I delete 16 files?"
   body?: string;
-  preview?: { to?: string; subject?: string; body?: string; attach?: string; files?: string[] };
+  preview?: { to?: string; subject?: string; body?: string; attach?: string; files?: string[]; command?: string };
   createdAt: string;
   /** True while the user has pressed "Not now". Held approvals are not shown until resumed. */
   held: boolean;
@@ -240,7 +240,7 @@ export interface Settings {
 
 export interface Services {
   /** Active model provider, or the built-in planner when no key is configured. */
-  llm: "openrouter" | "claude" | "planner";
+  llm: "openrouter" | "claude" | "planner" | "none";
   stt: "cloud" | "local" | "device";
   smtp: boolean;
 }

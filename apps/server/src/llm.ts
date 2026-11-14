@@ -9,7 +9,7 @@ let clientKey = "";
 export const openRouterKey = () => secrets.openRouterKey || config.openRouterKey;
 export const anthropicKey = () => secrets.anthropicKey || config.anthropicKey;
 export const apiKey = () => openRouterKey() || anthropicKey();
-export const llmMode = () => openRouterKey() ? "openrouter" : anthropicKey() ? "claude" : "planner";
+export const llmMode = () => openRouterKey() ? "openrouter" : anthropicKey() ? "claude" : config.demoPlanner ? "planner" : "none";
 export const agentModel = () => openRouterKey() ? config.openRouterModel : config.agentModel;
 
 async function openRouterMessage(key: string, request: Anthropic.Beta.MessageCreateParamsNonStreaming) {
@@ -51,7 +51,6 @@ export function messageClient() {
 }
 
 export function hasLlm() {
-
   return !!apiKey();
 }
 

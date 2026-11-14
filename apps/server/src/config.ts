@@ -25,6 +25,7 @@ export const config = {
   /** Public URL of this server, shown on the Device for the setup page. */
   publicUrl: env("PUBLIC_URL", ""),
   setupToken: env("SETUP_TOKEN", ""),
+  deviceToken: env("DEVICE_ACCESS_TOKEN").trim(),
   hosting: (env("HOSTING", "self") as "cloud" | "vm" | "self"),
 
   openRouterKey: env("OPENROUTER_API_KEY"),
@@ -32,6 +33,7 @@ export const config = {
   anthropicKey: env("ANTHROPIC_API_KEY", ""),
   agentModel: env("AGENT_MODEL", "claude-opus-5-5"),
   suggestModel: env("SUGGEST_MODEL", "claude-opus-5-5"),
+  demoPlanner: env("DEMO_PLANNER") === "1",
 
   // Speech to text. Any OpenAI-compatible /audio/transcriptions endpoint works
   // (OpenAI, Groq, or a local faster-whisper / whisper.cpp server).

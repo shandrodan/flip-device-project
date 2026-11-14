@@ -21,7 +21,8 @@ async function body(req: IncomingMessage) {
 }
 
 export async function handleSetup(req: IncomingMessage, res: ServerResponse, url: URL) {
-  if (config.setupToken && url.searchParams.get("token") !== config.setupToken) {
+  const token = config.setupToken || config.deviceToken;
+  if (token && url.searchParams.get("token") !== token) {
     res.writeHead(401, { "content-type": "text/plain" }).end("Add ?token=<SETUP_TOKEN> to the URL.");
     return;
   }
@@ -64,8 +65,8 @@ export async function handleSetup(req: IncomingMessage, res: ServerResponse, url
   }
 
   const list = machines.list();
-  const tok = config.setupToken ? `?token=${encodeURIComponent(config.setupToken)}` : "";
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  const tok = token ? `?token=${encodeURIComponent(token)}` : "";
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" });
   res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Device setup</title>
 <style>

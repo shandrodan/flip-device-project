@@ -26,6 +26,7 @@ export interface Ctx {
   pc(action: PcAction, args: Record<string, unknown>, machine?: string): Promise<PcResult>;
   machineName(machine?: string): string;
   hasShell(): boolean;
+  shell(options: { command: string; cwd?: string; machine?: string; publish?: boolean }): Promise<string>;
   sendAgentMessage(recipientId: string, text: string, expectsReply: boolean, callId?: string): Task;
   delegateApp(app: AppId, tool: "read_app" | "change_app", input: Record<string, unknown>, callId?: string): Promise<{ text: string }>;
   waitForChildren(): Promise<string | null>;
@@ -206,15 +207,13 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "run_shell",
-    description: "Run a shell command on the user's machine (only if that machine allows it). Always asks the user first unless Full mode is on.",
+    description: "Run a local command with the permissions of the PC agent's OS account. Use Windows PowerShell on win32 and POSIX sh on Linux or macOS. Prefer dedicated tools when available. The selected machine must advertise shell.",
     props: { command: { type: "string" }, cwd: PATH("Working folder."), machine: MACHINE, say: SAY },
     required: ["command", "say"],
     alwaysAsk: true,
-    purposes: ["main", "pc", "custom"],
+    purposes: ["main", "pc", "files", "writer", "custom"],
     async run(ctx, i) {
-      await ctx.gate({ askFirst: true, title: "Run this command?", body: i.command });
-      const r = await ctx.pc("shell", { command: i.command, cwd: i.cwd }, i.machine);
-      return { text: `${r.output}\n${r.data?.stdout ?? ""}` };
+      return { text: await ctx.shell({ command: i.command, cwd: i.cwd, machine: i.machine }) };
     },
   },
   {
