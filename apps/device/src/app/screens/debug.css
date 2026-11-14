@@ -1,0 +1,20 @@
+/* Debug mode (Debug.tsx): broken bot on the left, connection on the right. */
+.debug { --debug-orange: #ff9f0a; background: #000; color: #f5f5f7; }
+.debug-body { position: absolute; inset: 34px 0 34px; display: grid; grid-template-columns: 1fr 1fr; align-items: center; }
+.debug-left { display: grid; place-items: center; }
+.debug-right { padding-right: 48px; }
+
+.debug-bot { display: block; overflow: visible; transform-origin: 50% 70%; animation: debug-breathe 3.6s ease-in-out infinite; }
+
+.debug-label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8e8e93; }
+.debug-label i { width: 8px; height: 8px; border-radius: 50%; background: var(--debug-orange); animation: debug-pulse 1.6s ease-in-out infinite; }
+.debug h1 { margin-top: 10px; font-size: 46px; line-height: 1.05; font-weight: 700; letter-spacing: -0.02em; }
+.debug-sub { margin-top: 12px; max-width: 300px; font-size: 17px; line-height: 1.4; color: #aeaeb2; text-wrap: pretty; }
+.debug-link { margin-top: 22px; display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px;
+  background: rgba(255, 159, 10, 0.14); color: var(--debug-orange); font-size: 14px; font-weight: 600; }
+.debug-link svg { width: 16px; height: 16px; }
+.debug-host { margin-top: 10px; font: 500 13px ui-monospace, "SF Mono", Menlo, monospace; color: #636366; }
+
+@keyframes debug-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes debug-breathe { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.014); } }
+@media (prefers-reduced-motion: reduce) { .debug-bot, .debug-label i { animation: none; } }

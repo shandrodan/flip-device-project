@@ -7,9 +7,10 @@ import { useControls, step, LAYER } from "../input/controls";
 import { net } from "../net/client";
 import { FN_LABEL, useApp, useTalkTarget } from "./context";
 import { AgentBot } from "./ui";
+import { toneVars, type Tone } from "./tone";
 import { TextEntry } from "./TextEntry";
 
-export type MenuCell = { kind: "app"; fn: AppId; icon: ReactNode } | { kind: "bot"; agent: Agent };
+export type MenuCell = { kind: "app"; fn: AppId; icon: ReactNode; tone?: Tone } | { kind: "bot"; agent: Agent; tone?: Tone };
 type Item = { label: string; detail?: string; off?: string; run(): void };
 
 export function CellMenu({ cell, onClose }: { cell: MenuCell; onClose(): void }) {
@@ -88,7 +89,7 @@ export function CellMenu({ cell, onClose }: { cell: MenuCell; onClose(): void })
   return <>
     <div className="cm in">
       <div className="cm-head">
-        <span className="cm-ico">{cell.kind === "app" ? cell.icon : <AgentBot agent={cell.agent} size={40} fps={20} />}</span>
+        <span className={"cm-ico" + (cell.tone ? " toned" : "")} style={toneVars(cell.tone)}>{cell.kind === "app" ? cell.icon : <AgentBot agent={cell.agent} size={40} fps={20} onTone={cell.tone} />}</span>
         <span style={{ minWidth: 0 }}><b>{title}</b><span className="mute">{sub}</span></span>
       </div>
       <div className="cm-list">

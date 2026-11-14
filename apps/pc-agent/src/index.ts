@@ -20,7 +20,7 @@ import { createReadStream, existsSync, mkdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawn, exec } from "node:child_process";
-import type { FsEntry, PcAction, PcAgentCommand, PcAgentResult } from "@app/protocol";
+import type { CodingTool, FsEntry, PcAction, PcAgentCommand, PcAgentResult, PcCodingSession } from "@app/protocol";
 
 const HOME = os.homedir();
 const PORT = Number(process.env.PC_AGENT_PORT || 7077);
@@ -294,6 +294,118 @@ function hashFile(p: string) {
   });
 }
 
+/* ---------------------------------- Coding agents ---------------------------------- */
+// ADR 0020: the Dock shows which coding agents run on this machine (Claude Code, Codex, OpenCode, …)
+// and whether each is busy. We only read the process list, the working folder and its git branch.
+// Nothing about the code or the conversation leaves the machine.
+
+const execText = (cmd: string, timeout = 3000) => new Promise<string>(resolve =>
+  exec(cmd, { timeout, maxBuffer: 4e6 }, (_err, out) => resolve(String(out || ""))));
+
+const TOOL_NAMES: Record<string, CodingTool> = {
+  claude: "claude-code", codex: "codex", opencode: "opencode", antigravity: "antigravity",
+  "cursor-agent": "cursor", gemini: "gemini", aider: "aider",
+};
+const RUNTIMES = new Set(["node", "bun", "deno", "python", "python3"]);
+
+/** Which coding tool a command line is, if any. Desktop chat apps (Claude.app, Codex.app) don't count. */
+function toolOf(args: string): CodingTool | null {
+  const parts = args.trim().split(/\s+/);
+  const base = (s = "") => path.basename(s).toLowerCase().replace(/\.(js|mjs|exe)$/, "");
+  let name = base(parts[0]);
+  if (RUNTIMES.has(name)) name = base(parts[1]);
+  if (/\/Antigravity\.app\/Contents\/MacOS\/Antigravity$/i.test(parts[0])) return "antigravity";
+  if (/\.app\//i.test(parts[0])) return null;
+  return TOOL_NAMES[name] ?? null;
+}
+
+const startedAt = new Map<number, string>();
+const lastBusy = new Map<number, number>();
+const gitCache = new Map<string, { at: number; repo: string; branch?: string }>();
+
+async function cwdOf(pids: number[]): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  if (!pids.length) return out;
+  if (process.platform === "linux") {
+    await Promise.all(pids.map(async pid => { const d = await fs.readlink(`/proc/${pid}/cwd`).catch(() => ""); if (d) out.set(pid, d); }));
+    return out;
+  }
+  if (process.platform !== "darwin") return out;
+  let pid = 0;
+  for (const line of (await execText(`lsof -a -d cwd -Fn -p ${pids.join(",")}`)).split("\n")) {
+    if (line[0] === "p") pid = Number(line.slice(1));
+    else if (line[0] === "n" && pid) out.set(pid, line.slice(1));
+  }
+  return out;
+}
+
+async function gitOf(dir: string) {
+  const hit = gitCache.get(dir);
+  if (hit && Date.now() - hit.at < 30_000) return hit;
+  const [top = "", branch = ""] = (await execText(`git -C ${JSON.stringify(dir)} rev-parse --show-toplevel --abbrev-ref HEAD`)).trim().split("\n");
+  const v = { at: Date.now(), repo: path.basename(top || dir) || short(dir), branch: branch && branch !== "HEAD" ? branch : undefined };
+  gitCache.set(dir, v);
+  return v;
+}
+
+/** Claude Code writes its transcript as it works: a fresh write means it's busy. */
+async function claudeWroteRecently(dir: string) {
+  const folder = path.join(HOME, ".claude", "projects", dir.replace(/[^a-zA-Z0-9]/g, "-"));
+  const files = await fs.readdir(folder).catch(() => [] as string[]);
+  let newest = 0;
+  for (const f of files) if (f.endsWith(".jsonl")) newest = Math.max(newest, (await fs.stat(path.join(folder, f)).catch(() => null))?.mtimeMs ?? 0);
+  return Date.now() - newest < 8000;
+}
+
+/** ps "elapsed" time, [[dd-]hh:]mm:ss, in seconds. */
+function etimeSec(t: string) {
+  const [d, rest] = t.includes("-") ? t.split("-") : ["0", t];
+  return rest.split(":").map(Number).reduce((a, n) => a * 60 + n, 0) + Number(d) * 86400;
+}
+
+async function scanCoding(): Promise<PcCodingSession[]> {
+  if (process.platform === "win32") return [];
+  const rows = (await execText("ps -axo pid=,ppid=,pcpu=,etime=,args=")).split("\n").map(l => {
+    const m = l.match(/^\s*(\d+)\s+(\d+)\s+([\d.]+)\s+([\d:-]+)\s+(.*)$/);
+    return m ? { pid: Number(m[1]), ppid: Number(m[2]), cpu: Number(m[3]), age: etimeSec(m[4]), tool: toolOf(m[5]) } : null;
+  }).filter((r): r is { pid: number; ppid: number; cpu: number; age: number; tool: CodingTool } => !!r && !!r.tool && r.pid !== process.pid);
+  // A tool's own helper processes have a parent of the same tool: count the session once.
+  const byPid = new Map(rows.map(r => [r.pid, r]));
+  const top = rows.filter(r => byPid.get(r.ppid)?.tool !== r.tool);
+  const cwds = await cwdOf(top.map(r => r.pid));
+  const now = Date.now();
+  const sessions: PcCodingSession[] = [];
+  for (const r of top) {
+    const dir = cwds.get(r.pid);
+    if (!dir) continue;
+    if (!startedAt.has(r.pid)) startedAt.set(r.pid, new Date(Math.floor((now - r.age * 1000) / 60e3) * 60e3).toISOString());
+    const git = await gitOf(dir);
+    let busy = r.cpu > 2;
+    if (r.tool === "claude-code") busy = busy || await claudeWroteRecently(dir);
+    if (busy) lastBusy.set(r.pid, now);
+    sessions.push({ pid: r.pid, tool: r.tool, repo: git.repo, branch: git.branch, busy: now - (lastBusy.get(r.pid) ?? 0) < 6000, startedAt: startedAt.get(r.pid)! });
+  }
+  for (const pid of startedAt.keys()) if (!byPid.has(pid)) { startedAt.delete(pid); lastBusy.delete(pid); }
+  return sessions.sort((a, b) => a.pid - b.pid);
+}
+
+let coding: PcCodingSession[] = [];
+let codingKey = "";
+const codingSubs = new Set<(s: PcCodingSession[]) => void>();
+async function watchCoding() {
+  try {
+    const next = await scanCoding();
+    const key = JSON.stringify(next);
+    if (key !== codingKey) {
+      codingKey = key;
+      coding = next;
+      for (const fn of codingSubs) fn(coding);
+    }
+  } catch { /* try again next tick */ }
+  setTimeout(watchCoding, 3000);
+}
+void watchCoding();
+
 /* ---------------------------------- Server ---------------------------------- */
 
 const wss = new WebSocketServer({ host: HOST, port: PORT });
@@ -303,6 +415,7 @@ wss.on("connection", (ws: WebSocket, req) => {
   const peer = req.socket.remoteAddress;
   const send = (m: PcAgentResult) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(m));
   const kill = setTimeout(() => !authed && ws.close(4001, "auth timeout"), 5000);
+  const pushCoding = (sessions: PcCodingSession[]) => send({ type: "pc.coding", sessions });
 
   ws.on("message", async raw => {
     let msg: PcAgentCommand;
@@ -313,6 +426,8 @@ wss.on("connection", (ws: WebSocket, req) => {
         clearTimeout(kill);
         say("●", c.green, `Server connected from ${peer}`);
         send({ type: "pc.hello", machineId: MACHINE_ID, name: NAME, platform: process.platform, home: HOME, roots: ACTIVE_ROOTS.map(short), actions: ACTIONS });
+        send({ type: "pc.coding", sessions: coding });
+        codingSubs.add(pushCoding);
       } else {
         say("✕", c.red, `Rejected a connection from ${peer} (bad token)`);
         send({ type: "pc.error", message: "bad token" });
@@ -338,7 +453,7 @@ wss.on("connection", (ws: WebSocket, req) => {
       send({ type: "pc.done", requestId: msg.requestId, ok: false, output: message });
     }
   });
-  ws.on("close", () => authed && say("○", c.dim, "Server disconnected"));
+  ws.on("close", () => { codingSubs.delete(pushCoding); if (authed) say("○", c.dim, "Server disconnected"); });
 });
 
 function safeEqual(a: unknown, b: string) {

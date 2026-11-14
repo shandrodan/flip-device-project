@@ -5,10 +5,11 @@ import { Bot } from "../bot/Bot";
 import { useControls, LAYER } from "../input/controls";
 import { useNet, net } from "../net/client";
 import { defaultSource, nextSample, type VoiceSource } from "../voice/capture";
-import { Ctx, DOCK_FNS, HANDHELD_FNS, type AppCtx, type Fn, type Route, type TalkTarget } from "./context";
-import { FireOverlay, Hud, SoftApproval, TalkOverlay } from "./overlays";
-import { HintBar, Ico, useTick } from "./ui";
-import { Home } from "./screens/Home";
+import { Ctx, DOCK_FNS, FN_LABEL, HANDHELD_FNS, type AppCtx, type Fn, type Route, type TalkTarget } from "./context";
+import { FireOverlay, SoftApproval, TalkOverlay } from "./overlays";
+import { AgentBot, HintBar, Ico, useTick } from "./ui";
+import { AppWheel, type WheelItem } from "./AppWheel";
+import { Home, combUnits } from "./screens/Home";
 import { Suggest } from "./screens/Suggest";
 import { TaskView } from "./screens/TaskView";
 import { Notes } from "./screens/Notes";
@@ -19,6 +20,7 @@ import { Focus } from "./screens/Focus";
 import { Settings } from "./screens/Settings";
 import { Dock } from "./screens/Dock";
 import { Onboarding } from "./screens/Onboarding";
+import { DebugMode, type DebugLink } from "./screens/Debug";
 
 const ONBOARDING_KEY = "flip-device-onboarding-v1";
 
@@ -27,7 +29,11 @@ function needsOnboarding() {
   catch { return true; }
 }
 
-export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: VoiceSource; onWantPush?: (w: boolean) => void }) {
+export function DeviceApp({ voice = defaultSource(), onWantPush, debug = null, onEndDebug }: {
+  voice?: VoiceSource; onWantPush?: (w: boolean) => void;
+  /** Set while an agent is debugging the Device: the Debug mode screen covers everything. */
+  debug?: DebugLink | null; onEndDebug?: () => void;
+}) {
   const n = useNet();
   const snap = n.snap;
   const docked = n.mode === "dock";
@@ -35,7 +41,8 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   const [fn, setFn] = useState<Fn>(docked ? "dock" : "home");
   const [stack, setStack] = useState<Route[]>([]);
   const [toastMsg, setToast] = useState<{ text: string; k: number } | null>(null);
-  const [hud, setHud] = useState(0);
+  // The system wheel flywheel (AppWheel): open while set, with the notch that opened it.
+  const [wheel, setWheel] = useState<{ dir: 1 | -1 } | null>(null);
   const [talk, setTalk] = useState<{ target: TalkTarget; sample: number } | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(needsOnboarding);
   // Who the mic talks to: the newest registered target wins (see useTalkTarget).
@@ -87,12 +94,9 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
 
   // Bottom of the control stack: what works everywhere.
   useControls(e => {
+    // The system wheel opens the flywheel; it handles the next turns itself.
     if (e.c === "systemWheel") {
-      const i = fns.indexOf(fn);
-      const next = fns[(((i < 0 ? 0 : i) + (e.dir || 1)) % fns.length + fns.length) % fns.length];
-      setFn(next);
-      setStack([]);
-      setHud(Date.now());
+      if (snap && !wheel) setWheel({ dir: e.dir === -1 ? -1 : 1 });
       return true;
     }
     if (e.c === "mic" && e.phase === "down") {
@@ -108,22 +112,33 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
     return false;
   }, { mic: "Hold to talk", b: stack.length || fn !== fns[0] ? "Back" : undefined }, true, LAYER.global);
 
-  useEffect(() => {
-    if (!hud) return;
-    const t = setTimeout(() => setHud(0), 900);
-    return () => clearTimeout(t);
-  }, [hud]);
-
   const fire = snap?.approvals.find(a => !a.held && a.kind === "risky") || null;
   const soft = snap?.approvals.find(a => !a.held && a.kind === "step") || null;
   useEffect(() => { onWantPush?.(!!fire || !!soft); }, [!!fire, !!soft]);
 
   const needs = !!snap?.tasks.some(t => t.status === "held" || t.status === "paused" || t.status === "failed");
   const icons = useMemo<Record<Fn, JSX.Element>>(() => ({
-    home: <Bot size={30} seed={3} state={needs ? "wide" : "idle"} fps={20} />,
+    home: <Bot size={34} seed={3} state={needs ? "wide" : "idle"} fps={20} />,
     notes: Ico.notes, todo: Ico.tasks, agents: Ico.agents, focus: Ico.focus, settings: Ico.settings, dock: Ico.dock,
   }), [needs]);
 
+  // Flywheel items: handheld, Home and then every app and Task agent in Home comb order;
+  // docked, the companion functions.
+  const wheelItems = useMemo<WheelItem[]>(() => {
+    if (!snap) return [];
+    const openFn = (f: Fn) => () => { setFn(f); setStack([]); };
+    const fnItem = (f: Fn): WheelItem => ({ key: f, label: FN_LABEL[f], sub: f === "home" ? "Main agent" : "App", icon: icons[f], app: f !== "home", open: openFn(f) });
+    if (docked) return fns.map(fnItem);
+    return [fnItem("home"), ...combUnits(snap).flat().flatMap((c): WheelItem[] =>
+      c.kind === "app" ? [{ ...fnItem(c.fn), icon: c.icon, tone: c.tone }]
+      : c.kind === "bot" ? [{ key: "bot:" + c.agent.id, label: c.agent.name, sub: "Task agent", icon: <AgentBot agent={c.agent} size={38} fps={12} onTone={c.tone} />, tone: c.tone,
+        open: () => { setFn("home"); setStack([{ name: "agent", agentId: c.agent.id }]); } }]
+      : [])];
+  }, [snap, docked, fns, icons]);
+  // The wheel starts on what is on screen now.
+  const wheelStart = Math.max(0, wheelItems.findIndex(it => it.key === (route?.name === "agent" ? "bot:" + route.agentId : fn)));
+
+  if (debug) return <DebugMode via={debug} host={snap?.machines.find(m => m.online)?.name} onEnd={() => onEndDebug?.()} />;
   if (!snap || !ctx) return <Connecting />;
 
   let screen: JSX.Element;
@@ -149,7 +164,7 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
   const focusLeft = snap.focus.running && snap.focus.endsAt ? Math.max(0, Date.parse(snap.focus.endsAt) - Date.now()) : 0;
   return <Ctx.Provider value={ctx}>
     <div className="fill" style={{ ["--ink" as string]: fire ? "#000" : "#fff" }}>
-      {!light && <div className="status">
+      {!light && !fullBleed && <div className="status">
         <span><Clock /></span>
         <span>
           {!n.online && <><i className="off-dot" />Offline</>}
@@ -159,8 +174,9 @@ export function DeviceApp({ voice = defaultSource(), onWantPush }: { voice?: Voi
         </span>
       </div>}
       <div className={"main" + (fullBleed ? " full" : "")} data-fn={fn} data-route={route?.name ?? ""}>{screen}</div>
-      <HintBar ink={!!fire || light} />
-      {hud > 0 && <Hud fns={fns} fn={fn} icons={icons} />}
+      {/* Docked, StandBy is the whole screen (ADR 0020): no status or hint bar. */}
+      {(!fullBleed || !!fire) && <HintBar ink={!!fire || light} />}
+      {wheel && wheelItems.length > 0 && <AppWheel items={wheelItems} start={wheelStart} dir={wheel.dir} onClose={() => setWheel(null)} />}
       {soft && !fire && <SoftApproval req={soft} />}
       <FireOverlay req={fire} onWant={() => {}} />
       {talk && <TalkOverlay target={talk.target} sample={talk.sample} onDone={() => setTalk(null)} />}

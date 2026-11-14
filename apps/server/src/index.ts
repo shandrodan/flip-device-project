@@ -62,6 +62,7 @@ function snapshot(): Snapshot {
     activity: state.activity.slice(0, 20),
     approvals: state.approvals,
     machines: machines.list(),
+    coding: machines.coding(),
     settings: {
       permissionMode: state.permissionMode,
       hosting: state.hosting,

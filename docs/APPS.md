@@ -34,10 +34,12 @@ On screen (ADR 0016): Notes' layout in blue. Today, Inbox, Scheduled (a board of
 
 - Pomodoro timer, mainly used when docked.
 
-## Dock widgets
+## Dock (StandBy, ADR 0020)
 
-- Focus timer, today's todos, agent activity.
-- "Claude limits reset in X min" countdown (fun hook for the builder audience).
+- Turn the in-app wheel through Clock, Focus, Agents, the To-Do board and a split screen of two blocks you pick.
+- Agents here are the coding agents on your machines (Claude Code, Codex, OpenCode, …), reported by the PC agent: working, idle or finished.
+- Focus shows its progress as a glow around the screen edge.
+- "Claude limits reset in X min" is one of the split-screen blocks (fun hook for the builder audience).
 
 ## Settings
 
