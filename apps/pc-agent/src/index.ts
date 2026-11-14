@@ -1,13 +1,13 @@
 // PC agent: the small program on the user's laptop. The server reaches it over Tailscale
 // (ADR 0006) and asks it to run one of a short list of actions (ADR 0008). Every path must
-// sit inside an allowed root. Deletes never delete: files go to ~/.flip-trash.
+// passed to file tools must sit inside an allowed root. The trash tool moves files to ~/.flip-trash.
 //
 //   PC_AGENT_TOKEN=... pnpm --filter pc-agent dev
 //
 // Env / flags:
 //   PC_AGENT_PORT   (7077)
-//   PC_AGENT_HOST   where to listen. Default: 127.0.0.1 with the dev token, 0.0.0.0 once you set
-//                   a real token. Best: your Tailscale IP (100.x.y.z) so only your tailnet sees it.
+//   PC_AGENT_HOST   where to listen. Defaults to loopback with the dev token or shell enabled.
+//                   For a remote PC agent, use its Tailscale IP (100.x.y.z).
 //   PC_AGENT_TOKEN  shared secret, must match the server's PC_AGENT_TOKEN
 //   PC_AGENT_NAME   shown on the Device (defaults to the hostname)
 //   PC_AGENT_ROOTS  comma list of folders it may touch (defaults below)
@@ -19,16 +19,19 @@ import fs from "node:fs/promises";
 import { createReadStream, existsSync, mkdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawn, exec } from "node:child_process";
+import { spawn, exec, execFile } from "node:child_process";
 import type { CodingTool, FsEntry, PcAction, PcAgentCommand, PcAgentResult, PcCodingSession } from "@app/protocol";
 
 const HOME = os.homedir();
 const PORT = Number(process.env.PC_AGENT_PORT || 7077);
 const TOKEN = process.env.PC_AGENT_TOKEN || "dev-token";
-// Never expose the default token beyond this machine.
-const HOST = process.env.PC_AGENT_HOST || (TOKEN === "dev-token" ? "127.0.0.1" : "0.0.0.0");
-const NAME = process.env.PC_AGENT_NAME || prettyHost();
 const ALLOW_SHELL = process.argv.includes("--allow-shell") || process.env.PC_AGENT_ALLOW_SHELL === "1";
+if (ALLOW_SHELL && (TOKEN === "dev-token" || TOKEN.length < 24))
+  throw new Error("Shell access requires a private PC_AGENT_TOKEN of at least 24 characters.");
+// Never expose the default token beyond this machine.
+const HOST = TOKEN === "dev-token" ? "127.0.0.1" : process.env.PC_AGENT_HOST || (ALLOW_SHELL ? "127.0.0.1" : "0.0.0.0");
+const NAME = process.env.PC_AGENT_NAME || prettyHost();
+const ALLOW_OPEN = process.env.PC_AGENT_ALLOW_OPEN !== "0";
 const TRASH = path.join(HOME, ".flip-trash");
 const WORKSPACE = path.join(HOME, "Flip");
 
@@ -43,7 +46,9 @@ mkdirSync(WORKSPACE, { recursive: true });
 const ACTIVE_ROOTS = ROOTS.filter(r => existsSync(r));
 // Compare against resolved roots: on macOS /var is /private/var, and Desktop may be a symlink.
 const REAL_ROOTS = ACTIVE_ROOTS.map(r => realpathSync(r));
-const ACTIONS: PcAction[] = ["fs.list", "fs.read", "fs.write", "fs.mkdir", "fs.move", "fs.trash", "fs.duplicates", "open", "notify", "claude.window", ...(ALLOW_SHELL ? (["shell"] as PcAction[]) : [])];
+const ACTIONS: PcAction[] = ["fs.list", "fs.read", "fs.write", "fs.mkdir", "fs.move", "fs.trash", "fs.duplicates", "notify", "claude.window"];
+if (ALLOW_OPEN) ACTIONS.push("open");
+if (ALLOW_SHELL) ACTIONS.push("shell");
 const MACHINE_ID = crypto.createHash("sha1").update(os.hostname() + HOME).digest("hex").slice(0, 10);
 
 /* ---------------------------------- Console ---------------------------------- */
@@ -231,14 +236,25 @@ const actions: Record<PcAction, (args: Record<string, unknown>, progress: Progre
 
   async shell(args, progress) {
     if (!ALLOW_SHELL) throw new Error("Shell is off on this machine. Start the PC agent with --allow-shell.");
-    const command = String(args.command || "");
-    const cwd = args.cwd ? await inRoots(args.cwd) : WORKSPACE;
+    const command = args.command;
+    if (typeof command !== "string" || !command.trim()) throw new Error("A command is required.");
+    if (args.cwd !== undefined && (typeof args.cwd !== "string" || !args.cwd.trim())) throw new Error("Invalid working folder.");
+    const cwd = typeof args.cwd === "string" ? await fs.realpath(expand(args.cwd)) : WORKSPACE;
     progress(`$ ${command}`);
+    const windows = process.platform === "win32";
+    const shell = windows ? "powershell.exe" : "/bin/sh";
+    const shellArgs = windows
+      ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command]
+      : ["-c", command];
     return await new Promise<Result>((resolve, reject) => {
-      exec(command, { cwd, timeout: 60_000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      execFile(shell, shellArgs, { cwd, timeout: 60_000, maxBuffer: 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
         const out = (stdout + (stderr ? `\n${stderr}` : "")).trim().slice(-8000);
-        if (err && !out) reject(new Error(err.message));
-        else resolve({ output: err ? `Exited with an error` : `Done`, data: { stdout: out, code: err ? (err as { code?: number }).code ?? 1 : 0 } });
+        if (err) {
+          const reason = err.killed ? "Command stopped before completion" : `Command failed (${err.code ?? err.signal ?? "unknown error"})`;
+          reject(new Error(out ? `${reason}\n${out}` : reason));
+        } else {
+          resolve({ output: out || "Command exited successfully." });
+        }
       });
     });
   },
@@ -411,6 +427,10 @@ void watchCoding();
 const wss = new WebSocketServer({ host: HOST, port: PORT });
 
 wss.on("connection", (ws: WebSocket, req) => {
+  if (req.headers.origin) {
+    ws.close(4003, "PC agent requires a server connection");
+    return;
+  }
   let authed = false;
   const peer = req.socket.remoteAddress;
   const send = (m: PcAgentResult) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(m));

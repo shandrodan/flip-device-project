@@ -4,6 +4,8 @@ The one flow everything is built toward. If a feature isn't in here, it's a rend
 
 ## Setup on stage
 
+Configure an AI provider key for live agent requests, or set `DEMO_PLANNER=1` for scripted rehearsals.
+
 - Device app full screen on a phone (or a laptop window sized like the device).
 - Dock screen on a second tab.
 - Laptop screen on the projector, running the PC agent.

@@ -176,6 +176,7 @@ export function TalkOverlay({ target, sample, onDone }: { target: TalkTarget; sa
 
 /** Risky action: the bot grows into fire, only the eyes stay. The push bar approves. */
 export function FireOverlay({ req, onWant }: { req: ApprovalRequest | null; onWant: (w: boolean) => void }) {
+  const commandView = useRef<HTMLPreElement>(null);
   const { snap, toast } = useApp();
   const [shown, setShown] = useState<ApprovalRequest | null>(null);
   const [phase, setPhase] = useState<"off" | "pre" | "fire" | "done">("off");
@@ -201,8 +202,9 @@ export function FireOverlay({ req, onWant }: { req: ApprovalRequest | null; onWa
     if (e.c === "pushBar") net.send({ type: "approval.press", requestId: shown.requestId, approved: true, via: "push-bar" });
     else if (e.c === "b") net.send({ type: "approval.press", requestId: shown.requestId, approved: false, via: "b-button" });
     else if (e.c === "a") { setNudge(n => n + 1); toast("Risky ones need the push bar"); }
+    else if (e.c === "appWheel" && shown.preview?.command) commandView.current?.scrollBy({ top: (e.dir ?? 1) * 36 });
     return true;
-  }, { push: "Approve", b: "Not now" }, live, LAYER.approval);
+  }, { push: "Approve", b: "Not now", wheel: shown?.preview?.command ? "Scroll command" : undefined }, live, LAYER.approval);
 
   if (!shown) return null;
   const fire = phase === "fire";
@@ -218,7 +220,10 @@ export function FireOverlay({ req, onWant }: { req: ApprovalRequest | null; onWa
       <div className={"fire-copy in" + (nudge ? " nudge" : "")} key={nudge} style={{ animationDelay: nudge ? "0ms" : "160ms" }}>
         <div className="label" style={{ color: "rgba(0,0,0,0.6)", marginBottom: 8 }}>{ag ? ag.name : "Main agent"} needs your press</div>
         <p className="say" style={{ fontSize: shown.title.length > 26 ? 36 : 42 }}>{shown.title}</p>
-        {shown.preview && (shown.preview.subject || shown.preview.body) ? <div style={{ margin: "14px 0 6px", padding: "12px 14px", borderRadius: 16, background: "rgba(0,0,0,0.12)", fontSize: 14, lineHeight: 1.5 }}>
+        {shown.preview?.command ? <>
+          <p className="mute" style={{ fontSize: 14 }}>{shown.body}</p>
+          <pre ref={commandView} className="approval-command">{shown.preview.command}</pre>
+        </> : shown.preview && (shown.preview.subject || shown.preview.body) ? <div style={{ margin: "14px 0 6px", padding: "12px 14px", borderRadius: 16, background: "rgba(0,0,0,0.12)", fontSize: 14, lineHeight: 1.5 }}>
           {shown.preview.to && <div><span style={{ opacity: 0.6 }}>To </span><b>{shown.preview.to}</b></div>}
           {shown.preview.subject && <div><span style={{ opacity: 0.6 }}>Subject </span><b>{shown.preview.subject}</b></div>}
           {shown.preview.body && <div style={{ opacity: 0.75, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden", whiteSpace: "pre-line" }}>{shown.preview.body}</div>}
@@ -235,18 +240,21 @@ export function FireOverlay({ req, onWant }: { req: ApprovalRequest | null; onWa
 export function SoftApproval({ req }: { req: ApprovalRequest }) {
   const { snap } = useApp();
   const ag = snap.agents.find(a => a.id === req.agentId);
+  const commandView = useRef<HTMLPreElement>(null);
   useControls(e => {
     if (e.c === "a" || e.c === "pushBar") net.send({ type: "approval.press", requestId: req.requestId, approved: true, via: e.c === "a" ? "a-button" : "push-bar" });
     else if (e.c === "b") net.send({ type: "approval.press", requestId: req.requestId, approved: false, via: "b-button" });
+    else if (e.c === "appWheel" && req.preview?.command) commandView.current?.scrollBy({ top: (e.dir ?? 1) * 36 });
     else if (e.c === "systemWheel" || e.c === "mic") return false;
     return true;
-  }, { mic: "Hold to talk", a: "Go ahead", push: "Go ahead", b: "Not now" }, true, LAYER.approval);
+  }, { mic: "Hold to talk", a: "Go ahead", push: "Go ahead", b: "Not now", wheel: req.preview?.command ? "Scroll command" : undefined }, true, LAYER.approval);
   return <div className="soft" key={req.requestId}>
     {ag && <AgentBot agent={ag} size={44} state="wide" />}
     <div style={{ flex: 1, minWidth: 0 }}>
       <div className="label">{snap.settings.permissionMode === "manual" ? "Manual mode" : "Asking first"} · {ag ? ag.name : "Agent"}</div>
       <b style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{req.title}</b>
-      {req.body && <div className="mute" style={{ fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{req.body}</div>}
+      {req.body && <div className="mute" style={req.preview?.command ? { fontSize: 13, overflowWrap: "anywhere" } : { fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{req.body}</div>}
+      {req.preview?.command && <pre ref={commandView} className="approval-command">{req.preview.command}</pre>}
     </div>
   </div>;
 }

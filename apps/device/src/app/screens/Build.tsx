@@ -178,7 +178,7 @@ export function Build() {
     <section className="bd-preview">
       <div className="bd-page">
         {build?.previewUrl
-          ? <iframe key={`${build.previewUrl}#${build.rev}#${reload}`} src={build.previewUrl} title={`${build.name} preview`} tabIndex={-1} />
+          ? <iframe key={`${build.previewUrl}#${build.rev}#${reload}`} src={build.previewUrl} title={`${build.name} preview`} tabIndex={-1} sandbox="allow-scripts allow-forms" />
           : <div className="bd-empty"><b>No preview yet</b><span>{build ? `${build.name} · ${build.dir}` : "Update the server to use Build."}</span></div>}
       </div>
       <Tape />

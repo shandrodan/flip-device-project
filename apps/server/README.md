@@ -4,7 +4,7 @@ Node + TypeScript. WebSocket server speaking `@app/protocol` at `/ws`, setup pag
 
 - `src/notes.ts`: dumps become notes instantly, then transcription and suggestions (ADR 0005, 0009).
 - `src/suggest.ts`: Structured output from the configured model, or a rule-based splitter without a key.
-- `src/agents/`: task agents. `runner.ts` (model tool-use loop), `planner.ts` (no-key plans), `tools.ts` (every action and its risk).
+- `src/agents/`: Task agents. `runner.ts` drives the model tool loop and includes recent voice exchanges. `tools.ts` defines actions and risks. `planner.ts` supports scripted rehearsals when `DEMO_PLANNER=1`.
 - `src/approvals.ts`: approval requests; "Not now" holds a task until resumed (ADR 0004).
 - `src/machines.ts`: links to PC agents over Tailscale, with retries; paused tasks resume when a machine returns (ADR 0006).
 - `src/index.ts`: the hub, focus timer, Claude limit window, settings.

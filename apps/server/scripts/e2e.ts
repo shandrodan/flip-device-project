@@ -4,11 +4,13 @@
 //   pnpm test:e2e            (add RUNS=20 to run the flow 20 times in a row)
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
+import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
-import { PROTOCOL_VERSION, minAppAgents, type AppId, type DeviceMessage, type ServerMessage, type Snapshot } from "@app/protocol";
+import { PROTOCOL_VERSION, minAppAgents, type AppId, type DeviceMessage, type ServerMessage, type Snapshot, type Task } from "@app/protocol";
 
 const RUNS = Number(process.env.RUNS || 1);
 const PORT = 18787, PC_PORT = 17077;
@@ -55,10 +57,11 @@ function cleanup() {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
-async function connect() {
+async function connect(protocols?: string[], onMessage?: (raw: WebSocket.RawData) => void) {
   for (let i = 0; i < 60; i++) {
     try {
-      const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
+      const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`, protocols);
+      if (onMessage) ws.on("message", onMessage);
       await new Promise((res, rej) => { ws.once("open", res); ws.once("error", rej); });
       return ws;
     } catch { await sleep(250); }
@@ -76,9 +79,27 @@ async function main() {
     notes: [{ id: "legacy_note", text: "Keep this old Note", createdAt: new Date().toISOString(), transcribedBy: "local", editedByUser: false, suggestionState: "none", suggestions: [], taskIds: [] }],
   }));
   const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const pcEnv = { HOME: home, USERPROFILE: home, PC_AGENT_PORT: String(PC_PORT), PC_AGENT_HOST: "127.0.0.1", PC_AGENT_TOKEN: "e2e", PC_AGENT_NAME: "Test laptop" };
+  // An external mail viewer can keep the fixture open on Windows between runs.
+  const pcEnv = { HOME: home, USERPROFILE: home, PC_AGENT_PORT: String(PC_PORT), PC_AGENT_HOST: "127.0.0.1", PC_AGENT_TOKEN: "e2e", PC_AGENT_NAME: "Test laptop", PC_AGENT_ALLOW_OPEN: "0", PC_AGENT_ALLOW_SHELL: "0" };
   let pc = start("pc", path.join(here, "../pc-agent"), pcEnv);
-  const serverEnv = { PORT: String(PORT), PUBLIC_URL: `http://127.0.0.1:${PORT}`, DATA_DIR: path.join(root, "data"), PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`, PC_AGENT_TOKEN: "e2e", ANTHROPIC_API_KEY: process.env.E2E_CLAUDE ? process.env.ANTHROPIC_API_KEY ?? "" : "", STT_API_KEY: "", OPENROUTER_API_KEY: "" };
+  const serverEnv = {
+    HOST: "127.0.0.1",
+    PORT: String(PORT),
+    PUBLIC_URL: `http://127.0.0.1:${PORT}`,
+    DATA_DIR: path.join(root, "data"),
+    PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`,
+    PC_AGENT_TOKEN: "e2e",
+    HOSTING: "self",
+    DEVICE_ACCESS_TOKEN: "",
+    DEMO_PLANNER: "1",
+    ANTHROPIC_API_KEY: process.env.E2E_CLAUDE ? process.env.ANTHROPIC_API_KEY ?? "" : "",
+    OPENROUTER_API_KEY: "",
+    STT_API_KEY: "",
+    LOCAL_STT_URL: "",
+    SMTP_URL: "",
+    BUILD_DIR: "~/Flip/build",
+    BUILD_PREVIEW_URL: "",
+  };
   let serverProc = start("server", here, serverEnv);
 
   const ws = await connect();
@@ -143,6 +164,8 @@ async function main() {
         if (ap.held || pressed.has(ap.requestId)) continue;
         if (ap.kind !== "risky") fail(`expected only risky approvals in Auto, got ${ap.title}`);
         if (!heldOnce && ap.risk === "delete") {
+          if (fs.readdirSync(path.join(shots, "Archive")).length !== 6) fail("the older screenshots did not move before approval");
+          if (fs.existsSync(path.join(home, ".flip-trash"))) fail("files were trashed before the Approval press");
           heldOnce = true;
           pressed.add(ap.requestId);
           sendMsg({ type: "approval.press", requestId: ap.requestId, approved: false, via: "b-button" });
@@ -454,9 +477,162 @@ async function main() {
   console.log("✓ Restart: messages stayed, waiting work paused, repeated voice made no second Task");
 
   ws2.close();
+  serverProc.kill();
+  pc.kill();
+  await Promise.all([once(serverProc, "exit"), once(pc, "exit")]);
+  await modelFlow(here, pcEnv, serverEnv);
   cleanup();
   console.log(`\nAll good. ${RUNS} run${RUNS > 1 ? "s" : ""} of the demo flow passed.`);
   process.exit(0);
+}
+
+async function modelFlow(here: string, pcEnv: Record<string, string>, serverEnv: Record<string, string>) {
+  const token = "test-device-access-token-123";
+  const pcToken = "test-private-pc-token-123";
+  const modelData = path.join(root, "model-data");
+  const existingTodo = { id: "move-fixture", title: "Review the hardware drawings", status: "todo", target: "todo", agentId: null, steps: [],
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } satisfies Task;
+  const assignedWork = { ...existingTodo, id: "assigned-fixture", title: "Move Review the hardware drawings to the Pitch deck project for 18 Dec 2026 at 14:30" };
+  fs.mkdirSync(modelData);
+  fs.writeFileSync(path.join(modelData, "state.json"), JSON.stringify({ tasks: [existingTodo, assignedWork] }));
+  const filename = path.join(root, "model-result.txt");
+  const command = process.platform === "win32"
+    ? "Set-Content -LiteralPath 'model-result.txt' -Value 'tool worked'; Get-Content -LiteralPath 'model-result.txt'"
+    : "printf 'tool worked\\n' > model-result.txt && cat model-result.txt";
+  const calls: { messages: unknown[]; tools: { name: string }[]; system: string }[] = [];
+  const tool = (name: string, input: Record<string, unknown>) => ({ type: "tool_use", id: `toolu_${calls.length}`, name, input });
+  const reply = (text: string) => ({ type: "text", text });
+  const provider = http.createServer(async (req, res) => {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    calls.push(JSON.parse(raw));
+    const turn = calls.length;
+    const turns = [
+      () => tool("change_app", { action: "notes.create", text: "Weekly Summary", say: "Save the title in Notes" }),
+      () => reply("I saved Weekly Summary in Notes."),
+      () => tool("run_shell", { command, cwd: root, machine: "Test laptop", say: "Write and verify the result" }),
+      () => reply("I wrote and verified model-result.txt."),
+      () => tool("read_app", { app: "todo", say: "Look up the To-Do and project" }),
+      () => {
+        const messages = calls.at(-1)!.messages as { content: unknown }[];
+        const [result] = messages.at(-1)!.content as { content: string }[];
+        const data = JSON.parse(result.content) as { projects: { id: string; name: string }[]; tasks: { id: string; title: string }[] };
+        return tool("change_app", {
+          action: "todo.update", id: data.tasks.find(task => task.title === existingTodo.title)?.id,
+          projectId: data.projects.find(project => project.name === "Pitch deck")?.id, due: "2026-12-18T14:30", say: "Move and reschedule the To-Do",
+        });
+      },
+      () => reply("I moved the To-Do to Pitch deck for December 18."),
+      () => tool("change_app", { action: "focus.start", minutes: 12, say: "Start a twelve-minute Focus timer" }),
+      () => reply("I started a twelve-minute Focus timer."),
+      () => tool("read_app", { app: "notes", say: "Find Weekly Summary" }),
+      () => {
+        const messages = calls.at(-1)!.messages as { content: unknown }[];
+        const [result] = messages.at(-1)!.content as { content: string }[];
+        const notes = JSON.parse(result.content) as { id: string; text: string }[];
+        return tool("change_app", {
+          action: "notes.replace", id: notes.find(note => note.text === "Weekly Summary")?.id,
+          text: "Weekly Build Summary", say: "Replace the Note text",
+        });
+      },
+      () => reply("I updated the Note to Weekly Build Summary."),
+    ];
+    const content = turns[turn - 1]?.() ?? reply("Unexpected model request.");
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ type: "message", role: "assistant", content: [content], stop_reason: content.type === "tool_use" ? "tool_use" : "end_turn" }));
+  });
+  provider.listen(0, "127.0.0.1");
+  await once(provider, "listening");
+  const address = provider.address();
+  if (!address || typeof address === "string") throw new Error("Mock model server didn't start.");
+  try {
+    start("model-pc", path.join(here, "../pc-agent"), { ...pcEnv, PC_AGENT_TOKEN: pcToken, PC_AGENT_ALLOW_SHELL: "1" });
+    start("model-server", here, {
+      ...serverEnv,
+      DATA_DIR: modelData,
+      PC_AGENT_TOKEN: pcToken,
+      DEVICE_ACCESS_TOKEN: token,
+      DEMO_PLANNER: "0",
+      ANTHROPIC_API_KEY: "local-test-key",
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${address.port}`,
+    });
+    const url = `ws://127.0.0.1:${PORT}/ws`;
+    let snapshot: Snapshot | undefined;
+    const socket = await connect(["flip-device", `auth.${token}`], raw => {
+      const message = JSON.parse(String(raw)) as ServerMessage;
+      if (message.type === "snapshot") snapshot = message.snapshot;
+    });
+    try {
+      if (socket.protocol !== "flip-device") throw new Error("The Device token was echoed as a negotiated protocol.");
+      const listen = new WebSocket(url, ["flip-device", "auth.invalid"]);
+      const [authError] = await once(listen, "error");
+      if (!String(authError).includes("401")) throw new Error("Unauthenticated Device was not rejected.");
+
+      const send = (message: DeviceMessage) => socket.send(JSON.stringify(message));
+      const until = async (predicate: () => boolean) => {
+        for (let i = 0; i < 120; i++) {
+          if (predicate()) return;
+          await sleep(50);
+        }
+        throw new Error("The model flow did not reach the expected state.");
+      };
+      const talk = (requestId: string, text: string) => send({ type: "voice.message", requestId, text, target: { kind: "main" } });
+      send({ type: "hello", deviceId: "model-e2e", mode: "handheld", client: "device", protocol: PROTOCOL_VERSION });
+      await until(() => !!snapshot?.machines.some(machine => machine.online && machine.actions?.includes("shell")));
+      talk("model-first", "I'd like Weekly Summary in my Notes so I can come back to it.");
+      await until(() => !!snapshot?.messages.some(message => message.replyToMessageId === "model-first"));
+      if (!snapshot!.notes.some(note => note.text === "Weekly Summary")
+        || !snapshot!.tasks.some(task => task.appRequest?.app === "notes" && task.agentId === snapshot!.appAgents.notes[0] && task.status === "done")
+        || JSON.stringify(calls[0].messages).includes("Previous exchanges"))
+        throw new Error("The Main agent didn't save a Note through its assigned agent on the first turn.");
+      talk("model-follow-up", "Now write that one out and check it.");
+      await until(() => !!snapshot?.approvals.length);
+      const approval = snapshot!.approvals[0];
+      if (approval.preview?.command !== command || !approval.body?.includes(root) || fs.existsSync(filename))
+        throw new Error("The command ran early or the approval didn't show the command and folder.");
+      if (!JSON.stringify(calls[2].messages).includes("Previous exchanges") || !JSON.stringify(calls[2].messages).includes("Weekly Summary") || !calls[2].tools.some(tool => tool.name === "run_shell"))
+        throw new Error("The follow-up was missing conversation history or shell capability.");
+      send({ type: "approval.press", requestId: approval.requestId, approved: true, via: "a-button" });
+      await until(() => !!snapshot?.messages.some(message => message.replyToMessageId === "model-follow-up"));
+      if (fs.readFileSync(filename, "utf8").trim() !== "tool worked" || !JSON.stringify(calls[3].messages).includes("tool worked"))
+        throw new Error("The shell result didn't reach the model after approval.");
+      console.log("✓ LLM follow-up received conversation context and verified an approved shell action outside the file roots");
+
+      send({ type: "task.assign", taskId: assignedWork.id, agentId: snapshot!.appAgents.notes[0] });
+      await until(() => !!snapshot?.tasks.some(task => task.id === assignedWork.id && task.status === "done"));
+      const moved = snapshot!.tasks.find(task => task.id === existingTodo.id);
+      const project = snapshot!.projects.find(item => item.name === "Pitch deck");
+      if (!project || moved?.projectId !== project.id || moved?.due !== "2026-12-18T14:30"
+        || snapshot!.tasks.filter(task => task.target === "todo" && task.title === existingTodo.title).length !== 1
+        || !snapshot!.tasks.some(task => task.appRequest?.input.action === "todo.update" && task.agentId === snapshot!.appAgents.todo[0] && task.status === "done")
+        || JSON.stringify(calls[4].messages).includes("Previous exchanges"))
+        throw new Error("The Notes agent didn't move the existing To-Do through its owner from a saved Task with no conversation.");
+
+      send({ type: "voice.message", requestId: "model-focus", text: "Give me twelve minutes of quiet work", target: { kind: "app", app: "focus" } });
+      await until(() => !!snapshot?.messages.some(message => message.replyToMessageId === "model-focus"));
+      if (!snapshot!.focus.running || snapshot!.focus.lengthMs !== 720_000
+        || !snapshot!.messages.some(message => message.id === "model-focus" && message.toAgentId === snapshot!.appAgents.focus[0])
+        || JSON.stringify(calls[7].messages).includes("Previous exchanges"))
+        throw new Error("The Focus agent didn't start the timer on its first request.");
+      console.log("✓ Main saved a Note, Notes moved a To-Do from an assigned Task, and Focus started a timer, all without prior conversation");
+
+      const noteId = snapshot!.notes.find(note => note.text === "Weekly Summary")?.id;
+      talk("model-note-edit", "Replace my Weekly Summary note with Weekly Build Summary.");
+      await until(() => !!snapshot?.approvals.some(item => item.title === "Replace this Note's text?"));
+      const replace = snapshot!.approvals.find(item => item.title === "Replace this Note's text?")!;
+      if (replace.agentId !== snapshot!.appAgents.notes[0] || snapshot!.notes.find(note => note.id === noteId)?.text !== "Weekly Summary")
+        throw new Error("The Note edit was applied before its assigned agent received approval.");
+      send({ type: "approval.press", requestId: replace.requestId, approved: true, via: "a-button" });
+      await until(() => !!snapshot?.messages.some(message => message.replyToMessageId === "model-note-edit"));
+      if (snapshot!.notes.find(note => note.id === noteId)?.text !== "Weekly Build Summary" || snapshot!.notes.length !== 1)
+        throw new Error("The approved edit did not update the original Note.");
+      console.log("✓ Main found an existing Note and edited it in place through the Notes agent after approval");
+    } finally {
+      socket.close();
+    }
+  } finally {
+    provider.close();
+  }
 }
 
 process.on("SIGINT", () => { cleanup(); process.exit(1); });

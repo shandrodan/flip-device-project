@@ -184,14 +184,16 @@ export const machines = {
       lastSeen: l.lastSeen,
     }));
   },
-  /** Pick a machine by (part of) its name, else the first one online. */
+  /** An explicit name must identify one machine. With no name, use the first one online. */
   pick(name?: string): Link {
     const all = [...links.values()];
     if (!all.length) throw new MachineOffline("your computer (no PC agent configured)");
     if (name) {
       const n = name.toLowerCase();
-      const hit = all.find(l => l.name.toLowerCase() === n) || all.find(l => l.name.toLowerCase().includes(n));
-      if (hit) return hit;
+      const exact = all.filter(l => l.name.toLowerCase() === n);
+      const matches = exact.length ? exact : all.filter(l => l.name.toLowerCase().includes(n));
+      if (matches.length === 1) return matches[0];
+      throw new Error(matches.length ? `"${name}" matches more than one machine. Use its exact name.` : `No configured machine matches "${name}".`);
     }
     return all.find(l => l.online) || all[0];
   },

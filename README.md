@@ -27,8 +27,9 @@ to add, change, or delete an agent. With another Home item selected, D opens pen
 The To-Do, Focus, Agents, and Settings mics talk to an assigned agent.
 The Notes mic makes a Dump; the main agent files it into the open Note or a new one.
 
-Nothing else is required. With no keys, agents use a built-in planner and speech uses the browser.
-To go further, copy `.env.example` to `.env`, or open http://localhost:8787/setup to paste keys:
+Task agents need an OpenRouter or Anthropic key. The model sees recent exchanges with the selected agent, so you can follow up with requests like “Now make another copy with a shorter title.” It can also combine Device and PC actions in one request. Speech can use the browser. Set `DEMO_PLANNER=1` for scripted rehearsals without a key.
+
+Copy `.env.example` to `.env` or open http://localhost:8787/setup to add a key.
 
 | What | Where |
 | --- | --- |
@@ -37,6 +38,8 @@ To go further, copy `.env.example` to `.env`, or open http://localhost:8787/setu
 | Cloud speech to text | `STT_API_KEY` (OpenAI-compatible), or the setup page |
 | The laptop on the projector | run `PC_AGENT_TOKEN=… pnpm dev:pc` there, set `PC_AGENTS=Name=ws://<tailscale-ip>:7077` and the same token on the server |
 | Real email | `SMTP_URL`, `MAIL_FROM`, `CONTACTS` (otherwise mail lands in `~/Flip/Outbox` as an .eml) |
+
+For PC actions outside the configured folders, enable [PC agent shell access](apps/pc-agent/README.md#shell-access).
 
 Checks:
 
@@ -52,7 +55,7 @@ Device-side container demo: see [docker/README.md](docker/README.md).
 
 ## What's real and what isn't
 
-- Real: the server, agents (OpenRouter or Claude with a key, the planner without), approvals with the push bar, the PC agent doing file work and opening things on the laptop, offline notes and re-transcription, focus timer, the Claude Code limit window (read from Claude Code's logs on your machine), the dock screen.
+- Real: the server, OpenRouter or Claude agents, approvals with the push bar, the PC agent doing file work and opening things on the laptop, offline notes and re-transcription, focus timer, the Claude Code limit window (read from Claude Code's logs on your machine), the dock screen.
 - Simulated: the hardware. The Device is a web app with drawn controls (ADR 0002). Scripted voice is a rehearsal aid, labelled as such in the panel.
 
 ## Team split

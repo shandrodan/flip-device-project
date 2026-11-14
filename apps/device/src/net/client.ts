@@ -121,7 +121,9 @@ class Net {
     if (this.forcedOffline) return;
     clearTimeout(this.retry);
     this.conn = this.conn === "online" ? "online" : "connecting";
-    const ws = new WebSocket(this.url);
+    const token = new URLSearchParams(location.hash.slice(1)).get("deviceToken");
+    const protocols = token && /^[A-Za-z0-9_-]{24,}$/.test(token) ? ["flip-device", `auth.${token}`] : undefined;
+    const ws = new WebSocket(this.url, protocols);
     this.ws = ws;
     ws.onopen = () => {
       this.backoff = 500;

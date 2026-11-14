@@ -2,6 +2,7 @@
 //   pnpm --filter server dev     ->  ws://localhost:8787/ws, setup page at http://localhost:8787/setup
 import http from "node:http";
 import os from "node:os";
+import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   PROTOCOL_VERSION,
@@ -31,6 +32,11 @@ import { acceptVoiceMessage } from "./agents/coordination.js";
 import { serveBuildPreview } from "./build-preview.js";
 
 const SERVER_ID = id("srv");
+if (config.deviceToken && !/^[A-Za-z0-9_-]{24,}$/.test(config.deviceToken))
+  throw new Error("DEVICE_ACCESS_TOKEN must have at least 24 URL-safe characters (letters, numbers, underscores or hyphens).");
+
+const deviceProtocol = "flip-device";
+const deviceCredential = Buffer.from(`auth.${config.deviceToken}`);
 
 /* ------------------------------- Clients ------------------------------- */
 
@@ -415,11 +421,13 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/preview") {
     res.writeHead(308, { location: "/preview/" }).end();
   } else if (url.pathname.startsWith("/preview/")) {
+    if (config.deviceToken) res.setHeader("content-security-policy", "sandbox allow-scripts allow-forms");
     await serveBuildPreview(res, url.pathname.slice("/preview/".length));
   } else if (url.pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, clients: clients.size, llm: hasLlm(), machines: machines.list().map(m => ({ name: m.name, online: m.online })) }));
   } else if (url.pathname === "/api/snapshot") {
-    res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" }).end(JSON.stringify(snapshot()));
+    if (config.deviceToken) res.writeHead(403).end();
+    else res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" }).end(JSON.stringify(snapshot()));
   } else if (url.pathname === "/setup") {
     await handleSetup(req, res, url);
   } else if (url.pathname === "/") {
@@ -427,7 +435,20 @@ const server = http.createServer(async (req, res) => {
   } else res.writeHead(404).end();
 });
 
-const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 40 * 1024 * 1024 });
+const wss = new WebSocketServer({
+  server,
+  path: "/ws",
+  maxPayload: 40 * 1024 * 1024,
+  handleProtocols: protocols => protocols.has(deviceProtocol) ? deviceProtocol : false,
+  verifyClient: ({ req }: { req: http.IncomingMessage }) => {
+    if (!config.deviceToken) return true;
+    const protocols = req.headers["sec-websocket-protocol"]?.split(",").map(value => value.trim()) ?? [];
+    return protocols.includes(deviceProtocol) && protocols.some(value => {
+      const actual = Buffer.from(value);
+      return actual.length === deviceCredential.length && timingSafeEqual(actual, deviceCredential);
+    });
+  },
+});
 wss.on("connection", ws => {
   const c: Client = { ws, kind: "device", mode: "handheld", deviceId: "" };
   clients.add(c);
@@ -453,6 +474,6 @@ resumeQueuedTasks();
 server.listen(config.port, config.host, () => {
   console.log(`\nFlip server on ${lanUrl()}  (ws path /ws)`);
   console.log(`Setup page: ${lanUrl()}/setup`);
-  console.log(`Agents: ${hasLlm() ? `${llmMode()} (${agentModel()})` : "built-in planner"} · Speech to text: ${sttMode()}`);
+  console.log(`Agents: ${hasLlm() ? `${llmMode()} (${agentModel()})` : config.demoPlanner ? "demo planner" : "AI key required"} · Speech to text: ${sttMode()}`);
   console.log(`Machines: ${state.machines.map(m => `${m.name} (${m.url})`).join(", ") || "none"}\n`);
 });
