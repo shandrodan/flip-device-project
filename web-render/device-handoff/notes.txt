@@ -1,0 +1,9 @@
+The Device is a white handheld AI companion whose lower tray slides out to reveal a D-pad and A/B/C/D buttons.
+Place it in the landing-page hero as an interactive Three.js model. Start closed, screen facing forward.
+On hover, give the Device a slight tilt. On drag, let the viewer orbit it.
+On click or tap, play slide_open to reveal the controls. Reverse the clip on the next click or tap.
+If the hero is scroll-driven, scrub slide_open with scroll progress.
+Keep the motion snappy and damped, with a satin white shell, glossy dark screen, and translucent button caps.
+Target screen for display content, button_power and button_microphone for the side controls, and wheel_in_app, wheel_system, and kickstand for pivoted motion.
+The screen faces +Z and up is +Y. The tray travels 32 mm down and the rails travel 16 mm down.
+Use soft studio reflections on the screen and match front.png, side.png, three-quarter.png, and lighting-setup.jpg. See slide-open.mp4 for the motion.
