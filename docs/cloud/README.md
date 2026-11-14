@@ -50,3 +50,4 @@ Roadmap items built in the night run (see [REPORT-2026-11-15.md](REPORT-2026-11-
 | --- | --- | --- |
 | P0.3 Engine health and restart | Done | `engine-restart`: OpenCode killed between requests, the next request works. `/health` reports `engine` and `engineRestarts` |
 | P1.4 `build_screenshot` | Done | `build-look`: "make the button bigger and centred", button measured before and after in a sandboxed frame, screenshot in the Task steps |
+| P1.5 Undo by voice | Done | `build-undo`: "change the title to Lemon Lab", then "undo that"; `index.html` is byte-for-byte what it was, and the history has the undo |

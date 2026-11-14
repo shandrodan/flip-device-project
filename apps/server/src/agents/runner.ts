@@ -11,7 +11,8 @@ import { config } from "../config.js";
 import { TOOLS, toolsFor, toApiTool, ToolError, WEB_SEARCH_PURPOSES, type Ctx } from "./tools.js";
 import { runPlanner } from "./planner.js";
 import { engineEnabled, EngineUnavailable, runOnEngine } from "./engine.js";
-import { projectDir } from "../build-host.js";
+import { localBuild, projectDir } from "../build-host.js";
+import { commitBuild, ensureRepo } from "../build-git.js";
 
 /** build_* tools that OpenCode's own read, write, edit and bash replace in a Build Task on the server. */
 const NATIVE_REPLACES = ["build_list", "build_read", "build_write", "build_run"];
@@ -177,6 +178,8 @@ export function startTask(task: Task) {
   (async () => {
     try {
       const useModel = hasLlm() || (engineEnabled() && !!config.engineModel);
+      // The project as it was before this Task is the first saved change, so the Task can be undone.
+      if (localBuild() && !task.appRequest && (task.app === "build" || servesBuild(agent.id))) await ensureRepo().catch(() => false);
       if (!task.appRequest && !useModel && !config.demoPlanner)
         throw new ToolError("Add an OpenRouter or Anthropic key in Settings to use Task agents.");
       const final = task.appRequest ? await runAppRequest(ctx) : useModel ? await runAgent(ctx, ctl) : await runPlanner(ctx);
@@ -209,6 +212,11 @@ export function startTask(task: Task) {
         console.warn(`[task] ${task.title} failed:`, msg);
       }
     } finally {
+      // Every Build Task on the server is one saved change, so it can be undone by voice (P1.5).
+      if (localBuild() && !task.appRequest && (task.app === "build" || servesBuild(agent.id))) {
+        const request = state.messages.find(message => message.id === task.requestMessageId)?.text ?? task.title;
+        await commitBuild(request).catch(err => console.warn(`[build] ${(err as Error).message}`));
+      }
       // A Build task may have changed the project: the Device reloads its preview.
       if (task.app === "build") state.build.rev++;
       running.delete(task.id);
@@ -261,6 +269,7 @@ function buildBrief(fromBuild: boolean, native: boolean) {
         : "Use the build_* tools: paths are relative to that folder. build_run runs commands there.",
       "The Device preview shows the project's files directly, so plain HTML, CSS and JavaScript need no server and appear after the task. A framework app needs its dev server: install with a command, then start it with build_serve on a port from 5300 to 5399 with base path /preview/ (Vite: `npx vite --host 127.0.0.1 --port 5300 --strictPort --base /preview/`). Never start a long-running server with a plain command: it would block. build_logs shows its output.",
       "The Device shows the preview in a sandboxed frame with no same-origin access: localStorage, sessionStorage, cookies and IndexedDB throw there. Keep state in memory, or wrap storage in try/catch.",
+      "Every finished Build request is saved as one change. For \"undo that\" or \"go back\", use build_undo (build_history lists the changes). Never use git reset.",
       "Check your work the way the user sees it: after a visible change, call build_screenshot, look at the screenshot and its element list, and fix what does not match the request before you answer.",
     );
   } else {

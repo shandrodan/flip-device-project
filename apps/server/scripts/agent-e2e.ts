@@ -3,7 +3,7 @@
 // agents, presses every approval like a user would, and checks the end state, not the agent's words.
 //   OPENROUTER_API_KEY=... pnpm test:agents
 //   MODEL=openrouter/anthropic/claude-haiku-5.5 ONLY=notes,files pnpm test:agents
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -121,6 +121,9 @@ async function measureButton(): Promise<{ w: number; h: number; cx: number; erro
 }
 let buttonBefore: Awaited<ReturnType<typeof measureButton>> = null;
 let lastSteps: string[] = [];
+let htmlBefore = "";
+const readIndex = () => { try { return fs.readFileSync(path.join(buildDir, "index.html"), "utf8"); } catch { return ""; } };
+const gitLog = () => { try { return execFileSync("git", ["log", "--format=%s", "-8"], { cwd: buildDir }).toString().trim().split("\n"); } catch { return []; } };
 
 /** Every text file in the Build project, joined, without node_modules. */
 function projectText(dir = buildDir): string {
@@ -245,6 +248,22 @@ const scenarios: Scenario[] = [
         !shot && "no screenshot in the Task steps",
       ].filter(Boolean);
       return problems.length ? problems.join("; ") : null;
+    },
+  },
+  {
+    // P1.5: "undo that" puts index.html back exactly as it was.
+    name: "build-undo",
+    async before() { htmlBefore = readIndex(); },
+    turns: [
+      { target: { kind: "app", app: "build" }, text: "Change the title to Lemon Lab." },
+      { target: { kind: "app", app: "build" }, text: "Undo that." },
+    ],
+    check() {
+      const now = readIndex();
+      const log = gitLog();
+      if (!htmlBefore) return "no index.html before the change";
+      if (now !== htmlBefore) return `index.html differs from before (Lemon Lab ${/Lemon Lab/.test(now)}); history: ${log.slice(0, 4).join(" | ")}`;
+      return log.some(line => /^Undo/.test(line)) ? null : `no undo in history: ${log.slice(0, 4).join(" | ")}`;
     },
   },
   {

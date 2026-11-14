@@ -6,6 +6,7 @@ import path from "node:path";
 import type { FsEntry } from "@app/protocol";
 import { bus } from "../bus.js";
 import { devLog, devServer, insideProject, localBuild, projectDir, runInProject, startDev, stopDev } from "../build-host.js";
+import { history, undo } from "../build-git.js";
 import { shootPreview } from "../build-shot.js";
 import { saveNow, state } from "../store.js";
 import { ToolError, type ToolDef } from "./tools.js";
@@ -142,6 +143,32 @@ export const BUILD_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "build_history",
+    description: "List the latest saved changes to the Build project, newest first. Every finished Build request is saved as one change, named after what the user asked.",
+    props: { say: SAY }, required: ["say"], purposes: "all",
+    async run(ctx) {
+      await ctx.gate({ title: `Read ${state.build.name}'s history?` });
+      const list = await history();
+      if (!list.length) return { text: "No saved changes yet." };
+      return { text: list.map((change, n) => `${n + 1}. ${change.message} (${change.when}, ${change.hash})`).join("\n") };
+    },
+  },
+  {
+    name: "build_undo",
+    description: "Undo the latest changes to the Build project. steps: how many saved changes to undo, newest first (1 for \"undo that\"). Any edit not saved yet counts as the newest change. An undo is itself a change, so it can be undone too.",
+    props: { steps: { type: "number", description: "How many changes to undo, from 1." }, say: SAY }, required: ["steps", "say"], purposes: "all",
+    async run(ctx, i) {
+      const steps = Number(i.steps);
+      if (!Number.isInteger(steps) || steps < 1 || steps > 20) throw new ToolError("steps is a whole number from 1 to 20. Use build_history to count.");
+      const list = await history(steps + 1);
+      await ctx.gate({ title: steps === 1 ? "Undo the last change?" : `Undo the last ${steps} changes?`, body: list.slice(0, steps).map(change => change.message).join(" · ").slice(0, 200) || state.build.name });
+      const result = await undo(steps).catch(err => { throw new ToolError((err as Error).message); });
+      state.build.rev++;
+      bus.changed();
+      return { text: `Undid ${result.undone.length}: ${result.undone.map(change => `"${change.message}"`).join(", ")}. The files are back as they were before.` };
+    },
+  },
+  {
     name: "build_logs",
     description: "Read the last output of the Build dev server: compile errors, warnings, the address.",
     props: { say: SAY }, required: ["say"], purposes: "all",
@@ -154,7 +181,7 @@ export const BUILD_TOOLS: ToolDef[] = [
 ];
 
 /** Tools that exist only when the Build project is on this machine, and those only for the PC. */
-export const SERVER_BUILD_ONLY = ["build_serve", "build_stop", "build_logs", "build_screenshot"];
+export const SERVER_BUILD_ONLY = ["build_serve", "build_stop", "build_logs", "build_screenshot", "build_history", "build_undo"];
 export const PC_BUILD_ONLY = ["build_preview"];
 
 /** A project-relative path on this machine (BUILD_HOST=server). */

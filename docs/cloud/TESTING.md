@@ -32,6 +32,7 @@ Speaks real requests to real agents, presses every approval like a user, and che
 | build-static | Build: one-page site "Flip Lemonade" with a click counter | `/preview/` serves it |
 | build-edit | Build: green button, add a tagline | edit in place, memory |
 | build-look | Build: make the button bigger and centred | button area +15 % or more and centred, measured in a sandboxed 568×504 frame; no page errors; a screenshot step in the Task |
+| build-undo | Build: change the title, then "undo that" | `index.html` identical to before, an "Undo" commit in the project's git log |
 | build-vite | Build: turn it into Vite + React, install, run the dev server | `vite`/`react` in package.json, Vite client through `/preview/` |
 
 Options (environment):
