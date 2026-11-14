@@ -87,6 +87,12 @@ export const Flip: Plugin = async () => {
       if (!NATIVE.includes(input.tool)) return;
       await call(input.sessionID, input.callID, `opencode.${input.tool}`, output.args, new AbortController().signal);
     },
+    // After an edit, the server adds what broke (dev server or page errors) to the edit's result.
+    async "tool.execute.after"(input, output) {
+      if (input.tool !== "edit" && input.tool !== "write") return;
+      const result = await call(input.sessionID, `${input.callID}:after`, `opencode-after.${input.tool}`, input.args, new AbortController().signal).catch(() => null);
+      if (result?.output) output.output = `${output.output ?? ""}\n\n${result.output}`;
+    },
   };
 };
 

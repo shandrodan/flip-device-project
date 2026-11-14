@@ -8,7 +8,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p .",
     "test:e2e": "tsx scripts/e2e.ts",
-    "test:agents": "tsx scripts/agent-e2e.ts"
+    "test:agents": "tsx scripts/agent-e2e.ts",
+    "test:tools": "tsx scripts/tools-e2e.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",

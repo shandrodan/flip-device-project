@@ -270,6 +270,7 @@ function buildBrief(fromBuild: boolean, native: boolean) {
       "The Device preview shows the project's files directly, so plain HTML, CSS and JavaScript need no server and appear after the task. A framework app needs its dev server: install with a command, then start it with build_serve on a port from 5300 to 5399 with base path /preview/ (Vite: `npx vite --host 127.0.0.1 --port 5300 --strictPort --base /preview/`). Never start a long-running server with a plain command: it would block. build_logs shows its output.",
       "The Device shows the preview in a sandboxed frame with no same-origin access: localStorage, sessionStorage, cookies and IndexedDB throw there. Keep state in memory, or wrap storage in try/catch.",
       "Every finished Build request is saved as one change. For \"undo that\" or \"go back\", use build_undo (build_history lists the changes). Never use git reset.",
+      "After each edit, its result says whether the dev server or the page shows new errors. Fix them before you answer.",
       "Check your work the way the user sees it: after a visible change, call build_screenshot, look at the screenshot and its element list, and fix what does not match the request before you answer.",
     );
   } else {

@@ -44,10 +44,11 @@ Model: `deepseek/deepseek-v4.1-flash` ($0.05 in / $0.20 out per million tokens).
 
 ## Overnight 2026-11-15
 
-Roadmap items built in the night run (see [REPORT-2026-11-15.md](REPORT-2026-11-15.md)). Each has a scenario in `agent-e2e.ts` that passed 3 runs in a row on DeepSeek V4.1 Flash.
+Roadmap items built in the night run (see [REPORT-2026-11-15.md](REPORT-2026-11-15.md)). The first three passed their `agent-e2e.ts` scenario 3 runs in a row on DeepSeek V4.1 Flash. Then the night's OpenRouter key reached its $0.40 cap, so later items are proven with `test:tools` (the real engine with a scripted model, 3/3) and their agent scenarios are written but not yet run on a model.
 
 | Item | Status | Proof |
 | --- | --- | --- |
 | P0.3 Engine health and restart | Done | `engine-restart`: OpenCode killed between requests, the next request works. `/health` reports `engine` and `engineRestarts` |
 | P1.4 `build_screenshot` | Done | `build-look`: "make the button bigger and centred", button measured before and after in a sandboxed frame, screenshot in the Task steps |
 | P1.5 Undo by voice | Done | `build-undo`: "change the title to Lemon Lab", then "undo that"; `index.html` is byte-for-byte what it was, and the history has the undo |
+| P1.7 Errors come back by themselves | Done, model run pending | `test:tools` `errors-static`, `errors-vite` 3/3 through the real engine. Agent scenario `build-errors` written; not run, the OpenRouter key hit its cap |

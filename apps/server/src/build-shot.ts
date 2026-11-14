@@ -91,6 +91,26 @@ export async function shootPreview(rel = ""): Promise<Shot> {
   }
 }
 
+/** Load the preview in the Device's sandboxed frame and return its errors, without a screenshot. */
+export async function previewErrors(): Promise<string[]> {
+  if (!browser) browser = launch().catch(err => { browser = null; throw err; });
+  const b = await browser;
+  keepAlive();
+  const page = await b.newPage({ viewport: { width: SHOT_WIDTH, height: SHOT_HEIGHT } });
+  const errors: string[] = [];
+  page.on("console", (msg: any) => { if (msg.type() === "error") errors.push(String(msg.text()).slice(0, 200)); });
+  page.on("pageerror", (err: Error) => errors.push(String(err.message).slice(0, 200)));
+  try {
+    await page.setContent(`<iframe sandbox="allow-scripts allow-forms" src="http://127.0.0.1:${config.port}/preview/" style="border:0;width:${SHOT_WIDTH}px;height:${SHOT_HEIGHT}px"></iframe>`);
+    const frame = await (await page.waitForSelector("iframe")).contentFrame();
+    await frame.waitForLoadState("load", { timeout: 10_000 }).catch(() => undefined);
+    await page.waitForTimeout(400);
+    return [...new Set(errors)].slice(0, 8);
+  } finally {
+    await page.close().catch(() => undefined);
+  }
+}
+
 /** Runs in the page: the title and the visible elements a user would notice, with their boxes. */
 function describePage(width: number): string {
   const lines: string[] = [`Title: ${document.title || "(none)"}`];

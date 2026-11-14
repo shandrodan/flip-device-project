@@ -13,6 +13,8 @@ import { anthropicKey, openRouterKey } from "../llm.js";
 import { Cancelled } from "../approvals.js";
 import { MachineOffline } from "../machines.js";
 import { save, state } from "../store.js";
+import { devLogMark } from "../build-host.js";
+import { checkAfterEdit } from "../build-check.js";
 import { NATIVE_TOOLS } from "./native-tools.js";
 import { TOOLS, ToolError, type Ctx, type ToolDef } from "./tools.js";
 
@@ -263,6 +265,13 @@ interface Live {
   root: string | null;
   /** Failed calls by tool, input and error. Weaker models can repeat one failing call forever. */
   failures: Map<string, number>;
+  /** Dev server log position when each edit was approved, by file (P1.7). */
+  edits: Map<string, number>;
+}
+
+/** For tests: FLIP_TOOL_LOG=file gets one JSON line per tool call. */
+function logTool(entry: Record<string, unknown>) {
+  if (process.env.FLIP_TOOL_LOG) try { fs.appendFileSync(process.env.FLIP_TOOL_LOG, JSON.stringify({ at: Date.now(), ...entry }) + "\n"); } catch { /* test log only */ }
 }
 
 /** A repeated failing call first gets a nudge, then ends the Task. */
@@ -280,6 +289,18 @@ function runCall(sessionID: string, callID: string, name: string, args: unknown)
   const run = session.queue.then(async (): Promise<CallResult> => {
     if (session.fatal) return { error: "The Task stopped." };
     const { ctx } = session;
+    logTool({ tool: name });
+    if (name.startsWith("opencode-after.")) {
+      // After OpenCode's edit or write: new errors go into that tool's result (P1.7).
+      const input = (args && typeof args === "object" ? args : {}) as Record<string, any>;
+      const full = session.root ? path.resolve(session.root, String(input.filePath ?? input.path ?? "")) : "";
+      const mark = session.edits.get(full);
+      if (!session.root || mark === undefined) return { output: "" };
+      session.edits.delete(full);
+      const check = await checkAfterEdit(path.relative(session.root, full), mark).catch(() => ({ text: "", errors: false }));
+      logTool({ tool: "after-edit", errors: check.errors });
+      return { output: check.text };
+    }
     if (name.startsWith("opencode.")) {
       try {
         return await nativeGate(session, name.slice("opencode.".length), (args && typeof args === "object" ? args : {}) as Record<string, any>);
@@ -429,7 +450,7 @@ export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: En
   if (dir) for (const name of NATIVE_TOOLS) tools[name] = true;
   tools.webfetch = run.webAccess;
   tools.todowrite = true;
-  const session: Live = { ctx, allowed, queue: Promise.resolve(), fatal: null, failures: new Map(), root: dir ?? null };
+  const session: Live = { ctx, allowed, queue: Promise.resolve(), fatal: null, failures: new Map(), root: dir ?? null, edits: new Map() };
   busy.add(sessionID);
   live.set(sessionID, session);
   try {
@@ -502,6 +523,7 @@ async function nativeGate(session: Live, tool: string, args: Record<string, any>
   } else if (tool === "edit" || tool === "write") {
     ctx.step(`${tool === "write" ? "Writing" : "Editing"} ${rel}`);
     await ctx.gate({ title: `Write ${rel}?`, body: `In ${state.build.name}.` });
+    session.edits.set(full, devLogMark());
   } else {
     ctx.step(tool === "read" ? `Reading ${rel}` : `Searching ${args.pattern ? String(args.pattern).slice(0, 40) : rel}`);
     await ctx.gate({ title: `Look in ${state.build.name}?` });

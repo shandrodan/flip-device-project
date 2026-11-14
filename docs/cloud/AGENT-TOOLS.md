@@ -54,6 +54,8 @@ Risk is set on the tool, never by the model.
 | `build_preview {url}` | no | yes |
 | `build_deploy {command}` | leave | leave |
 
+**After every edit** (OpenCode `edit`/`write`, or `build_write` on the server) the server adds what broke to the edit's own result, so the agent fixes errors without asking for logs: with a dev server, it requests the edited module through it and adds the dev server's new error lines; then (and for static files) it loads the preview in the Device's sandboxed frame and adds the page's errors. Static edits also reload the Device preview at once (`state.build.rev`).
+
 **Engine extras:** `todowrite` (the agent's plan), `webfetch` for research-type agents.
 
 ## Adding an app's tools

@@ -6,6 +6,7 @@ Five layers, cheapest first. Run the first three before every commit. All comman
 | --- | --- | --- | --- | --- |
 | 1. Types | `pnpm -r typecheck` | none | 20 s | Everything compiles |
 | 2. Demo flow | `pnpm test:e2e` | none (scripted) | 1–2 min | The demo, approvals, restarts, app ownership, the built-in loop |
+| 2b. Tools on the engine | `pnpm --filter server test:tools` | none (scripted) | 30 s | Every tool through the real OpenCode, plugin, gate and server, with a scripted model: results, images, approvals, end state |
 | 3. Agents | `pnpm --filter server test:agents` | real | 3–5 min | Agents do multi-step work right, on the engine |
 | 4. Cloud simulation | `cloud-vm/sim/run.sh` | real | 5–10 min first, 2 min after | The 8 GB + 2 GB topology, the real UI, Build through the Device |
 | 5. Real VMs | `DEVICE=http://localhost:15173 node cloud-vm/sim/smoke.mjs` | real | 2 min | The deployed system |
@@ -15,6 +16,22 @@ Layers 3–5 need `OPENROUTER_API_KEY` (or `ANTHROPIC_API_KEY`) in the environme
 ## 2. Demo flow (`apps/server/scripts/e2e.ts`)
 
 Spawns a real server and a real PC agent in a throwaway home folder and drives the Protocol like the Device. Uses `DEMO_PLANNER=1` and a scripted mock model, pinned to `AGENT_ENGINE=builtin`, so it is deterministic and free. It covers the old loop's behavior and every server rule (approvals, "Not now", offline machines, queues, restarts, app ownership, spoken commands). `RUNS=20` repeats the flow.
+
+## 2b. Tools on the engine (`apps/server/scripts/tools-e2e.ts`)
+
+A scripted model stands in for OpenRouter: an OpenAI-compatible server that answers each engine request with the next tool call of the scenario. Everything else is real: OpenCode, the plugin, `ctx.gate`, approvals, the server's tools, the Build project, the preview, Chromium. It records what each tool returned to the model (and whether an image came with it), so a scenario checks both the end state and what the model would have read. Free and deterministic: run it before every commit that touches a tool, and in CI.
+
+| Scenario | Proves |
+| --- | --- |
+| engine | `/health` reports `engine: "opencode"` |
+| screenshot | `build_screenshot` returns the size, the element list and a PNG that reaches the model (as an "Attached media" user message after the tool result) |
+| undo | a Build Task is committed with the request as message; `build_history` lists it; `build_undo` restores `index.html` exactly |
+| errors-static | a broken edit's result carries the page error; the fixed edit says clean; the preview reloads after each edit |
+| errors-vite | with a Vite dev server: a syntax error in `src/main.js` comes back in the edit result |
+
+`SHOW=1` prints every tool result, `DUMP=1` every request's last messages, `KEEP=1` keeps the temp folder. `errors-vite` runs `npm install` (network).
+
+Writing a scenario: `run(target, request, steps)` with steps `{ tool, args }` and a final `{ text }`. OpenCode's own `write`/`edit` take absolute paths (`path.join(buildDir, …)`).
 
 ## 3. Agents (`apps/server/scripts/agent-e2e.ts`)
 
@@ -33,6 +50,7 @@ Speaks real requests to real agents, presses every approval like a user, and che
 | build-edit | Build: green button, add a tagline | edit in place, memory |
 | build-look | Build: make the button bigger and centred | button area +15 % or more and centred, measured in a sandboxed 568×504 frame; no page errors; a screenshot step in the Task |
 | build-undo | Build: change the title, then "undo that" | `index.html` identical to before, an "Undo" commit in the project's git log |
+| build-errors | Build: put a syntax error in the main component on purpose, then fix it | an edit result reported the error, the agent never called `build_logs`, the component compiles |
 | build-vite | Build: turn it into Vite + React, install, run the dev server | `vite`/`react` in package.json, Vite client through `/preview/` |
 
 Options (environment):

@@ -51,6 +51,15 @@ export function runInProject(command: string, timeoutMs = 180_000): Promise<{ ok
 /* ------------------------------- Dev server ------------------------------- */
 
 let dev: { child: ChildProcess; port: number; command: string; log: string } | null = null;
+/** Characters the dev server has written since the server started, to find what is new (P1.7). */
+let logTotal = 0;
+export const devLogMark = () => logTotal;
+/** What the dev server wrote after `mark` (as much as is still kept). */
+export function devLogSince(mark: number): string {
+  if (!dev) return "";
+  const fresh = logTotal - mark;
+  return fresh <= 0 ? "" : dev.log.slice(-Math.min(fresh, dev.log.length));
+}
 
 export function devServer() {
   return dev ? { port: dev.port, command: dev.command, running: dev.child.exitCode === null } : null;
@@ -84,7 +93,7 @@ export async function startDev(command: string, port: number): Promise<{ ok: boo
   const child = spawn("bash", ["-lc", command], { cwd: projectDir(), env: { ...process.env, PORT: String(port), BROWSER: "none", FORCE_COLOR: "0" }, detached: true });
   const current = { child, port, command, log: "" };
   dev = current;
-  const add = (chunk: Buffer) => { current.log = (current.log + chunk.toString()).slice(-8000); };
+  const add = (chunk: Buffer) => { const text = chunk.toString(); logTotal += text.length; current.log = (current.log + text).slice(-8000); };
   child.stdout!.on("data", add);
   child.stderr!.on("data", add);
   for (let i = 0; i < 120; i++) {

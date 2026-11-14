@@ -5,7 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { FsEntry } from "@app/protocol";
 import { bus } from "../bus.js";
-import { devLog, devServer, insideProject, localBuild, projectDir, runInProject, startDev, stopDev } from "../build-host.js";
+import { checkAfterEdit } from "../build-check.js";
+import { devLog, devLogMark, devServer, insideProject, localBuild, projectDir, runInProject, startDev, stopDev } from "../build-host.js";
 import { history, undo } from "../build-git.js";
 import { shootPreview } from "../build-shot.js";
 import { saveNow, state } from "../store.js";
@@ -64,9 +65,11 @@ export const BUILD_TOOLS: ToolDef[] = [
       await ctx.gate({ askFirst: i.ask_first, title: `Write ${i.path}?`, body: `In ${state.build.name}.` });
       if (localBuild()) {
         const file = local(i.path);
+        const mark = devLogMark();
         fs.mkdirSync(path.dirname(file), { recursive: true });
         fs.writeFileSync(file, String(i.content));
-        return { text: `Wrote ${i.path}.` };
+        const check = await checkAfterEdit(path.relative(projectDir(), file), mark).catch(() => ({ text: "" }));
+        return { text: `Wrote ${i.path}.${check.text ? `\n${check.text}` : ""}` };
       }
       await ctx.pc("fs.write", { path: inProject(i.path), content: i.content, overwrite: true });
       return { text: `Wrote ${i.path}.` };

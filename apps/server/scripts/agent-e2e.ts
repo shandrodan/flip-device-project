@@ -122,6 +122,11 @@ async function measureButton(): Promise<{ w: number; h: number; cx: number; erro
 let buttonBefore: Awaited<ReturnType<typeof measureButton>> = null;
 let lastSteps: string[] = [];
 let htmlBefore = "";
+const toolLog = path.join(root, "tools.log");
+let toolMark = 0;
+/** Tool calls since the scenario started, from the server's FLIP_TOOL_LOG. */
+const toolsSince = () => { try { return fs.readFileSync(toolLog, "utf8").slice(toolMark).split("\n").filter(Boolean).map(line => JSON.parse(line) as { tool: string; errors?: boolean }); } catch { return []; } };
+const markTools = () => { try { toolMark = fs.statSync(toolLog).size; } catch { toolMark = 0; } };
 const readIndex = () => { try { return fs.readFileSync(path.join(buildDir, "index.html"), "utf8"); } catch { return ""; } };
 const gitLog = () => { try { return execFileSync("git", ["log", "--format=%s", "-8"], { cwd: buildDir }).toString().trim().split("\n"); } catch { return []; } };
 
@@ -283,6 +288,23 @@ const scenarios: Scenario[] = [
       return problems.length ? problems.join("; ") : null;
     },
   },
+  {
+    // P1.7: a broken edit reports its error by itself; the agent fixes it without reading logs.
+    name: "build-errors",
+    before: async () => markTools(),
+    turns: [{ target: { kind: "app", app: "build" }, text: "Test the error handling: put a syntax error in the main React component on purpose, then fix it so the app works again." }],
+    async check() {
+      const calls = toolsSince();
+      const app = ["src/App.jsx", "src/App.tsx", "src/App.js"].find(file => fs.existsSync(path.join(buildDir, file)));
+      const compiled = app ? (await preview(app)).status : 0;
+      const problems = [
+        !calls.some(call => call.tool === "after-edit" && call.errors) && "no edit result reported an error",
+        calls.some(call => call.tool === "build_logs") && "the agent called build_logs",
+        compiled !== 200 && `${app ?? "App component"} does not compile now (HTTP ${compiled})`,
+      ].filter(Boolean);
+      return problems.length ? `${problems.join("; ")} · tools: ${calls.map(call => call.tool + (call.errors ? "!" : "")).join(", ")}` : null;
+    },
+  },
 ];
 
 async function main() {
@@ -294,7 +316,7 @@ async function main() {
     PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`, PC_AGENT_TOKEN: "agents",
     DEVICE_ACCESS_TOKEN: "", DEMO_PLANNER: "", SMTP_URL: "", STT_API_KEY: "",
     AGENT_ENGINE: ENGINE, ...(MODEL ? { ENGINE_MODEL: MODEL } : {}),
-    BUILD_HOST: "server", BUILD_DIR: buildDir, BUILD_NAME: "Lemonade", BUILD_PREVIEW_URL: "", PUBLIC_URL: `http://127.0.0.1:${PORT}`,
+    FLIP_TOOL_LOG: toolLog, BUILD_HOST: "server", BUILD_DIR: buildDir, BUILD_NAME: "Lemonade", BUILD_PREVIEW_URL: "", PUBLIC_URL: `http://127.0.0.1:${PORT}`,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? "", ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
   });
   for (let i = 0; i < 80 && !ws; i++) {
