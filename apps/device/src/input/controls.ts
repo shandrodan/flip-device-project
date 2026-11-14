@@ -129,6 +129,23 @@ export function useActiveHints(): Hints {
   return out;
 }
 
+/* ------------------------------ Mouse wheel ------------------------------ */
+/** Turn mouse-wheel deltas into wheel clicks. */
+export function wheelHandler(c: "systemWheel" | "appWheel") {
+  let acc = 0, last = 0;
+  return (ev: { deltaY: number; preventDefault(): void }) => {
+    ev.preventDefault();
+    const now = performance.now();
+    if (now - last > 250) acc = 0;
+    last = now;
+    acc += ev.deltaY;
+    while (Math.abs(acc) >= 40) {
+      emit({ c, dir: acc > 0 ? 1 : -1 });
+      acc -= Math.sign(acc) * 40;
+    }
+  };
+}
+
 /* ------------------------------ Keyboard ------------------------------ */
 // Space hold = mic · Enter = push bar · K/L/I/J = A/B/C/D · arrows = D-pad
 // Q/E = system wheel · W/S = in-app wheel · D = in-app wheel press · Esc/Backspace = B

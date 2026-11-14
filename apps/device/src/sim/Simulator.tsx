@@ -1,7 +1,7 @@
 // The hardware twin: the flip device drawn open, with every control from device-controls.md.
 // Software-first, hardware-ready (ADR 0002): this is a web app, the renders show the real thing.
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { emit, onPress, type Control, type ControlEvent } from "../input/controls";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { emit, onPress, wheelHandler, type Control, type ControlEvent } from "../input/controls";
 import { useNet, net } from "../net/client";
 import { DeviceApp } from "../app/App";
 import type { DebugLink } from "../app/screens/Debug";
@@ -9,6 +9,11 @@ import { defaultSource, type VoiceSource } from "../voice/capture";
 import { ArrowUpRightIcon, MicrophoneIcon, PlayIcon } from "@heroicons/react/20/solid";
 
 const W = 904, H = 968;
+
+// The 3D twin (Three.js + the Blender model) loads on its own, so the kiosk and dock stay light.
+const Device3D = lazy(() => import("./Device3D"));
+/** `/?flat=1` keeps the drawn twin, for machines without WebGL. */
+const wantFlat = new URLSearchParams(location.search).has("flat");
 
 function usePressed() {
   const [down, setDown] = useState<Partial<Record<Control, number>>>({});
@@ -28,22 +33,6 @@ function useWheelSpin() {
     if (e.c === "systemWheel" || e.c === "appWheel") setSpin(s => ({ ...s, [e.c]: s[e.c as "systemWheel"] + (e.dir || 1) * 30 }));
   }), []);
   return spin;
-}
-
-/** Turn mouse-wheel deltas into wheel clicks. */
-function wheelHandler(c: "systemWheel" | "appWheel") {
-  let acc = 0, last = 0;
-  return (ev: React.WheelEvent) => {
-    ev.preventDefault();
-    const now = performance.now();
-    if (now - last > 250) acc = 0;
-    last = now;
-    acc += ev.deltaY;
-    while (Math.abs(acc) >= 40) {
-      emit({ c, dir: acc > 0 ? 1 : -1 });
-      acc -= Math.sign(acc) * 40;
-    }
-  };
 }
 
 function Wheel({ kind, label, spin, press }: { kind: "systemWheel" | "appWheel"; label: string; spin: number; press?: boolean }) {
@@ -73,6 +62,9 @@ export function Simulator() {
   const [labels, setLabels] = useState(true);
   const [voice, setVoice] = useState<VoiceSource>(defaultSource());
   const [debug, setDebug] = useState<DebugLink | null>(null);
+  const [flat, setFlat] = useState(wantFlat);
+  const [open, setOpen] = useState(true);
+  const [view, setView] = useState(0);
   const down = usePressed();
   const spin = useWheelSpin();
   const screenWheel = useRef(wheelHandler("appWheel")).current;
@@ -84,17 +76,19 @@ export function Simulator() {
       setScale(Math.max(0.42, Math.min(1, w / W, (window.innerHeight - 170) / H)));
     };
     fit();
+    if (!wrap.current) return;
     const ro = new ResizeObserver(fit);
-    ro.observe(wrap.current!);
+    ro.observe(wrap.current);
     window.addEventListener("resize", fit);
     return () => { ro.disconnect(); window.removeEventListener("resize", fit); };
-  }, []);
+  }, [flat]);
   useEffect(() => {
-    const el = screenRef.current!;
+    const el = screenRef.current;
+    if (!el) return;
     const h = (e: WheelEvent) => screenWheel(e as unknown as React.WheelEvent);
     el.addEventListener("wheel", h, { passive: false });
     return () => el.removeEventListener("wheel", h);
-  }, []);
+  }, [flat]);
   useEffect(() => { try { localStorage.setItem("flip-voice", voice); } catch { /* ignore */ } }, [voice]);
 
   const btn = (c: Control, cls: string, content: ReactNode, label: string) =>
@@ -104,6 +98,7 @@ export function Simulator() {
   const micDown = (e: React.PointerEvent) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); emit({ c: "mic", phase: "down" }); };
   const micUp = () => { if (down.mic) emit({ c: "mic", phase: "up" }); };
   const docked = n.mode === "dock";
+  const app = <DeviceApp voice={voice} onWantPush={setWant} debug={debug} onEndDebug={() => setDebug(null)} />;
   const tri = (r: number) => <PlayIcon width={16} height={16} aria-hidden="true" style={{ transform: `rotate(${r - 90}deg)` }} />;
 
   return <div className="sim">
@@ -119,10 +114,28 @@ export function Simulator() {
       </nav>
     </header>
 
-    <div className="fit" ref={wrap} style={{ height: H * scale }}>
+    {!flat && <Suspense fallback={<div className="stage3d"><div className="stage3d-note">Loading the Device model…</div></div>}>
+      <Device3D open={open} want={want} resetView={view} onToggleOpen={() => setOpen(o => !o)} onFail={() => setFlat(true)}>{app}</Device3D>
+    </Suspense>}
+    {!flat && <div className="panel reach">
+      <span className="pstat">Out of sight from the front</span>
+      <button className={"pbtn" + (want ? " want" : "")} onPointerDown={e => { e.preventDefault(); emit({ c: "pushBar" }); }}>Push bar</button>
+      <button className="pbtn" aria-pressed={!!down.mic} onPointerDown={micDown} onPointerUp={micUp} onPointerCancel={micUp} onLostPointerCapture={micUp}>Mic · hold</button>
+      <span className="pgroup">System wheel
+        <button className="pbtn" aria-label="System wheel back" onClick={() => emit({ c: "systemWheel", dir: -1 })}>‹</button>
+        <button className="pbtn" aria-label="System wheel forward" onClick={() => emit({ c: "systemWheel", dir: 1 })}>›</button>
+      </span>
+      <span className="pgroup">In-app wheel
+        <button className="pbtn" aria-label="In-app wheel up" onClick={() => emit({ c: "appWheel", dir: -1 })}>‹</button>
+        <button className="pbtn" aria-label="In-app wheel down" onClick={() => emit({ c: "appWheel", dir: 1 })}>›</button>
+        <button className="pbtn" onClick={() => emit({ c: "appWheelPress" })}>Press</button>
+      </span>
+    </div>}
+
+    {flat && <div className="fit" ref={wrap} style={{ height: H * scale }}>
       <div className="device" style={{ transform: `scale(${scale})`, marginLeft: `max(0px, calc((100% - ${W * scale}px) / 2 / ${scale}))` }}>
         <div className="lid">
-          <div className="glass"><div className="screen" ref={screenRef}><DeviceApp voice={voice} onWantPush={setWant} debug={debug} onEndDebug={() => setDebug(null)} /></div></div>
+          <div className="glass"><div className="screen" ref={screenRef}>{app}</div></div>
           <button className="mic" aria-label="Microphone (hold)" onPointerDown={micDown} onPointerUp={micUp} onPointerCancel={micUp} onLostPointerCapture={micUp} style={down.mic ? { transform: "translateY(1px) scale(0.95)", boxShadow: "0 0 0 4px rgba(255,69,58,0.25)" } : undefined}>
             <MicrophoneIcon width={14} height={14} aria-hidden="true" />
           </button>
@@ -148,7 +161,7 @@ export function Simulator() {
           <div className="speaker" />
         </div>
       </div>
-    </div>
+    </div>}
 
     <div className="panel">
       <span className="pstat"><i className="dot" style={{ background: n.conn === "online" ? "#34c759" : n.conn === "connecting" ? "#ffd60a" : "#ff453a" }} />
@@ -159,10 +172,15 @@ export function Simulator() {
       <button className="pbtn" aria-pressed={n.forcedOffline} onClick={() => net.setForcedOffline(!n.forcedOffline)}>{n.forcedOffline ? "Go online" : "Go offline"}</button>
       <button className="pbtn" aria-pressed={voice === "script"} onClick={() => setVoice(voice === "mic" ? "script" : "mic")}>Voice: {voice === "mic" ? "microphone" : "scripted"}</button>
       <button className="pbtn" aria-pressed={!!debug} onClick={() => setDebug(debug === null ? "usb" : debug === "usb" ? "wifi" : null)}>Debug: {debug === "usb" ? "USB-C" : debug === "wifi" ? "Wi-Fi" : "off"}</button>
-      <button className="pbtn" aria-pressed={!labels} onClick={() => setLabels(!labels)}>{labels ? "Hide labels" : "Show labels"}</button>
+      {flat
+        ? <button className="pbtn" aria-pressed={!labels} onClick={() => setLabels(!labels)}>{labels ? "Hide labels" : "Show labels"}</button>
+        : <>
+          <button className="pbtn" aria-pressed={!open} onClick={() => setOpen(!open)}>{open ? "Slide closed" : "Slide open"}</button>
+          <button className="pbtn" onClick={() => setView(v => v + 1)}>Front view</button>
+        </>}
     </div>
     <div className="keys">
-      <kbd>Space</kbd> hold mic · <kbd>Enter</kbd> push bar · <kbd>K</kbd> A · <kbd>L</kbd>/<kbd>Esc</kbd> B · <kbd>I</kbd> C · <kbd>J</kbd> D · <kbd>←↑↓→</kbd> D-pad · <kbd>Q</kbd>/<kbd>E</kbd> system wheel · <kbd>W</kbd>/<kbd>S</kbd> or scroll on the screen: in-app wheel · <kbd>D</kbd> wheel press · An Xbox controller works too (LB/RB system wheel, LT/RT in-app wheel, Start push bar, hold View for mic).
+      <kbd>Space</kbd> hold mic · <kbd>Enter</kbd> push bar · <kbd>K</kbd> A · <kbd>L</kbd>/<kbd>Esc</kbd> B · <kbd>I</kbd> C · <kbd>J</kbd> D · <kbd>←↑↓→</kbd> D-pad · <kbd>Q</kbd>/<kbd>E</kbd> system wheel · <kbd>W</kbd>/<kbd>S</kbd> or scroll on the screen: in-app wheel · <kbd>D</kbd> wheel press{!flat && <> · drag to turn the Device, click its buttons, click the shell to slide it · scroll or drag a wheel to turn it · scroll or pinch to zoom, right-drag to move</>} · An Xbox controller works too (LB/RB system wheel, LT/RT in-app wheel, Start push bar, hold View for mic).
     </div>
   </div>;
 }

@@ -2,7 +2,8 @@
 
 React + Vite PWA. The Device screen (784 × 504, non-touch) and the Dock screen, on one WebSocket.
 
-- `/` the device twin: the flip device drawn open with every control from `device-controls.md`, plus a dev panel (dock, offline, voice source).
+- `/` the device twin: the Blender model (`web-render/device-handoff`) rendered with Three.js, with the live Device screen on its `screen` mesh and every control clickable. Drag to turn it, scroll or pinch to zoom, scroll or drag the wheels, click the shell to slide the tray, and flip the kickstand or power switch. Plus a dev panel (dock, offline, voice source).
+- `/?flat=1` the older drawn twin, also the fallback when WebGL is not available.
 - `/?kiosk=1` the screen alone, scaled to the window. What a kiosk browser on the real board would show.
 - `/dock` the dock screen for a second tab: focus, today's tasks, Claude limits, agent activity.
 
@@ -25,6 +26,7 @@ The hint bar at the bottom of the screen always shows what each button does righ
 - `src/input/controls.ts`: control events, layered handlers (talk > approvals > sheets > screen > global), keyboard and gamepad.
 - `src/net/client.ts`: the WebSocket, last snapshot cache, offline notes queue.
 - `src/voice/capture.ts`: microphone (MediaRecorder + on-device recognition) and scripted voice.
+- `src/sim/Device3D.tsx`: the 3D twin. The screen stays real DOM (CSS3DRenderer) behind a hole in the WebGL canvas. Loaded lazily, so kiosk and dock never download Three.js.
 - `src/app/`: the screen shell, overlays (talk, fire approval, soft approval, function switcher) and screens.
 - `src/bot/Bot.tsx`: the agent bots, ported from `prototype/`.
 - `prototype/` and `design-directions/`: the original single-file designs this app is built from. Kept as reference.
