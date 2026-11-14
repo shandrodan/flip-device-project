@@ -1,0 +1,47 @@
+# The cloud architecture on one machine (ADR 0033): an 8 GB "cloud" box with the server, the agent
+# engine and the Build project, and a 2 GB "device" box that serves the Device app and passes /ws,
+# /setup and /preview/ to the cloud. Same images as production.
+#   cloud-vm/sim/run.sh            (builds the two images, starts, runs the smoke test)
+# Behind a TLS-inspecting proxy, set CA_CERT=/path/ca.crt (and HTTPS_PROXY) before running.
+services:
+  cloud:
+    image: flip-server:local
+    network_mode: host
+    mem_limit: 8g
+    memswap_limit: 8g
+    environment:
+      PORT: "8787"
+      HOST: 127.0.0.1
+      DATA_DIR: /data
+      HOSTING: vm
+      BUILD_HOST: server
+      BUILD_DIR: /data/build
+      BUILD_NAME: Cloud demo
+      PUBLIC_URL: http://127.0.0.1:5173
+      PC_AGENTS: This computer=ws://127.0.0.1:7077
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ENGINE_MODEL: ${ENGINE_MODEL:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+      NODE_USE_ENV_PROXY: ${HTTPS_PROXY:+1}
+      NODE_EXTRA_CA_CERTS: ${CA_CERT:+/ca.crt}
+      SSL_CERT_FILE: ${CA_CERT:+/ca.crt}
+      npm_config_cafile: ${CA_CERT:+/ca.crt}
+    volumes:
+      - cloud-data:/data
+      - ${CA_CERT:-/dev/null}:/ca.crt:ro
+  device:
+    image: flip-device:local
+    network_mode: host
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 4
+    environment:
+      PORT: "5173"
+      SERVER_URL: http://127.0.0.1:8787
+    depends_on: [cloud]
+volumes:
+  cloud-data:

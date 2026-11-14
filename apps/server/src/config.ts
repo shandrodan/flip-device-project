@@ -29,11 +29,21 @@ export const config = {
   hosting: (env("HOSTING", "self") as "cloud" | "vm" | "self"),
 
   openRouterKey: env("OPENROUTER_API_KEY"),
-  openRouterModel: env("OPENROUTER_MODEL").trim() || "deepseek/deepseek-v4-flash-0731",
+  openRouterModel: env("OPENROUTER_MODEL").trim() || "deepseek/deepseek-v4.1-flash",
   anthropicKey: env("ANTHROPIC_API_KEY", ""),
   agentModel: env("AGENT_MODEL", "claude-opus-5-5"),
   suggestModel: env("SUGGEST_MODEL", "claude-opus-5-5"),
   demoPlanner: env("DEMO_PLANNER") === "1",
+
+  // Task agent engine (ADR 0032). "opencode" runs the agent loop in OpenCode on this machine;
+  // "builtin" keeps the small loop in agents/runner.ts. Without OpenCode installed, builtin runs.
+  agentEngine: (env("AGENT_ENGINE", "opencode") === "builtin" ? "builtin" : "opencode") as "opencode" | "builtin",
+  /** "provider/model" for the engine, e.g. "openrouter/anthropic/claude-haiku-5.5". Default: the saved key's model. */
+  engineModel: env("ENGINE_MODEL").trim(),
+  /** Extra OpenCode config as JSON, merged in: other providers, local models, limits. */
+  engineConfig: env("ENGINE_CONFIG").trim(),
+  /** Most model steps in one turn of the engine. */
+  engineSteps: Number(env("ENGINE_STEPS", "40")) || 40,
 
   // Speech to text. Any OpenAI-compatible /audio/transcriptions endpoint works
   // (OpenAI, Groq, or a local faster-whisper / whisper.cpp server).
@@ -52,6 +62,8 @@ export const config = {
   buildDir: env("BUILD_DIR", "~/Flip/build"),
   buildName: env("BUILD_NAME", ""),
   buildPreviewUrl: env("BUILD_PREVIEW_URL", ""),
+  /** Where the Build project lives: "pc" (the user's machine, through the PC agent) or "server" (this machine, ADR 0033). */
+  buildHost: (env("BUILD_HOST", "pc") === "server" ? "server" : "pc") as "pc" | "server",
 
   // Mail. Without SMTP, "send" saves an .eml to ~/Flip/Outbox and opens it.
   smtpUrl: env("SMTP_URL", ""),

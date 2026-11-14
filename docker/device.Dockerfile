@@ -3,11 +3,14 @@
 #   docker run --platform linux/arm64 --memory=512m --cpus=1 -p 5173:5173 -e SERVER_URL=http://host.docker.internal:8787 device:arm64
 FROM node:22-bookworm-slim AS build
 WORKDIR /repo
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/protocol packages/protocol
 COPY apps/device apps/device
-RUN pnpm install --filter device... --no-frozen-lockfile && pnpm --filter device build
+# The 3D twin imports its models from here.
+COPY web-render/device-handoff/white-slider-device.glb web-render/device-handoff/dock-station.glb web-render/device-handoff/
+RUN --mount=type=secret,id=ca,required=false \
+  if [ -s /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca npm_config_cafile=/run/secrets/ca; fi; \
+  corepack enable && corepack prepare pnpm@9.15.0 --activate && pnpm install --filter device... --no-frozen-lockfile && pnpm --filter device build
 
 FROM debian:bookworm-slim
 # Node only to serve files; on the real board this is a kiosk browser (WPE WebKit / Cog).

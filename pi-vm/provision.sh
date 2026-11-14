@@ -5,6 +5,9 @@
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 APP=/opt/flip
+# SERVER_URL=http://<cloud VM internal IP>:8787 makes this box the Device only: the server, its agents
+# and the Build project run on the cloud VM (cloud-vm/, ADR 0033). Empty: the server runs here too.
+REMOTE=${SERVER_URL:-}
 
 # --- Packages (first run only) ---
 if ! command -v chromium >/dev/null || ! node -v 2>/dev/null | grep -q '^v22'; then
@@ -41,7 +44,11 @@ install -d -o flip -g flip /var/lib/flip/data
 [ -f /tmp/flip-state.json ] && [ ! -f /var/lib/flip/data/state.json ] && install -m 600 -o flip -g flip /tmp/flip-state.json /var/lib/flip/data/state.json
 rm -f /tmp/flip-secrets.json /tmp/flip.env
 cd "$APP"
-sudo -u flip -H pnpm install --filter device... --filter server... --no-frozen-lockfile
+if [ -n "$REMOTE" ]; then
+  sudo -u flip -H pnpm install --filter device... --no-frozen-lockfile
+else
+  sudo -u flip -H pnpm install --filter device... --filter server... --no-frozen-lockfile
+fi
 sudo -u flip -H pnpm --filter device build
 
 # --- Services. Each is its own cgroup, so relay.mjs can measure each one. ---
@@ -76,7 +83,7 @@ unit flip-device <<EOF
 Description=Flip Device app (static files + /ws pass-through)
 [Service]
 User=flip
-Environment=ROOT=$APP/apps/device/dist PORT=5173 SERVER_URL=http://127.0.0.1:8787 NODE_OPTIONS=--max-old-space-size=96
+Environment=ROOT=$APP/apps/device/dist PORT=5173 SERVER_URL=${REMOTE:-http://127.0.0.1:8787} NODE_OPTIONS=--max-old-space-size=96
 ExecStart=/usr/bin/node $APP/docker/serve.mjs
 Restart=always
 [Install]
@@ -153,8 +160,14 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable flip-server flip-device flip-display flip-audio flip-kiosk flip-relay
-systemctl restart flip-server flip-device flip-display flip-audio flip-kiosk flip-relay
+if [ -n "$REMOTE" ]; then
+  systemctl disable --now flip-server 2>/dev/null || true
+  systemctl enable flip-device flip-display flip-audio flip-kiosk flip-relay
+  systemctl restart flip-device flip-display flip-audio flip-kiosk flip-relay
+else
+  systemctl enable flip-server flip-device flip-display flip-audio flip-kiosk flip-relay
+  systemctl restart flip-server flip-device flip-display flip-audio flip-kiosk flip-relay
+fi
 
 # --- Make the board a Pi 5 2 GB: the kernel sees 2 GB, and there is no swap ---
 swapoff -a || true

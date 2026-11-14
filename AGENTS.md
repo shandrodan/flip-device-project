@@ -37,6 +37,8 @@ Product name: TBD.
 | `pitch/` | Slides, video, demo script |
 | `docker/` | Container setup for the device-side demo |
 | `pi-vm/` | The Device side on a Pi 5-class cloud VM, its screen streamed to the twin (ADR 0024) |
+| `cloud-vm/` | The cloud VM (8 GB): server, agent engine, Build project. `up.sh` wires it to `pi-vm/`. `sim/` runs both in Docker (ADR 0033) |
+| `docs/cloud/` | The cloud rebuild: architecture, deploy, testing, tools, roadmap, overnight brief |
 
 ## Rules for agents
 

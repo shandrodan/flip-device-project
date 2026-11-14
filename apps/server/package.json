@@ -7,12 +7,15 @@
     "dev": "tsx watch --clear-screen=false src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p .",
-    "test:e2e": "tsx scripts/e2e.ts"
+    "test:e2e": "tsx scripts/e2e.ts",
+    "test:agents": "tsx scripts/agent-e2e.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",
     "@app/protocol": "workspace:*",
+    "@opencode-ai/plugin": "1.19.5",
     "nodemailer": "6.9.16",
+    "opencode-ai": "1.19.5",
     "ws": "8.18.0"
   },
   "devDependencies": {

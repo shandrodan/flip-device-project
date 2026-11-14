@@ -9,7 +9,7 @@ import nodemailer from "nodemailer";
 import { config } from "../config.js";
 import { agentById, servesBuild, state } from "../store.js";
 import { APP_TOOLS } from "./app-tools.js";
-import { BUILD_TOOLS } from "./build-tools.js";
+import { BUILD_TOOLS, PC_BUILD_ONLY, SERVER_BUILD_ONLY } from "./build-tools.js";
 
 export interface PcResult { output: string; data: any }
 
@@ -304,9 +304,12 @@ const SHELL_TOOLS = ["run_shell", "build_run", "build_deploy"];
 export function toolsFor(agent: Agent, opts: { shell: boolean }): ToolDef[] {
   // Build tools go to whoever serves the Build app now (ADR 0021), whatever its purpose.
   const build = servesBuild(agent.id);
+  // With the project on the server (ADR 0033), Build commands run here and need no PC shell.
+  const local = config.buildHost === "server";
   return TOOLS.filter(t =>
     (BUILD_TOOLS.includes(t) ? build : t.purposes === "all" || t.purposes.includes(agent.purpose))
-    && (!SHELL_TOOLS.includes(t.name) || opts.shell));
+    && (!SHELL_TOOLS.includes(t.name) || opts.shell || (local && t.name.startsWith("build_")))
+    && !(local ? PC_BUILD_ONLY : SERVER_BUILD_ONLY).includes(t.name));
 }
 
 export function toApiTool(t: ToolDef): Anthropic.Beta.BetaTool {

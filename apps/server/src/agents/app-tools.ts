@@ -46,10 +46,10 @@ function todoLocation(input: Record<string, unknown>): Pick<Task, "due" | "proje
   return location;
 }
 
-export const APP_TOOLS: ToolDef[] = [
+const BASE_TOOLS: ToolDef[] = [
   {
     name: "read_app",
-    description: "Read current data from a built-in Device app. Settings never returns keys.",
+    description: "Read current data from a Device app that has no read tool of its own (focus, agents, settings, build, dock). Settings never returns keys.",
     props: { app: APP, say: SAY }, required: ["app", "say"], purposes: "all",
     async run(ctx, input, callId) {
       if (input.app !== "dock" && APP_IDS.includes(input.app) && !ownsApp(input.app as AppId, ctx.agent.id))
@@ -77,15 +77,11 @@ export const APP_TOOLS: ToolDef[] = [
   },
   {
     name: "change_app",
-    description: "Change a built-in Device app. Use notes.create to save a Note, notes.append to add text, notes.replace to replace a Note's text, or notes.delete to delete Notes. Use todo.create for new work, todo.update to rename, reschedule, or move To-Dos between projects, todo.complete or todo.reopen to change whether they are done, and todo.delete to delete them. notes.delete, todo.update, todo.complete, todo.reopen and todo.delete take several IDs in ids, so one call handles 'all' or 'every' requests: never call them once per item. Read the app first to resolve existing Notes, To-Dos and projects by name and use the returned IDs. Omit fields the user didn't ask to change. Full permission mode and keys are user-only.",
+    description: "Change a Device app that has no typed tools of its own: start or stop Focus, make a Task agent, or set the permission mode. Notes and To-Do have their own tools (notes_*, todo_*). Full permission mode and keys are user-only.",
     props: {
-      action: { type: "string", enum: ["notes.create", "notes.append", "notes.replace", "notes.delete", "todo.create", "todo.update", "todo.complete", "todo.reopen", "todo.delete", "focus.start", "focus.stop", "agents.create", "settings.permission"] },
-      text: { type: "string", description: "Note content or To-Do title." },
-      id: { type: "string", description: "Existing Note or To-Do ID from read_app." },
-      ids: { type: "array", items: { type: "string" }, description: "Several Note or To-Do IDs from read_app, for the actions that change many at once." },
-      due: { type: ["string", "null"], description: "To-Do due date as local YYYY-MM-DD or YYYY-MM-DDTHH:mm. Null clears it." },
-      projectId: { type: ["string", "null"], description: "To-Do project ID from read_app. Null moves it to Inbox." },
-      name: { type: "string" }, role: { type: "string" },
+      // Notes and To-Do actions still run here: the typed tools and the planner send them.
+      action: { type: "string", enum: ["focus.start", "focus.stop", "agents.create", "settings.permission"] },
+      name: { type: "string", description: "agents.create: the new Task agent's name." }, role: { type: "string", description: "agents.create: what the new Task agent does." },
       minutes: { type: "number" }, mode: { type: "string", enum: ["manual", "auto"] }, say: SAY,
     },
     required: ["action", "say"], purposes: "all",
@@ -98,16 +94,22 @@ export const APP_TOOLS: ToolDef[] = [
       const text = typeof input.text === "string" ? input.text.trim() : "";
       const key = typeof input.id === "string" ? input.id : "";
       if (action === "notes.create") {
-        if (!text) throw new Error("Text is required.");
-        await ctx.gate({ title: "Save a Note?" });
-        const note: Note = { id: id("n"), text, createdAt: now(), transcribedBy: "local", editedByUser: true, suggestionState: "none", suggestions: [], taskIds: [] };
-        state.notes.unshift(note);
+        // One text, or several in texts: one approval and one forward for the whole batch.
+        const texts = Array.isArray(input.texts) ? input.texts.map(item => String(item ?? "").trim()) : [text];
+        if (!texts.length || texts.some(item => !item)) throw new Error("Give the Note text in text, or several Note texts in texts. None can be empty.");
+        if (texts.length > 100) throw new Error("At most 100 Notes per call.");
+        await ctx.gate({ title: texts.length > 1 ? `Save ${plural(texts.length, "Note")}?` : "Save a Note?", body: titles(texts.map(item => ({ text: item }))) });
+        const made = texts.map((item, index): Note => ({ id: id("n"), text: item, createdAt: new Date(Date.now() + index).toISOString(), transcribedBy: "local", editedByUser: true, suggestionState: "none", suggestions: [], taskIds: [] }));
+        // The newest Note is first in the app, so the batch keeps its order there: the last one is on top.
+        state.notes.unshift(...[...made].reverse());
         saveNow(); bus.changed();
-        return { text: `Saved Note ${note.id}.` };
+        return { text: made.length > 1 ? `Saved ${plural(made.length, "Note")}: ${JSON.stringify(made.map(note => ({ id: note.id, text: note.text.slice(0, 80) })))}` : `Saved Note ${made[0].id}.` };
       }
       if (action === "notes.append" || action === "notes.replace") {
         const note = state.notes.find(item => item.id === key);
-        if (!note || !text) throw new Error("A valid Note ID and text are required.");
+        if (!key) throw new Error(`${action} needs the Note's ID in id. Read notes with read_app to get it.`);
+        if (!note) throw new Error(`No Note has ID ${key}. Read notes with read_app and use an ID from there.`);
+        if (!text) throw new Error(`${action} needs the ${action === "notes.replace" ? "new full text" : "text to add"} in text. Call it again with text set.`);
         const replace = action === "notes.replace";
         const originalText = note.text;
         await ctx.gate({ askFirst: replace, title: replace ? "Replace this Note's text?" : "Add to this Note?", body: note.text.slice(0, 100) });
@@ -118,13 +120,19 @@ export const APP_TOOLS: ToolDef[] = [
         return { text: `Updated Note ${note.id}.` };
       }
       if (action === "todo.create") {
-        if (!text) throw new Error("Task text is required.");
-        const location = todoLocation(input);
-        await ctx.gate({ title: "Add a To-Do?", body: text.slice(0, 100) });
-        const task: Task = { id: id("t"), title: text, target: "todo", agentId: null, status: "todo", steps: [], createdAt: now(), updatedAt: now(), ...location };
-        state.tasks.unshift(task);
+        // One To-Do from text, due and projectId, or several in items: one approval for the batch.
+        const raw: Record<string, unknown>[] = Array.isArray(input.items) ? input.items.map((item: unknown) => (item && typeof item === "object" ? item : {}) as Record<string, unknown>) : [input];
+        if (!raw.length || raw.length > 100) throw new Error("Give 1 to 100 To-Dos.");
+        const items = raw.map(item => {
+          const title = String(item.title ?? item.text ?? "").trim();
+          if (!title) throw new Error("Every To-Do needs a title. Put it in title.");
+          return { title, ...todoLocation(item) };
+        });
+        await ctx.gate({ title: items.length > 1 ? `Add ${plural(items.length, "To-Do")}?` : "Add a To-Do?", body: titles(items) });
+        const made = items.map((item, index): Task => ({ id: id("t"), target: "todo", agentId: null, status: "todo", steps: [], createdAt: new Date(Date.now() + index).toISOString(), updatedAt: now(), ...item }));
+        state.tasks.unshift(...[...made].reverse());
         saveNow(); bus.changed();
-        return { text: `Added To-Do ${task.id}.` };
+        return { text: made.length > 1 ? `Added ${plural(made.length, "To-Do")}: ${JSON.stringify(made.map(task => ({ id: task.id, title: task.title, due: task.due ?? null, projectId: task.projectId ?? null })))}` : `Added To-Do ${made[0].id}.` };
       }
       if (action === "notes.delete") {
         const ids = idsOf(input);
@@ -220,4 +228,62 @@ export const APP_TOOLS: ToolDef[] = [
       throw new Error("Unknown Device app action.");
     },
   },
+];
+
+/* ---------------------------- Typed app tools ---------------------------- */
+// Each Device app lists its own small tools with required fields (ADR 0032). A strict, narrow
+// tool is far easier for a model than one tool with many actions and shared optional fields.
+// Each one runs as read_app or change_app, so app ownership, forwarding and approvals stay the same.
+
+const readApp = BASE_TOOLS.find(tool => tool.name === "read_app")!;
+const changeApp = BASE_TOOLS.find(tool => tool.name === "change_app")!;
+const IDS = (what: string) => ({ type: "array", items: { type: "string" }, description: `${what} IDs from the read tool. Put every item in one call.` });
+const DUE = { type: ["string", "null"], description: "Local due date YYYY-MM-DD or YYYY-MM-DDTHH:mm. Null clears it." };
+const PROJECT = { type: ["string", "null"], description: "Project ID from todo_read. Null means Inbox." };
+
+interface AppToolSpec {
+  app: AppId;
+  name: string;
+  description: string;
+  props: Record<string, unknown>;
+  required: string[];
+  /** The change_app action. A spec without one reads the app. */
+  action?: string;
+}
+
+/** The Device app manifest: what an agent can do in each app. A new app adds its tools here. */
+export const APP_MANIFEST: AppToolSpec[] = [
+  { app: "notes", name: "notes_read", description: "List all Notes, newest first, with their IDs and text.", props: {}, required: [] },
+  { app: "notes", name: "notes_create", action: "notes.create", description: "Save new Notes. Pass every Note of the request in one call, in the order the user said them.",
+    props: { texts: { type: "array", items: { type: "string" }, description: "The text of each new Note." } }, required: ["texts"] },
+  { app: "notes", name: "notes_append", action: "notes.append", description: "Add text to the end of one Note.",
+    props: { id: { type: "string", description: "Note ID from notes_read." }, text: { type: "string", description: "Text to add." } }, required: ["id", "text"] },
+  { app: "notes", name: "notes_replace", action: "notes.replace", description: "Replace the whole text of one Note. Use it to rename or rewrite a Note.",
+    props: { id: { type: "string", description: "Note ID from notes_read." }, text: { type: "string", description: "The Note's complete new text." } }, required: ["id", "text"] },
+  { app: "notes", name: "notes_delete", action: "notes.delete", description: "Delete Notes. Always asks the user with a button press.",
+    props: { ids: IDS("Note") }, required: ["ids"] },
+  { app: "todo", name: "todo_read", description: "List To-Dos with ID, title, status, due date and project, plus the projects with their IDs.", props: {}, required: [] },
+  { app: "todo", name: "todo_create", action: "todo.create", description: "Add new To-Dos. Pass every To-Do of the request in one call, each with its own due date and project when the user gave one.",
+    props: { items: { type: "array", description: "The new To-Dos.", items: { type: "object", properties: { title: { type: "string" }, due: DUE, projectId: PROJECT }, required: ["title"] } } }, required: ["items"] },
+  { app: "todo", name: "todo_update", action: "todo.update", description: "Change existing To-Dos: due date, project, or title. Set every field that should change in the same call; fields you leave out stay as they are. A new title applies to one To-Do at a time.",
+    props: { ids: IDS("To-Do"), due: DUE, projectId: PROJECT, title: { type: "string", description: "New title, for one To-Do." } }, required: ["ids"] },
+  { app: "todo", name: "todo_complete", action: "todo.complete", description: "Mark To-Dos done.", props: { ids: IDS("To-Do") }, required: ["ids"] },
+  { app: "todo", name: "todo_reopen", action: "todo.reopen", description: "Mark done To-Dos as not done.", props: { ids: IDS("To-Do") }, required: ["ids"] },
+  { app: "todo", name: "todo_delete", action: "todo.delete", description: "Delete To-Dos. Always asks the user with a button press.", props: { ids: IDS("To-Do") }, required: ["ids"] },
+];
+
+export const APP_TOOLS: ToolDef[] = [
+  ...APP_MANIFEST.map((spec): ToolDef => ({
+    name: spec.name,
+    description: spec.description,
+    props: { ...spec.props, say: SAY },
+    required: [...spec.required, "say"],
+    purposes: "all",
+    run(ctx, input, callId) {
+      if (!spec.action) return readApp.run(ctx, { app: spec.app, say: input.say }, callId);
+      const { title, ...rest } = input;
+      return changeApp.run(ctx, { ...rest, ...(title !== undefined ? { text: title } : {}), action: spec.action }, callId);
+    },
+  })),
+  ...BASE_TOOLS,
 ];
