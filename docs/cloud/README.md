@@ -41,3 +41,22 @@ Verified in this repo, with real models through OpenRouter:
 | Real GCP deploy (`cloud-vm/up.sh`) | Written, not run: no `gcloud` in the build session. First thing to try. |
 
 Model: `deepseek/deepseek-v4.1-flash` ($0.05 in / $0.20 out per million tokens). If it disappoints on real use, `OPENROUTER_MODEL=anthropic/claude-haiku-5.5` ($0.10 / $0.50).
+
+## Overnight 2026-11-15
+
+Roadmap items built in the night run (see [REPORT-2026-11-15.md](REPORT-2026-11-15.md)). The first three passed their `agent-e2e.ts` scenario 3 runs in a row on DeepSeek V4.1 Flash. Then the night's OpenRouter key reached its $0.40 cap, so later items are proven with `test:tools` (the real engine with a scripted model, 3/3) and their agent scenarios are written but not yet run on a model.
+
+| Item | Status | Proof |
+| --- | --- | --- |
+| P0.3 Engine health and restart | Done | `engine-restart`: OpenCode killed between requests, the next request works. `/health` reports `engine` and `engineRestarts` |
+| P1.4 `build_screenshot` | Done | `build-look`: "make the button bigger and centred", button measured before and after in a sandboxed frame, screenshot in the Task steps |
+| P1.5 Undo by voice | Done | `build-undo`: "change the title to Lemon Lab", then "undo that"; `index.html` is byte-for-byte what it was, and the history has the undo |
+| P1.7 Errors come back by themselves | Done, model run pending | `test:tools` `errors-static`, `errors-vite` 3/3 through the real engine. Agent scenario `build-errors` written; not run, the OpenRouter key hit its cap |
+| P1.6 Starters with a warm cache | Done, model run pending | `test:tools` `starter` 3/3: "start a new React app" to React rendering in the sandboxed preview in 12 s, `build_new` itself 5 s. In the server image an offline install of the React starter takes 3.5 s. Agent scenario `build-starter` written, not run |
+| P1.10 Search and filters for Notes and To-Do | Done, model run pending | `test:tools` `notes-search` (150 Notes, search finds the 10 venue Notes, 3 steps) and `todo-filters` (each filter), 3/3. Agent scenario `notes-search` written (restarts the server with 150 Notes on disk; the restart is verified), not run |
+| P1.11 Project tools | Done, model run pending | `test:tools` `projects` 3/3: make Launch, move the two pitch To-Dos, duplicate name refused, rename, delete takes the push bar and keeps its To-Dos in Inbox. Agent scenario `projects` written, not run |
+| P1.12 Note edit and merge | Done, model run pending | `test:tools` `notes-edit` 3/3: milk → oat milk (milkshake untouched), a missing word explained, two Notes merged after a press. Agent scenario `notes-edit` written (checks `notes_edit` was used, never `notes_replace`), not run |
+| P2.13 Typed Focus, Agents, Settings tools | Done, model run pending | `test:tools` `typed-apps` 3/3: each tool through the engine, `change_app` absent from the tools the model gets. `test:e2e` (scripted, built-in loop) moved to the typed tools and passes. ADR 0034 |
+| P2.14 Show the plan as steps | Done | `test:tools` `plan` 3/3: a three-item `todowrite` plan shows as the steps "1/3 …", "2/3 …", "3/3 …" in order. Works with any model that plans; no Protocol or UI change |
+| P2.17 Cost and speed per Task | Done | Each engine Task logs model calls, tokens, cost and seconds (`[usage]` line, `DATA_DIR/usage.jsonl`, `GET /api/usage?ids=`). Cost is OpenCode's when it knows the model, else OpenRouter's price list, or `ENGINE_PRICE`. `agent-e2e` ends with a cost table. `test:tools` `usage` 3/3 |
+| P3.18 CI | Done, not yet run on GitHub | `.github/workflows/ci.yml`: on every push, typecheck, `test:e2e` and `test:tools` (no key, no cost); nightly or by hand, `test:agents` with the `OPENROUTER_API_KEY` secret. The push job was rehearsed in a clean `node:22-bookworm` container: all green |

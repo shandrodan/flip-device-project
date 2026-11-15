@@ -13,6 +13,9 @@ import { anthropicKey, openRouterKey } from "../llm.js";
 import { Cancelled } from "../approvals.js";
 import { MachineOffline } from "../machines.js";
 import { save, state } from "../store.js";
+import { buildEnv, devLogMark } from "../build-host.js";
+import { checkAfterEdit } from "../build-check.js";
+import { costOf, priceFromEnv, recordUsage, type Price } from "../usage.js";
 import { NATIVE_TOOLS } from "./native-tools.js";
 import { TOOLS, ToolError, type Ctx, type ToolDef } from "./tools.js";
 
@@ -37,6 +40,8 @@ const AGENT_PROMPT = [
 ].join("\n");
 
 export class EngineUnavailable extends Error {}
+/** The engine's port stopped answering: it crashed or is restarting. */
+class EngineDown extends EngineUnavailable {}
 
 /** Which model the engine runs. ENGINE_MODEL ("provider/model") wins, then the saved keys. */
 export function engineModel(): EngineModel | null {
@@ -49,7 +54,36 @@ export function engineModel(): EngineModel | null {
   return null;
 }
 
+/** The OpenCode binary itself. The `.bin` shim is a shell script that would leave the engine running when killed. */
+/** What the server knows about the engine's model: whether it takes images, and its price (P1.4, P2.17).
+ *  From ENGINE_VISION / ENGINE_PRICE, else from OpenRouter's public model list. */
+interface ModelInfo { ref: string; vision: boolean; price: Price | null }
+let modelInfo: ModelInfo | null = null;
+export function engineSeesImages() { return !!modelInfo?.vision; }
+async function loadModelInfo(model: EngineModel): Promise<ModelInfo> {
+  const ref = `${model.providerID}/${model.modelID}`;
+  if (modelInfo?.ref === ref) return modelInfo;
+  let vision: boolean | null = process.env.ENGINE_VISION ? process.env.ENGINE_VISION !== "0" : model.providerID === "anthropic" ? true : null;
+  let price = priceFromEnv();
+  if ((vision === null || !price) && model.providerID === "openrouter") {
+    try {
+      const list = await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(8_000) }).then(r => r.json()) as { data?: { id: string; architecture?: { input_modalities?: string[] }; pricing?: Record<string, string> }[] };
+      const found = list.data?.find(m => m.id === model.modelID);
+      if (vision === null) vision = !!found?.architecture?.input_modalities?.includes("image");
+      if (!price && found?.pricing) {
+        const input = Number(found.pricing.prompt), output = Number(found.pricing.completion);
+        const cached = Number(found.pricing.input_cache_read ?? found.pricing.prompt);
+        if (Number.isFinite(input) && Number.isFinite(output)) price = { input, output, cacheRead: Number.isFinite(cached) ? cached : input };
+      }
+    } catch { /* offline: no vision, no price */ }
+  }
+  modelInfo = { ref, vision: !!vision, price };
+  return modelInfo;
+}
+
 function binary() {
+  const direct = path.join(SERVER_ROOT, "node_modules", "opencode-ai", "bin", "opencode.exe");
+  if (process.platform !== "win32" && fs.existsSync(direct)) return direct;
   return path.join(SERVER_ROOT, "node_modules", ".bin", process.platform === "win32" ? "opencode.cmd" : "opencode");
 }
 
@@ -65,7 +99,7 @@ function merge(base: Record<string, any>, extra: Record<string, any>): Record<st
   return out;
 }
 
-function engineConfig(model: EngineModel) {
+function engineConfig(model: EngineModel, sees = false) {
   const key = model.providerID === "openrouter" ? openRouterKey() : model.providerID === "anthropic" ? anthropicKey() : "";
   const ref = `${model.providerID}/${model.modelID}`;
   const base = {
@@ -75,7 +109,7 @@ function engineConfig(model: EngineModel) {
     model: ref,
     small_model: ref,
     // A model missing from OpenCode's catalog still runs: it is declared here.
-    provider: { [model.providerID]: { ...(key ? { options: { apiKey: key } } : {}), models: { [model.modelID]: { name: model.modelID } } } },
+    provider: { [model.providerID]: { ...(key ? { options: { apiKey: key } } : {}), models: { [model.modelID]: { name: model.modelID, ...(sees ? { attachment: true, modalities: { input: ["text", "image"], output: ["text"] } } : {}) } } } },
     // Flip's gate decides (the plugin's tool.execute.before hook). OpenCode never waits on its own prompt.
     permission: { edit: "allow", bash: "allow", webfetch: "allow", doom_loop: "allow", external_directory: "deny" },
     agent: {
@@ -97,9 +131,24 @@ let proc: ChildProcess | null = null;
 let baseUrl: string | null = null;
 let runningKey = "";
 let starting: { key: string; promise: Promise<string> } | null = null;
+/** The last start failed, or the engine kept exiting. Cleared by the next start that works. */
+let failure: string | null = null;
+/** Times the engine exited on its own and was started again (P0.3). */
+let restarts = 0;
+let lastRestart = 0;
+/** One automatic restart per window. A second exit inside it leaves the engine "failed" until the next request. */
+const RESTART_WINDOW = 5 * 60_000;
+
+export type EngineStatus = "opencode" | "builtin" | "starting" | "failed";
+
+/** What /health reports about the agent engine. */
+export function engineHealth(): { engine: EngineStatus; engineRestarts: number; engineError?: string } {
+  const engine: EngineStatus = !engineEnabled() ? "builtin" : proc && baseUrl ? "opencode" : starting ? "starting" : failure ? "failed" : engineModel() ? "starting" : "failed";
+  return { engine, engineRestarts: restarts, ...(engine === "failed" ? { engineError: failure ?? "No model key yet." } : {}) };
+}
 
 async function ensureEngine(model: EngineModel): Promise<string> {
-  const cfg = engineConfig(model);
+  const cfg = engineConfig(model, (await loadModelInfo(model)).vision);
   const key = crypto.createHash("sha256").update(JSON.stringify(cfg)).digest("hex");
   if (proc && baseUrl && runningKey === key) return baseUrl;
   if (starting?.key === key) return starting.promise;
@@ -108,7 +157,11 @@ async function ensureEngine(model: EngineModel): Promise<string> {
   const promise = boot(cfg).then(url => {
     baseUrl = url;
     runningKey = key;
+    failure = null;
     return url;
+  }, err => {
+    failure = (err as Error).message.slice(0, 300);
+    throw err;
   }).finally(() => { if (starting?.promise === promise) starting = null; });
   starting = { key, promise };
   return promise;
@@ -123,8 +176,8 @@ function boot(cfg: Record<string, unknown>): Promise<string> {
   fs.rmSync(path.join(DIR, ".opencode", "plugin", "flip.ts"), { force: true });
   const child = spawn(binary(), ["serve", "--hostname", "127.0.0.1", "--port", "0"], {
     cwd: DIR,
-    env: {
-      ...process.env,
+    // OpenCode's bash runs the Build project's commands: the same clean environment.
+    env: buildEnv({
       OPENCODE_CONFIG_CONTENT: JSON.stringify(cfg),
       OPENCODE_DISABLE_AUTOUPDATE: "1",
       FLIP_ENGINE_URL: `http://127.0.0.1:${config.port}`,
@@ -134,17 +187,19 @@ function boot(cfg: Record<string, unknown>): Promise<string> {
       XDG_DATA_HOME: path.join(home, "data"),
       XDG_STATE_HOME: path.join(home, "state"),
       XDG_CACHE_HOME: path.join(home, "cache"),
-    },
+    }),
     stdio: ["ignore", "pipe", "pipe"],
   });
   proc = child;
+  let ready = false;
   return new Promise((resolve, reject) => {
     let out = "";
     const timer = setTimeout(() => { child.kill(); reject(new EngineUnavailable("OpenCode did not start in 90 seconds.")); }, 90_000);
     const read = (chunk: Buffer) => {
       out = (out + chunk.toString()).slice(-4000);
       const match = out.match(/listening on (http:\/\/[^\s]+)/);
-      if (match) {
+      if (match && !ready) {
+        ready = true;
         clearTimeout(timer);
         console.log(`[engine] OpenCode on ${match[1]} (${String(cfg.model)})`);
         resolve(match[1].replace(/\/$/, ""));
@@ -154,12 +209,29 @@ function boot(cfg: Record<string, unknown>): Promise<string> {
     child.stdout!.on("data", read);
     child.stderr!.on("data", read);
     child.on("error", err => { clearTimeout(timer); reject(new EngineUnavailable(`OpenCode failed to start: ${err.message}`)); });
-    child.on("exit", code => {
+    child.on("exit", (code, signal) => {
       clearTimeout(timer);
-      if (proc === child) { proc = null; baseUrl = null; runningKey = ""; }
-      reject(new EngineUnavailable(`OpenCode exited (${code}). ${out.slice(-400)}`));
+      const unexpected = proc === child;
+      if (unexpected) { proc = null; baseUrl = null; runningKey = ""; }
+      reject(new EngineUnavailable(`OpenCode exited (${code ?? signal}). ${out.slice(-400)}`));
+      // Exited on its own after it was up: start it again once, so the next request does not wait (P0.3).
+      if (unexpected && ready) restartAfterExit(`OpenCode exited (${code ?? signal}).`);
     });
   });
+}
+
+function restartAfterExit(reason: string) {
+  console.warn(`[engine] ${reason}`);
+  if (Date.now() - lastRestart < RESTART_WINDOW) {
+    failure = `${reason} It exited again within ${RESTART_WINDOW / 60_000} minutes, so it starts again on the next request.`;
+    return;
+  }
+  lastRestart = Date.now();
+  restarts++;
+  const model = engineModel();
+  if (!model) return;
+  console.warn("[engine] Starting OpenCode again.");
+  ensureEngine(model).catch(err => console.warn(`[engine] Restart failed: ${(err as Error).message}`));
 }
 
 export function stopEngine() {
@@ -183,7 +255,7 @@ async function api<T>(base: string, method: string, route: string, body?: unknow
     headers: body === undefined ? undefined : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
-  });
+  }).catch(err => { throw new EngineDown(`OpenCode is not reachable: ${(err as Error).message}`); });
   if (!response.ok) throw new EngineUnavailable(`OpenCode ${method} ${route} failed (HTTP ${response.status}): ${(await response.text()).slice(0, 300)}`);
   const text = await response.text();
   return (text ? JSON.parse(text) : undefined) as T;
@@ -201,11 +273,18 @@ interface Live {
   root: string | null;
   /** Failed calls by tool, input and error. Weaker models can repeat one failing call forever. */
   failures: Map<string, number>;
+  /** Dev server log position when each edit was approved, by file (P1.7). */
+  edits: Map<string, number>;
+}
+
+/** For tests: FLIP_TOOL_LOG=file gets one JSON line per tool call. */
+function logTool(entry: Record<string, unknown>) {
+  if (process.env.FLIP_TOOL_LOG) try { fs.appendFileSync(process.env.FLIP_TOOL_LOG, JSON.stringify({ at: Date.now(), ...entry }) + "\n"); } catch { /* test log only */ }
 }
 
 /** A repeated failing call first gets a nudge, then ends the Task. */
 const NUDGE_AFTER = 3, STOP_AFTER = 6;
-type CallResult = { output: string } | { error: string };
+type CallResult = { output: string; attachments?: { type: "file"; mime: string; url: string; filename?: string }[] } | { error: string };
 interface PendingCall { id: string; result: CallResult | null; promise: Promise<CallResult> }
 
 const live = new Map<string, Live>();
@@ -218,6 +297,18 @@ function runCall(sessionID: string, callID: string, name: string, args: unknown)
   const run = session.queue.then(async (): Promise<CallResult> => {
     if (session.fatal) return { error: "The Task stopped." };
     const { ctx } = session;
+    logTool({ tool: name });
+    if (name.startsWith("opencode-after.")) {
+      // After OpenCode's edit or write: new errors go into that tool's result (P1.7).
+      const input = (args && typeof args === "object" ? args : {}) as Record<string, any>;
+      const full = session.root ? path.resolve(session.root, String(input.filePath ?? input.path ?? "")) : "";
+      const mark = session.edits.get(full);
+      if (!session.root || mark === undefined) return { output: "" };
+      session.edits.delete(full);
+      const check = await checkAfterEdit(path.relative(session.root, full), mark).catch(() => ({ text: "", errors: false }));
+      logTool({ tool: "after-edit", errors: check.errors });
+      return { output: check.text };
+    }
     if (name.startsWith("opencode.")) {
       try {
         return await nativeGate(session, name.slice("opencode.".length), (args && typeof args === "object" ? args : {}) as Record<string, any>);
@@ -234,7 +325,10 @@ function runCall(sessionID: string, callID: string, name: string, args: unknown)
     try {
       ctx.step(String(input.say || def.name));
       const out = await def.run(ctx, input, callID);
-      return { output: out.text.slice(0, 15000) || "Done." };
+      const output = out.text.slice(0, 15000) || "Done.";
+      // An image (a Build screenshot) goes to the model as an attachment when it can see images.
+      if (out.image && engineSeesImages()) return { output, attachments: [{ type: "file", mime: out.image.mime, url: `data:${out.image.mime};base64,${out.image.base64}`, filename: `${name}.png` }] };
+      return { output };
     } catch (err) {
       if (err instanceof Cancelled || err instanceof MachineOffline) {
         session.fatal = err;
@@ -313,7 +407,8 @@ export async function handleEngineHttp(req: http.IncomingMessage, res: http.Serv
 /* --------------------------------- Running -------------------------------- */
 
 interface EngineMessage {
-  info: { id: string; role: string; time: { created: number; completed?: number }; error?: { name: string; data?: { message?: string } }; finish?: string };
+  info: { id: string; role: string; time: { created: number; completed?: number }; error?: { name: string; data?: { message?: string } }; finish?: string;
+    cost?: number; tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } } };
   parts: { type: string; text?: string; synthetic?: boolean }[];
 }
 
@@ -336,10 +431,19 @@ export interface EngineRun {
 export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: EngineRun): Promise<string> {
   const model = engineModel();
   if (!model) throw new ToolError("Add an OpenRouter or Anthropic key in Settings to use Task agents.");
-  const base = await ensureEngine(model);
+  const dir = run.directory;
+  // A crashed engine whose exit was not noticed yet: start it again and retry once (P0.3).
+  let base = await ensureEngine(model);
+  try {
+    await api(base, "GET", "/session/status", undefined, dir);
+  } catch (err) {
+    if (!(err instanceof EngineDown)) throw err;
+    console.warn(`[engine] ${err.message} Starting it again.`);
+    stopEngine();
+    base = await ensureEngine(model);
+  }
 
   // One session per agent and app keeps the agent's memory. A busy session gets a sibling.
-  const dir = run.directory;
   const key = `${ctx.agent.id}:${ctx.task.app ?? "-"}${dir ? ":build" : ""}`;
   const saved = state.engineSessions[key];
   let sessionID = saved && !busy.has(saved) ? await api<{ id: string }>(base, "GET", `/session/${saved}`, undefined, dir).then(s => s.id, () => null) : null;
@@ -355,9 +459,11 @@ export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: En
   if (dir) for (const name of NATIVE_TOOLS) tools[name] = true;
   tools.webfetch = run.webAccess;
   tools.todowrite = true;
-  const session: Live = { ctx, allowed, queue: Promise.resolve(), fatal: null, failures: new Map(), root: dir ?? null };
+  const session: Live = { ctx, allowed, queue: Promise.resolve(), fatal: null, failures: new Map(), root: dir ?? null, edits: new Map() };
   busy.add(sessionID);
   live.set(sessionID, session);
+  const t0 = Date.now();
+  const firstMessage = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`, undefined, dir).catch(() => [])).length;
   try {
     let text = run.firstMessage(fresh);
     for (let round = 0; round < 6; round++) {
@@ -370,10 +476,34 @@ export async function runOnEngine(ctx: Ctx, ctl: { cancelled: boolean }, run: En
       return answer;
     }
     throw new ToolError("Too many rounds with other Task agents. Check the Task steps for work already completed.");
+  } catch (err) {
+    // Work may be half done, so a crash mid-Task never reruns it on the built-in loop.
+    if (err instanceof EngineDown) throw new ToolError("The agent engine stopped in the middle of this Task and is starting again. Check the steps, then say it again.");
+    throw err;
   } finally {
     busy.delete(sessionID);
     live.delete(sessionID);
+    await recordEngineUsage(base, sessionID, dir, firstMessage, ctx, model, t0).catch(() => undefined);
   }
+}
+
+/** Sum the model calls this Task made in its session: tokens, cost and time (P2.17). */
+async function recordEngineUsage(base: string, sessionID: string, dir: string | undefined, from: number, ctx: Ctx, model: EngineModel, t0: number) {
+  const messages = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`, undefined, dir)).slice(from);
+  const t = { calls: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cost: 0 };
+  for (const { info } of messages) {
+    if (info.role !== "assistant") continue;
+    t.calls++;
+    t.input += info.tokens?.input ?? 0;
+    t.output += info.tokens?.output ?? 0;
+    t.reasoning += info.tokens?.reasoning ?? 0;
+    t.cacheRead += info.tokens?.cache?.read ?? 0;
+    t.cost += info.cost ?? 0;
+  }
+  if (!t.calls) return;
+  // OpenCode prices models it knows; for the rest, the server's price list.
+  const cost = t.cost > 0 ? t.cost : costOf(modelInfo?.price ?? null, t);
+  recordUsage({ taskId: ctx.task.id, agentId: ctx.agent.id, model: `${model.providerID}/${model.modelID}`, calls: t.calls, input: t.input, output: t.output, reasoning: t.reasoning, cacheRead: t.cacheRead, cost, seconds: (Date.now() - t0) / 1000, at: new Date().toISOString() });
 }
 
 async function prompt(base: string, sessionID: string, model: EngineModel, system: string, tools: Record<string, boolean>, text: string, ctl: { cancelled: boolean }, session: Live, dir?: string): Promise<string> {
@@ -384,11 +514,23 @@ async function prompt(base: string, sessionID: string, model: EngineModel, syste
     throw err;
   };
   const started = Date.now();
+  let shown = "";
+  let planOff = false;
   for (;;) {
     await sleep(400);
     if (session.fatal) return stop(session.fatal);
     if (ctl.cancelled) return stop(new Cancelled());
-    if (!proc) throw new ToolError("The agent engine stopped. Try again.");
+    if (!proc || baseUrl !== base) throw new ToolError("The agent engine stopped in the middle of this Task and is starting again. Check the steps, then say it again.");
+    // The agent's plan (todowrite) becomes Task steps: "2/4 Delete the old notes" (P2.14).
+    if (!planOff) {
+      const todos = await api<PlanItem[]>(base, "GET", `/session/${sessionID}/todo`, undefined, dir).catch(err => {
+        if (err instanceof EngineDown) throw err;
+        planOff = true;
+        return null;
+      });
+      const line = todos ? planLine(todos) : null;
+      if (line && line !== shown) { shown = line; session.ctx.step(line); }
+    }
     const status = (await api<Record<string, { type: string }>>(base, "GET", "/session/status", undefined, dir))[sessionID];
     if (status && status.type !== "idle") continue;
     const messages = (await api<EngineMessage[]>(base, "GET", `/session/${sessionID}/message`, undefined, dir)).slice(before);
@@ -405,6 +547,19 @@ async function prompt(base: string, sessionID: string, model: EngineModel, syste
     if (!answer) throw new ToolError("The model returned no final answer. Check the Task steps for work already completed.");
     return answer;
   }
+}
+
+interface PlanItem { content: string; status: string }
+
+/** The plan item being worked on, as "n/total content". Null when there is no plan or it is all done. */
+export function planLine(todos: PlanItem[]): string | null {
+  const items = todos.filter(item => item.status !== "cancelled" && item.content?.trim());
+  if (items.length < 2) return null;
+  let at = items.findIndex(item => item.status === "in_progress");
+  if (at < 0) at = items.findIndex(item => item.status === "pending");
+  if (at < 0) return null;
+  const text = items[at].content.replace(/\s+/g, " ").trim();
+  return `${at + 1}/${items.length} ${text.length > 60 ? text.slice(0, 59) + "…" : text}`;
 }
 
 /* ------------------------- OpenCode's own tools in ------------------------ */
@@ -424,6 +579,7 @@ async function nativeGate(session: Live, tool: string, args: Record<string, any>
   } else if (tool === "edit" || tool === "write") {
     ctx.step(`${tool === "write" ? "Writing" : "Editing"} ${rel}`);
     await ctx.gate({ title: `Write ${rel}?`, body: `In ${state.build.name}.` });
+    session.edits.set(full, devLogMark());
   } else {
     ctx.step(tool === "read" ? `Reading ${rel}` : `Searching ${args.pattern ? String(args.pattern).slice(0, 40) : rel}`);
     await ctx.gate({ title: `Look in ${state.build.name}?` });

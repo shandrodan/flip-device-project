@@ -19,23 +19,38 @@ Risk is set on the tool, never by the model.
 
 | Tool | Input | Gate |
 | --- | --- | --- |
-| `notes_read` | — | |
+| `notes_read` | — (the first 200) | |
+| `notes_search` | `query` (words; a word matches the start of a word in the Note, best matches first, at most 100) | |
 | `notes_create` | `texts[]` (batch, in order) | |
 | `notes_append` | `id`, `text` | |
 | `notes_replace` | `id`, `text` (full new text) | asks in Auto |
+| `notes_edit` | `id`, `find`, `replace` (every place, whole words; exact case first, then any case; a miss says what the Note says) | |
+| `notes_merge` | `ids[]` (≥ 2, in order; the first keeps the joined text, the rest are removed) | asks in Auto |
 | `notes_delete` | `ids[]` | delete |
 
 **To-Do**
 
 | Tool | Input | Gate |
 | --- | --- | --- |
-| `todo_read` | — (returns To-Dos and projects) | |
+| `todo_read` | `filter?` (`all` default, `open`, `today`, `overdue`, `upcoming`, `no-date`, `done`), `projectId?` (or `"inbox"`); returns To-Dos, projects and today's date | |
 | `todo_create` | `items[]` of `{title, due?, projectId?}` | |
 | `todo_update` | `ids[]`, `due?`, `projectId?`, `title?` (title: one at a time) | |
 | `todo_complete` / `todo_reopen` | `ids[]` | |
 | `todo_delete` | `ids[]` | delete |
+| `todo_project_create` | `name` (refuses a duplicate name and returns the existing ID) | |
+| `todo_project_rename` | `projectId`, `name` | |
+| `todo_project_delete` | `projectId` (its To-Dos move to Inbox) | delete |
 
-**Other apps:** `read_app {app}` (focus, agents, settings, build, dock) and `change_app {action}` with `focus.start`, `focus.stop`, `agents.create`, `settings.permission`. Settings never exposes keys or Full mode.
+**Focus, Agents, Settings** (ADR 0034)
+
+| Tool | Input | Gate |
+| --- | --- | --- |
+| `focus_start` | `minutes` (1–180) | |
+| `focus_stop` | — | |
+| `agents_create` | `name`, `role` | asks in Auto |
+| `settings_permission` | `mode` (`manual` or `auto`; Full is user-only) | asks in Auto |
+
+`read_app {app}` reads Focus, Agents, Settings, Build or the Dock. Settings never exposes keys. `change_app` is not offered to models (ADR 0034): the typed tools run as its actions, and forwarded app requests and the demo planner still use it.
 
 **Agents:** `list_agents`, `send_agent_message {agent_id, message, expects_reply}` (a request is answered before the asker replies; depth and fan-out limits, ADR 0013).
 
@@ -49,14 +64,19 @@ Risk is set on the tool, never by the model.
 | `build_list`, `build_read`, `build_write`, `build_run` | replaced by the above on the engine; used by the built-in loop | yes, through the PC agent |
 | `build_serve {command, port}` | starts the dev server (`--base /preview/`), streams it to the Device | no |
 | `build_stop`, `build_logs` | yes | no |
+| `build_new {template, title?}` | starts the project over from `apps/server/starters/` (`static`, `vite-vanilla`, `vite-react`): no network, installs from the npm cache warmed at setup, starts Vite with `/preview/`. Commits the old files first (undo brings them back). Asks first | no |
+| `build_history`, `build_undo {steps}` | the project is a git repository; the server commits after every Build Task (message = the spoken request). Undo is `git revert`, never a reset, so it can be undone too | no |
+| `build_screenshot {path?}` | renders `/preview/` in headless Chromium at 568×504 inside a frame sandboxed like the Device's; returns the PNG (as an image when the model takes images) plus page errors and the boxes of visible elements | no |
 | `build_preview {url}` | no | yes |
 | `build_deploy {command}` | leave | leave |
 
-**Engine extras:** `todowrite` (the agent's plan), `webfetch` for research-type agents.
+**After every edit** (OpenCode `edit`/`write`, or `build_write` on the server) the server adds what broke to the edit's own result, so the agent fixes errors without asking for logs: with a dev server, it requests the edited module through it and adds the dev server's new error lines; then (and for static files) it loads the preview in the Device's sandboxed frame and adds the page's errors. Static edits also reload the Device preview at once (`state.build.rev`).
+
+**Engine extras:** `todowrite` (the agent's plan; the server reads it while polling and shows the item being worked on as a Task step, "2/4 Delete the old notes"), `webfetch` for research-type agents.
 
 ## Adding an app's tools
 
-1. Add entries to `APP_MANIFEST` in `apps/server/src/agents/app-tools.ts`: `app`, `name` (`<app>_<verb>`), a one-line `description`, `props` with **required** fields marked in `required`, and the `action` it runs.
+1. Add entries to `APP_MANIFEST` (models only see typed tools, never `change_app`) in `apps/server/src/agents/app-tools.ts`: `app`, `name` (`<app>_<verb>`), a one-line `description`, `props` with **required** fields marked in `required`, and the `action` it runs.
 2. Implement the action in `change_app.run` (or a read in `read_app.run`). Call `ctx.gate` with the right `risk` before you change anything. Throw errors that say how to fix the call.
 3. If the app is new, add it to `APP_IDS` in `packages/protocol` and give it a default agent in `store.ts` (that is a Protocol change: write an ADR).
 4. Add a scenario to `scripts/agent-e2e.ts` and run it 3 times.

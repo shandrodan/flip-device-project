@@ -1,5 +1,5 @@
 /** Typed actions for the Device apps. The server owns app state and approval. */
-import { APP_IDS, isAppCommand, type Agent, type AppId, type Note, type Task } from "@app/protocol";
+import { APP_IDS, isAppCommand, type Agent, type AppId, type Note, type Project, type Task } from "@app/protocol";
 import { bus } from "../bus.js";
 import { id, now, ownsApp, patchTask, saveNow, state, taskById } from "../store.js";
 import type { ToolDef } from "./tools.js";
@@ -22,6 +22,57 @@ const titles = (items: { title?: string; text?: string }[]) =>
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 const SAY = { type: "string", description: "A short action line for the Device." };
+
+/* ------------------------- Search and filters (P1.10) ------------------------ */
+// Reading 200 items per step is slow and costly. Search and filters return only what matters.
+
+const STOP = new Set(["the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "about", "with", "my", "me", "all", "notes", "note", "that", "this", "is", "are"]);
+const words = (text: string) => text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+
+/** Notes that contain the query's words (a word matches the start of a word in the Note), best first. */
+export function searchNotes(query: string): { note: Note; score: number }[] {
+  const terms = [...new Set(words(query).filter(word => word.length > 1 && !STOP.has(word)))];
+  if (!terms.length) throw new Error("Give a query with at least one real word, e.g. \"venue\".");
+  return state.notes
+    .map(note => {
+      const own = words(note.text);
+      return { note, score: terms.filter(term => own.some(word => word.startsWith(term) || (term.length > 4 && word.startsWith(term.slice(0, -1))))).length };
+    })
+    .filter(hit => hit.score > 0)
+    .sort((a, b) => b.score - a.score);
+}
+
+/** Words to find in a Note: exactly as given, then ignoring case. Whole words only at word edges. */
+function wordPattern(find: string): { exact: RegExp; loose: RegExp } {
+  const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const source = `${/^[\p{L}\p{N}]/u.test(find) ? "(?<![\\p{L}\\p{N}])" : ""}${escaped}${/[\p{L}\p{N}]$/u.test(find) ? "(?![\\p{L}\\p{N}])" : ""}`;
+  return { exact: new RegExp(source, "gu"), loose: new RegExp(source, "giu") };
+}
+
+/** Today in the server's local time, YYYY-MM-DD. */
+const localDay = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+export const TODO_FILTERS = ["all", "open", "today", "overdue", "upcoming", "no-date", "done"] as const;
+
+function filterTodos(filter: string, projectId: unknown): Task[] {
+  const today = localDay();
+  let list = todoItems();
+  if (projectId !== undefined && projectId !== null && projectId !== "") {
+    if (projectId === "inbox") list = list.filter(task => !task.projectId);
+    else if (!state.projects.some(project => project.id === projectId)) throw new Error("Unknown projectId. todo_read returns the projects with their IDs; use \"inbox\" for To-Dos with no project.");
+    else list = list.filter(task => task.projectId === projectId);
+  }
+  const open = (task: Task) => task.status !== "done";
+  switch (filter) {
+    case "all": return list;
+    case "open": return list.filter(open);
+    case "today": return list.filter(task => open(task) && task.due?.slice(0, 10) === today);
+    case "overdue": return list.filter(task => open(task) && !!task.due && task.due.slice(0, 10) < today);
+    case "upcoming": return list.filter(task => open(task) && !!task.due && task.due.slice(0, 10) > today);
+    case "no-date": return list.filter(task => open(task) && !task.due);
+    case "done": return list.filter(task => !open(task));
+    default: throw new Error(`filter is one of ${TODO_FILTERS.join(", ")}.`);
+  }
+}
 const APP = { type: "string", enum: [...APP_IDS, "dock"] };
 
 function todoLocation(input: Record<string, unknown>): Pick<Task, "due" | "projectId"> {
@@ -46,6 +97,9 @@ function todoLocation(input: Record<string, unknown>): Pick<Task, "due" | "proje
   return location;
 }
 
+/** Colors for new projects, in the To-Do app's palette. */
+const PROJECT_COLORS = ["#30a46c", "#0090ff", "#e5484d", "#8e4ec6", "#e5780b", "#d6409f", "#12a594", "#ffc53d"];
+
 const BASE_TOOLS: ToolDef[] = [
   {
     name: "read_app",
@@ -56,16 +110,27 @@ const BASE_TOOLS: ToolDef[] = [
         return ctx.delegateApp(input.app as AppId, "read_app", input, callId);
       await ctx.gate({ title: `Read ${input.app}?` });
       switch (input.app) {
-        case "notes": return { text: JSON.stringify({
+        case "notes": if (typeof input.query === "string") {
+          const hits = searchNotes(input.query);
+          return { text: JSON.stringify({
+            query: input.query, matches: hits.length, of: state.notes.length,
+            notes: hits.slice(0, 100).map(({ note, score }) => ({ id: note.id, text: note.text.slice(0, 400), matched: score })),
+          }) };
+        } else return { text: JSON.stringify({
           count: state.notes.length,
           notes: state.notes.slice(0, 200).map(note => ({ id: note.id, text: note.text.slice(0, 400), createdAt: note.createdAt })),
         }) };
-        case "todo": return { text: JSON.stringify({
+        case "todo": {
+          const filter = typeof input.filter === "string" && input.filter ? input.filter : "all";
+          const list = filterTodos(filter, input.projectId);
+          return { text: JSON.stringify({
           projects: state.projects.map(({ id, name }) => ({ id, name })),
-          count: todoItems().length,
-          tasks: todoItems().slice(0, 200)
+          today: localDay(), filter, ...(input.projectId ? { projectId: input.projectId } : {}),
+          count: list.length, of: todoItems().length,
+          tasks: list.slice(0, 200)
             .map(({ id, title, status, due, projectId, agentId }) => ({ id, title, status, due: due ?? null, projectId: projectId ?? null, agentId })),
-        }) };
+          }) };
+        }
         case "focus": return { text: JSON.stringify(state.focus) };
         case "agents": return { text: JSON.stringify(state.agents.map(agent => ({ id: agent.id, name: agent.name, role: agent.role }))) };
         case "settings": return { text: JSON.stringify({ permissionMode: state.permissionMode, hosting: state.hosting }) };
@@ -84,7 +149,9 @@ const BASE_TOOLS: ToolDef[] = [
       name: { type: "string", description: "agents.create: the new Task agent's name." }, role: { type: "string", description: "agents.create: what the new Task agent does." },
       minutes: { type: "number" }, mode: { type: "string", enum: ["manual", "auto"] }, say: SAY,
     },
-    required: ["action", "say"], purposes: "all",
+    // Models get the typed tools (notes_*, todo_*, focus_*, agents_create, settings_permission). change_app stays
+    // for forwarded app requests and the planner (P2.13).
+    required: ["action", "say"], purposes: "all", hidden: true,
     async run(ctx, input, callId) {
       const action = String(input.action);
       const app = action.split(".")[0];
@@ -118,6 +185,43 @@ const BASE_TOOLS: ToolDef[] = [
         note.editedByUser = true;
         saveNow(); bus.changed();
         return { text: `Updated Note ${note.id}.` };
+      }
+      if (action === "notes.edit") {
+        // A small change inside a long Note, without retyping it (P1.12).
+        const note = state.notes.find(item => item.id === key);
+        if (!note) throw new Error(`No Note has ID ${key || "(none)"}. Find it with notes_search and use its ID.`);
+        const find = typeof input.find === "string" ? input.find : "";
+        const replacement = typeof input.replace === "string" ? input.replace : "";
+        if (!find.trim()) throw new Error("Give the exact words to change in find.");
+        const pattern = wordPattern(find);
+        let count = (note.text.match(pattern.exact) ?? []).length;
+        let used = pattern.exact;
+        if (!count) { used = pattern.loose; count = (note.text.match(used) ?? []).length; }
+        if (!count) throw new Error(`"${find}" is not in that Note. It says: "${note.text.slice(0, 300)}". Copy the words exactly into find.`);
+        const originalText = note.text;
+        await ctx.gate({ title: "Edit this Note?", body: `${find} → ${replacement || "(removed)"}` });
+        if (note.text !== originalText || !state.notes.includes(note)) throw new Error("The Note changed. Read it again before editing.");
+        note.text = note.text.replace(used, () => replacement).replace(/[ \t]{2,}/g, " ").trim();
+        note.editedByUser = true;
+        saveNow(); bus.changed();
+        return { text: `Changed ${plural(count, "place")} in Note ${note.id}. It now says: "${note.text.slice(0, 300)}"` };
+      }
+      if (action === "notes.merge") {
+        const ids = idsOf(input);
+        if (ids.length < 2) throw new Error("Give at least two Note IDs in ids, in the order to join them.");
+        const notes = ids.map(noteId => state.notes.find(note => note.id === noteId));
+        if (notes.some(note => !note)) throw new Error("A Note was not found. Find them with notes_search and use their IDs.");
+        const [first, ...rest] = notes as Note[];
+        // The joined Notes are deleted: ask, since that is hard to undo.
+        await ctx.gate({ askFirst: true, title: `Merge ${plural(notes.length, "Note")} into one?`, body: titles(notes as Note[]) });
+        if ((notes as Note[]).some(note => !state.notes.includes(note))) throw new Error("A Note changed. Read them again before merging.");
+        first.text = (notes as Note[]).map(note => note.text.trim()).filter(Boolean).join("\n\n");
+        first.editedByUser = true;
+        for (const note of rest) first.taskIds.push(...note.taskIds.filter(taskId => !first.taskIds.includes(taskId)));
+        const gone = new Set(rest.map(note => note.id));
+        state.notes = state.notes.filter(note => !gone.has(note.id));
+        saveNow(); bus.changed();
+        return { text: `Merged ${plural(notes.length, "Note")} into Note ${first.id}.` };
       }
       if (action === "todo.create") {
         // One To-Do from text, due and projectId, or several in items: one approval for the batch.
@@ -193,6 +297,41 @@ const BASE_TOOLS: ToolDef[] = [
         saveNow(); bus.changed();
         return { text: `Deleted ${plural(before - state.tasks.length, "To-Do")}. ${plural(todoItems().length, "To-Do")} left.` };
       }
+      if (action === "todo.project_create" || action === "todo.project_rename") {
+        const name = typeof input.name === "string" ? input.name.replace(/\s+/g, " ").trim().slice(0, 40) : "";
+        if (!name) throw new Error("Give the project's name in name.");
+        const same = state.projects.find(project => project.name.toLowerCase() === name.toLowerCase());
+        if (action === "todo.project_create") {
+          if (same) throw new Error(`A project named ${same.name} already exists with ID ${same.id}. Use that ID.`);
+          await ctx.gate({ title: `Make project ${name}?` });
+          const used = new Set(state.projects.map(project => project.color));
+          const color = PROJECT_COLORS.find(value => !used.has(value)) ?? PROJECT_COLORS[state.projects.length % PROJECT_COLORS.length];
+          const project: Project = { id: id("p"), name, color };
+          state.projects.push(project);
+          saveNow(); bus.changed();
+          return { text: `Made project ${name} with ID ${project.id}.` };
+        }
+        const project = state.projects.find(item => item.id === input.projectId);
+        if (!project) throw new Error("No project has that ID. todo_read lists the projects with their IDs.");
+        if (same && same !== project) throw new Error(`Another project is already named ${same.name} (${same.id}).`);
+        await ctx.gate({ title: `Rename ${project.name} to ${name}?` });
+        const old = project.name;
+        project.name = name;
+        saveNow(); bus.changed();
+        return { text: `Renamed project ${old} to ${name}.` };
+      }
+      if (action === "todo.project_delete") {
+        const project = state.projects.find(item => item.id === input.projectId);
+        if (!project) throw new Error("No project has that ID. todo_read lists the projects with their IDs.");
+        const inside = todoItems().filter(task => task.projectId === project.id);
+        // Deleting is a Risky action: always the push bar. Its To-Dos are kept, in Inbox.
+        await ctx.gate({ risk: "delete", title: `Delete project ${project.name}?`, body: inside.length ? `Its ${plural(inside.length, "To-Do")} move to Inbox.` : "It has no To-Dos." });
+        if (!state.projects.includes(project)) throw new Error("The project is already gone.");
+        state.projects = state.projects.filter(item => item !== project);
+        for (const task of state.tasks) if (task.projectId === project.id) patchTask(task, { projectId: null });
+        saveNow(); bus.changed();
+        return { text: `Deleted project ${project.name}. ${inside.length ? `${plural(inside.length, "To-Do")} moved to Inbox.` : ""}`.trim() };
+      }
       if (action === "focus.start") {
         const minutes = Number(input.minutes);
         if (!Number.isInteger(minutes) || minutes < 1 || minutes > 180) throw new Error("Minutes must be from 1 to 180.");
@@ -253,22 +392,45 @@ interface AppToolSpec {
 
 /** The Device app manifest: what an agent can do in each app. A new app adds its tools here. */
 export const APP_MANIFEST: AppToolSpec[] = [
-  { app: "notes", name: "notes_read", description: "List all Notes, newest first, with their IDs and text.", props: {}, required: [] },
+  { app: "notes", name: "notes_read", description: "List all Notes, newest first, with their IDs and text. With many Notes, use notes_search instead.", props: {}, required: [] },
+  { app: "notes", name: "notes_search", description: "Find Notes by words in their text, best matches first, with their IDs. Use it before changing or deleting Notes about a topic.",
+    props: { query: { type: "string", description: "The words to look for, e.g. \"venue\"." } }, required: ["query"] },
   { app: "notes", name: "notes_create", action: "notes.create", description: "Save new Notes. Pass every Note of the request in one call, in the order the user said them.",
     props: { texts: { type: "array", items: { type: "string" }, description: "The text of each new Note." } }, required: ["texts"] },
   { app: "notes", name: "notes_append", action: "notes.append", description: "Add text to the end of one Note.",
     props: { id: { type: "string", description: "Note ID from notes_read." }, text: { type: "string", description: "Text to add." } }, required: ["id", "text"] },
   { app: "notes", name: "notes_replace", action: "notes.replace", description: "Replace the whole text of one Note. Use it to rename or rewrite a Note.",
     props: { id: { type: "string", description: "Note ID from notes_read." }, text: { type: "string", description: "The Note's complete new text." } }, required: ["id", "text"] },
+  { app: "notes", name: "notes_edit", action: "notes.edit", description: "Change some words inside one Note without retyping it: every place find appears (whole words) becomes replace. To remove words, include a neighbouring word in both.",
+    props: { id: { type: "string", description: "Note ID from notes_search or notes_read." }, find: { type: "string", description: "The exact words in the Note now, e.g. milk." }, replace: { type: "string", description: "What they become, e.g. oat milk." } }, required: ["id", "find", "replace"] },
+  { app: "notes", name: "notes_merge", action: "notes.merge", description: "Join several Notes into one, in the order given: the first keeps the joined text, the others are removed. Asks the user first.",
+    props: { ids: IDS("Note") }, required: ["ids"] },
   { app: "notes", name: "notes_delete", action: "notes.delete", description: "Delete Notes. Always asks the user with a button press.",
     props: { ids: IDS("Note") }, required: ["ids"] },
-  { app: "todo", name: "todo_read", description: "List To-Dos with ID, title, status, due date and project, plus the projects with their IDs.", props: {}, required: [] },
+  { app: "todo", name: "todo_read", description: "List To-Dos with ID, title, status, due date and project, plus the projects with their IDs. Narrow it with filter and projectId instead of reading everything.",
+    props: {
+      filter: { type: "string", enum: [...TODO_FILTERS], description: "all (default), open, today, overdue (due before today, not done), upcoming, no-date, or done." },
+      projectId: { type: "string", description: "Only this project's To-Dos (a project ID, or \"inbox\")." },
+    }, required: [] },
   { app: "todo", name: "todo_create", action: "todo.create", description: "Add new To-Dos. Pass every To-Do of the request in one call, each with its own due date and project when the user gave one.",
     props: { items: { type: "array", description: "The new To-Dos.", items: { type: "object", properties: { title: { type: "string" }, due: DUE, projectId: PROJECT }, required: ["title"] } } }, required: ["items"] },
   { app: "todo", name: "todo_update", action: "todo.update", description: "Change existing To-Dos: due date, project, or title. Set every field that should change in the same call; fields you leave out stay as they are. A new title applies to one To-Do at a time.",
     props: { ids: IDS("To-Do"), due: DUE, projectId: PROJECT, title: { type: "string", description: "New title, for one To-Do." } }, required: ["ids"] },
   { app: "todo", name: "todo_complete", action: "todo.complete", description: "Mark To-Dos done.", props: { ids: IDS("To-Do") }, required: ["ids"] },
   { app: "todo", name: "todo_reopen", action: "todo.reopen", description: "Mark done To-Dos as not done.", props: { ids: IDS("To-Do") }, required: ["ids"] },
+  { app: "todo", name: "todo_project_create", action: "todo.project_create", description: "Make a new To-Do project. Returns its ID: move To-Dos into it with todo_update and that projectId.",
+    props: { name: { type: "string", description: "The project's name, e.g. Launch." } }, required: ["name"] },
+  { app: "todo", name: "todo_project_rename", action: "todo.project_rename", description: "Rename a To-Do project.",
+    props: { projectId: { type: "string", description: "Project ID from todo_read." }, name: { type: "string", description: "The new name." } }, required: ["projectId", "name"] },
+  { app: "todo", name: "todo_project_delete", action: "todo.project_delete", description: "Delete a To-Do project. Its To-Dos are kept and move to Inbox. Always asks the user with a button press.",
+    props: { projectId: { type: "string", description: "Project ID from todo_read." } }, required: ["projectId"] },
+  { app: "focus", name: "focus_start", action: "focus.start", description: "Start a Focus timer on the Device.",
+    props: { minutes: { type: "number", description: "Length in minutes, 1 to 180." } }, required: ["minutes"] },
+  { app: "focus", name: "focus_stop", action: "focus.stop", description: "Stop the running Focus timer.", props: {}, required: [] },
+  { app: "agents", name: "agents_create", action: "agents.create", description: "Make a new Task agent. Asks the user first.",
+    props: { name: { type: "string", description: "The new Task agent's name, up to 24 characters." }, role: { type: "string", description: "What it does, in one or two sentences." } }, required: ["name", "role"] },
+  { app: "settings", name: "settings_permission", action: "settings.permission", description: "Set the permission mode to manual or auto. Full mode is for the user only. Asks the user first.",
+    props: { mode: { type: "string", enum: ["manual", "auto"] } }, required: ["mode"] },
   { app: "todo", name: "todo_delete", action: "todo.delete", description: "Delete To-Dos. Always asks the user with a button press.", props: { ids: IDS("To-Do") }, required: ["ids"] },
 ];
 
@@ -280,7 +442,11 @@ export const APP_TOOLS: ToolDef[] = [
     required: [...spec.required, "say"],
     purposes: "all",
     run(ctx, input, callId) {
-      if (!spec.action) return readApp.run(ctx, { app: spec.app, say: input.say }, callId);
+      if (!spec.action) {
+        // Reads pass their filters (query, filter, projectId) through to read_app.
+        const { say, ...filters } = input;
+        return readApp.run(ctx, { ...filters, app: spec.app, say }, callId);
+      }
       const { title, ...rest } = input;
       return changeApp.run(ctx, { ...rest, ...(title !== undefined ? { text: title } : {}), action: spec.action }, callId);
     },

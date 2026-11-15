@@ -44,7 +44,9 @@ export interface ToolDef {
   grey?: boolean; // gets an ask_first flag
   alwaysAsk?: boolean; // asks in Manual and Auto, never skipped except in Full
   purposes: AgentPurpose[] | "all";
-  run(ctx: Ctx, input: Input, callId?: string): Promise<{ text: string; data?: any }>;
+  /** Runs for forwarding and the planner, but is never offered to a model (P2.13). */
+  hidden?: boolean;
+  run(ctx: Ctx, input: Input, callId?: string): Promise<{ text: string; data?: any; image?: { mime: string; base64: string } }>;
 }
 
 const SAY = { type: "string", description: "What you're doing, 3 to 8 words, shown on the user's device. Present tense, plain words, e.g. 'Moving 167 screenshots to Archive'." };
@@ -306,7 +308,7 @@ export function toolsFor(agent: Agent, opts: { shell: boolean }): ToolDef[] {
   const build = servesBuild(agent.id);
   // With the project on the server (ADR 0033), Build commands run here and need no PC shell.
   const local = config.buildHost === "server";
-  return TOOLS.filter(t =>
+  return TOOLS.filter(t => !t.hidden &&
     (BUILD_TOOLS.includes(t) ? build : t.purposes === "all" || t.purposes.includes(agent.purpose))
     && (!SHELL_TOOLS.includes(t.name) || opts.shell || (local && t.name.startsWith("build_")))
     && !(local ? PC_BUILD_ONLY : SERVER_BUILD_ONLY).includes(t.name));

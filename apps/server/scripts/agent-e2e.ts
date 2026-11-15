@@ -3,12 +3,13 @@
 // agents, presses every approval like a user would, and checks the end state, not the agent's words.
 //   OPENROUTER_API_KEY=... pnpm test:agents
 //   MODEL=openrouter/anthropic/claude-haiku-5.5 ONLY=notes,files pnpm test:agents
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
+import { chromium } from "playwright-core";
 import { PROTOCOL_VERSION, isAppCommand, type DeviceMessage, type ServerMessage, type Snapshot, type Task } from "@app/protocol";
 
 const PORT = 18887, PC_PORT = 17177;
@@ -35,6 +36,44 @@ function cleanup() {
 process.on("exit", cleanup);
 
 let snap: Snapshot | null = null;
+let serverProc: ChildProcess | null = null;
+let serverEnv: Record<string, string> = {};
+const stateFile = () => path.join(root, "data", "state.json");
+const savedState = () => JSON.parse(fs.readFileSync(stateFile(), "utf8")) as { notes: { id: string; text: string }[] };
+
+/** Stop the server, change its saved state, start it again and reconnect like the Device. */
+async function restartWith(mutate: (state: any) => void) {
+  const proc = serverProc!;
+  const exited = new Promise(resolve => proc.once("exit", resolve));
+  proc.kill("SIGTERM");
+  await exited;
+  const saved = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
+  mutate(saved);
+  fs.writeFileSync(stateFile(), JSON.stringify(saved));
+  ws?.close();
+  snap = null;
+  serverProc = start("server", here, serverEnv);
+  await connect();
+}
+
+async function connect() {
+  let socket: WebSocket | null = null;
+  for (let i = 0; i < 80 && !socket; i++) {
+    try {
+      const attempt = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
+      await new Promise((res, rej) => { attempt.once("open", res); attempt.once("error", rej); });
+      socket = attempt;
+    } catch { await sleep(250); }
+  }
+  if (!socket) throw new Error("server did not start");
+  ws = socket;
+  ws.on("message", raw => {
+    const m = JSON.parse(String(raw)) as ServerMessage;
+    if (m.type === "snapshot") snap = m.snapshot;
+  });
+  send({ type: "hello", deviceId: "agents", mode: "handheld", client: "device", protocol: PROTOCOL_VERSION });
+  await until(() => snap?.machines.some(m => m.online), 20_000);
+}
 let ws: WebSocket;
 const send = (m: DeviceMessage) => ws.send(JSON.stringify(m));
 async function until<T>(fn: () => T | undefined | null | false, ms: number): Promise<T | null> {
@@ -76,7 +115,21 @@ const todos = () => snap!.tasks.filter(t => !isAppCommand(t) && t.target === "to
 const has = (list: string[], word: string) => list.some(t => new RegExp(`\\b${word}\\b`, "i").test(t));
 const flipDir = (...p: string[]) => path.join(home, "Flip", ...p);
 
-interface Scenario { name: string; turns: { target: any; text: string }[]; check(): string | null | Promise<string | null> }
+interface Scenario { name: string; before?(): Promise<void>; turns: { target: any; text: string }[]; check(): string | null | Promise<string | null> }
+const health = () => fetch(`http://127.0.0.1:${PORT}/health`).then(r => r.json() as Promise<Record<string, any>>).catch(() => ({} as Record<string, any>));
+/** Kill every OpenCode process of this test's server (they run in its engine folder). Linux only. */
+function killEngine(): number {
+  const dir = path.join(root, "data", "engine");
+  let killed = 0;
+  for (const pid of fs.readdirSync("/proc").filter(name => /^\d+$/.test(name))) {
+    try {
+      if (fs.readlinkSync(`/proc/${pid}/cwd`) !== dir) continue;
+      process.kill(Number(pid), "SIGKILL");
+      killed++;
+    } catch { /* gone, or not ours */ }
+  }
+  return killed;
+}
 const buildDir = path.join(root, "build");
 const preview = async (p = "") => {
   try {
@@ -84,6 +137,38 @@ const preview = async (p = "") => {
     return { status: r.status, text: await r.text() };
   } catch (err) { return { status: 0, text: String(err) }; }
 };
+/** The first button in the preview, measured in a frame sandboxed like the Device's, at its size. */
+async function measureButton(): Promise<{ w: number; h: number; cx: number; errors: string[] } | null> {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 568, height: 504 } });
+    const errors: string[] = [];
+    page.on("pageerror", err => errors.push(err.message));
+    await page.setContent(`<style>html,body{margin:0}</style><iframe sandbox="allow-scripts allow-forms" src="http://127.0.0.1:${PORT}/preview/" style="border:0;display:block;width:568px;height:504px"></iframe>`);
+    const frame = (await (await page.waitForSelector("iframe")).contentFrame())!;
+    await frame.waitForLoadState("load");
+    await page.waitForTimeout(800);
+    const box = await frame.evaluate(() => {
+      const b = document.querySelector("button");
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { w: r.width, h: r.height, cx: r.left + r.width / 2 };
+    });
+    return box && { ...box, errors };
+  } finally { await browser.close(); }
+}
+let buttonBefore: Awaited<ReturnType<typeof measureButton>> = null;
+let lastSteps: string[] = [];
+let lastSeconds = 0;
+let htmlBefore = "";
+const toolLog = path.join(root, "tools.log");
+let toolMark = 0;
+/** Tool calls since the scenario started, from the server's FLIP_TOOL_LOG. */
+const toolsSince = () => { try { return fs.readFileSync(toolLog, "utf8").slice(toolMark).split("\n").filter(Boolean).map(line => JSON.parse(line) as { tool: string; errors?: boolean }); } catch { return []; } };
+const markTools = () => { try { toolMark = fs.statSync(toolLog).size; } catch { toolMark = 0; } };
+const readIndex = () => { try { return fs.readFileSync(path.join(buildDir, "index.html"), "utf8"); } catch { return ""; } };
+const gitLog = () => { try { return execFileSync("git", ["log", "--format=%s", "-8"], { cwd: buildDir }).toString().trim().split("\n"); } catch { return []; } };
+
 /** Every text file in the Build project, joined, without node_modules. */
 function projectText(dir = buildDir): string {
   if (!fs.existsSync(dir)) return "";
@@ -140,6 +225,16 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    // P1.11: projects as tools.
+    name: "projects",
+    turns: [{ target: { kind: "app", app: "todo" }, text: "Make a project called Launch and move the two Pitch deck tasks there." }],
+    check() {
+      const launch = snap!.projects.find(p => /^launch$/i.test(p.name));
+      const moved = todos().filter(t => /venue|slides/i.test(t.title));
+      return launch && moved.length === 2 && moved.every(t => t.projectId === launch.id) ? null : `Launch ${JSON.stringify(launch ?? null)}, tasks ${JSON.stringify(moved.map(t => t.projectId))}`;
+    },
+  },
+  {
     name: "cross-app",
     turns: [{ target: { kind: "main" }, text: "Make a to-do in the Home project for every note I have, with the note's text as the title. Then delete all my notes." }],
     check() {
@@ -155,6 +250,43 @@ const scenarios: Scenario[] = [
       const left = fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
       const ok = JSON.stringify(left) === JSON.stringify(["a.txt", "c.txt", "e.txt"]) && fs.readFileSync(path.join(dir, "c.txt"), "utf8").trim() === "c";
       return ok ? null : `files: ${JSON.stringify(left)}`;
+    },
+  },
+  {
+    // P0.3: the engine crashes between requests; the next request still succeeds.
+    name: "engine-restart",
+    async before() {
+      if (ENGINE !== "opencode") return;
+      for (let i = 0; i < 120 && (await health()).engine !== "opencode"; i++) await sleep(500);
+      const killed = killEngine();
+      if (!killed) throw new Error("no OpenCode process found to kill");
+      await sleep(300);
+    },
+    turns: [{ target: { kind: "main" }, text: "Write a note that says Engine came back." }],
+    async check() {
+      const h = await health();
+      const note = has(notes(), "came back");
+      if (ENGINE !== "opencode") return note ? null : "note missing";
+      return note && h.engine === "opencode" && h.engineRestarts >= 1 ? null : `note ${note}, health ${JSON.stringify({ engine: h.engine, restarts: h.engineRestarts, error: h.engineError })}`;
+    },
+  },
+  {
+    // P1.12: a small change in a Note without retyping it.
+    name: "notes-edit",
+    before: async () => markTools(),
+    turns: [
+      { target: { kind: "app", app: "notes" }, text: "Save a note: Shopping list: milk, eggs, bread, coffee." },
+      { target: { kind: "app", app: "notes" }, text: "In the shopping note, change milk to oat milk." },
+    ],
+    check() {
+      const note = notes().find(t => /shopping/i.test(t));
+      const used = toolsSince().map(call => call.tool);
+      const problems = [
+        !note || !/oat milk, eggs, bread, coffee/i.test(note) && `note: ${JSON.stringify(note ?? null)}`,
+        !used.includes("notes_edit") && `no notes_edit: ${used.join(", ")}`,
+        used.includes("notes_replace") && "the note was retyped with notes_replace",
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
     },
   },
   {
@@ -174,6 +306,40 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    // P1.4: the agent checks a screenshot of its own work.
+    name: "build-look",
+    async before() { buttonBefore = await measureButton(); },
+    turns: [{ target: { kind: "app", app: "build" }, text: "Make the button bigger and centred." }],
+    async check() {
+      const after = await measureButton();
+      const shot = lastSteps.some(step => /Screenshot of the preview/.test(step));
+      const problems = [
+        !after && "no button",
+        after && buttonBefore && after.w * after.h < buttonBefore.w * buttonBefore.h * 1.15 && `not bigger: ${Math.round(buttonBefore.w)}×${Math.round(buttonBefore.h)} → ${Math.round(after.w)}×${Math.round(after.h)}`,
+        after && Math.abs(after.cx - 284) > 8 && `not centred: centre at x ${Math.round(after.cx)} of 568`,
+        after?.errors.length && `page errors: ${after.errors.join("; ")}`,
+        !shot && "no screenshot in the Task steps",
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
+  {
+    // P1.5: "undo that" puts index.html back exactly as it was.
+    name: "build-undo",
+    async before() { htmlBefore = readIndex(); },
+    turns: [
+      { target: { kind: "app", app: "build" }, text: "Change the title to Lemon Lab." },
+      { target: { kind: "app", app: "build" }, text: "Undo that." },
+    ],
+    check() {
+      const now = readIndex();
+      const log = gitLog();
+      if (!htmlBefore) return "no index.html before the change";
+      if (now !== htmlBefore) return `index.html differs from before (Lemon Lab ${/Lemon Lab/.test(now)}); history: ${log.slice(0, 4).join(" | ")}`;
+      return log.some(line => /^Undo/.test(line)) ? null : `no undo in history: ${log.slice(0, 4).join(" | ")}`;
+    },
+  },
+  {
     name: "build-vite",
     turns: [{ target: { kind: "app", app: "build" }, text: "Turn the Build project into a Vite + React app. Keep the Flip Lemonade title, the tagline and the green counter button. Install it and run its dev server so I see it in the preview." }],
     async check() {
@@ -190,50 +356,113 @@ const scenarios: Scenario[] = [
       return problems.length ? problems.join("; ") : null;
     },
   },
+  {
+    // P1.7: a broken edit reports its error by itself; the agent fixes it without reading logs.
+    name: "build-errors",
+    before: async () => markTools(),
+    turns: [{ target: { kind: "app", app: "build" }, text: "Test the error handling: put a syntax error in the main React component on purpose, then fix it so the app works again." }],
+    async check() {
+      const calls = toolsSince();
+      const app = ["src/App.jsx", "src/App.tsx", "src/App.js"].find(file => fs.existsSync(path.join(buildDir, file)));
+      const compiled = app ? (await preview(app)).status : 0;
+      const problems = [
+        !calls.some(call => call.tool === "after-edit" && call.errors) && "no edit result reported an error",
+        calls.some(call => call.tool === "build_logs") && "the agent called build_logs",
+        compiled !== 200 && `${app ?? "App component"} does not compile now (HTTP ${compiled})`,
+      ].filter(Boolean);
+      return problems.length ? `${problems.join("; ")} · tools: ${calls.map(call => call.tool + (call.errors ? "!" : "")).join(", ")}` : null;
+    },
+  },
+  {
+    // P1.6: a new React app from a starter, running in the preview within seconds.
+    name: "build-starter",
+    turns: [{ target: { kind: "app", app: "build" }, text: "Start a new React app called Lemon Stand." }],
+    async check() {
+      const pkg = fs.existsSync(path.join(buildDir, "package.json")) ? fs.readFileSync(path.join(buildDir, "package.json"), "utf8") : "";
+      const client = await preview("@vite/client");
+      const problems = [
+        !/"react"/.test(pkg) && "no react in package.json",
+        client.status !== 200 && `vite client through /preview/: ${client.status}`,
+        !/Lemon Stand/.test(projectText()) && "title missing",
+        (lastSeconds > 60) && `took ${lastSeconds} s`,
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
+  {
+    // P1.10: with 150 Notes the agent searches instead of reading everything. Runs last: it restarts
+    // the server with the Notes seeded on disk (the Device snapshot only carries the newest 80).
+    name: "notes-search",
+    async before() {
+      await restartWith(saved => {
+        const topics = ["groceries", "gym plan", "book ideas", "trip packing", "pitch outline"];
+        const texts = Array.from({ length: 150 }, (_, n) => n % 15 === 7 ? `Venue option ${n}: call the hall about the venue deposit` : `${topics[n % topics.length]} note ${n}`);
+        saved.notes = texts.map((text, n) => ({ id: `n_seed${String(n).padStart(3, "0")}`, text, createdAt: new Date(Date.now() - n * 60_000).toISOString(), transcribedBy: "local", editedByUser: true, suggestionState: "none", suggestions: [], taskIds: [] }));
+      });
+    },
+    turns: [{ target: { kind: "main" }, text: "Delete the notes about the venue." }],
+    check() {
+      const left = savedState().notes;
+      const problems = [
+        left.some(note => /venue/i.test(note.text)) && `venue notes left: ${left.filter(note => /venue/i.test(note.text)).length}`,
+        left.length !== 140 && `${left.length} notes left (want 140)`,
+        lastSteps.length >= 8 && `${lastSteps.length} steps (want under 8)`,
+      ].filter(Boolean);
+      return problems.length ? problems.join("; ") : null;
+    },
+  },
 ];
 
 async function main() {
   fs.mkdirSync(flipDir(), { recursive: true });
   fs.mkdirSync(path.join(home, "Desktop"), { recursive: true });
   start("pc", path.join(here, "../pc-agent"), { HOME: home, USERPROFILE: home, PC_AGENT_PORT: String(PC_PORT), PC_AGENT_HOST: "127.0.0.1", PC_AGENT_TOKEN: "agents", PC_AGENT_NAME: "Test laptop", PC_AGENT_ALLOW_OPEN: "0", PC_AGENT_ALLOW_SHELL: "0" });
-  start("server", here, {
+  serverEnv = {
     HOST: "127.0.0.1", PORT: String(PORT), DATA_DIR: path.join(root, "data"),
     PC_AGENTS: `Test laptop=ws://127.0.0.1:${PC_PORT}`, PC_AGENT_TOKEN: "agents",
     DEVICE_ACCESS_TOKEN: "", DEMO_PLANNER: "", SMTP_URL: "", STT_API_KEY: "",
     AGENT_ENGINE: ENGINE, ...(MODEL ? { ENGINE_MODEL: MODEL } : {}),
-    BUILD_HOST: "server", BUILD_DIR: buildDir, BUILD_NAME: "Lemonade", BUILD_PREVIEW_URL: "", PUBLIC_URL: `http://127.0.0.1:${PORT}`,
+    FLIP_TOOL_LOG: toolLog, BUILD_HOST: "server", BUILD_DIR: buildDir, BUILD_NAME: "Lemonade", BUILD_PREVIEW_URL: "", PUBLIC_URL: `http://127.0.0.1:${PORT}`,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? "", ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
-  });
-  for (let i = 0; i < 80 && !ws; i++) {
-    try {
-      const socket = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
-      await new Promise((res, rej) => { socket.once("open", res); socket.once("error", rej); });
-      ws = socket;
-    } catch { await sleep(250); }
-  }
-  if (!ws) throw new Error("server did not start");
-  ws.on("message", raw => {
-    const m = JSON.parse(String(raw)) as ServerMessage;
-    if (m.type === "snapshot") snap = m.snapshot;
-  });
-  send({ type: "hello", deviceId: "agents", mode: "handheld", client: "device", protocol: PROTOCOL_VERSION });
-  await until(() => snap?.machines.some(m => m.online), 20_000);
+  };
+  serverProc = start("server", here, serverEnv);
+  await connect();
   send({ type: "settings.update", patch: { permissionMode: "auto" } });
   // Start from empty apps so the checks see only what the agents did.
   await until(() => snap, 5000);
   console.log(`Engine: ${ENGINE}${MODEL ? ` · ${MODEL}` : ""}\n`);
 
   let failed = 0;
+  // Cost and speed per scenario (P2.17), from the server's /api/usage.
+  const table: { name: string; seconds: number; calls: number; input: number; output: number; cost: number | null }[] = [];
   for (const scenario of scenarios) {
     if (ONLY.length && !ONLY.includes(scenario.name)) continue;
     let last: Awaited<ReturnType<typeof ask>> | null = null;
+    await scenario.before?.();
     for (const turn of scenario.turns) last = await ask(turn.target, turn.text);
+    lastSteps = last?.steps ?? [];
+    lastSeconds = last?.seconds ?? 0;
     const problem = !last?.task ? "timed out" : last.task.status !== "done" ? `Task ${last.task.status}: ${last.task.detail}` : await scenario.check();
     if (problem) failed++;
     console.log(`${problem ? "✕" : "✓"} ${scenario.name}  (${last?.seconds}s, ${last?.steps.length} steps, ${last?.approvals} presses)`);
     console.log(`    said: ${(last?.reply ?? "").replace(/\s+/g, " ").slice(0, 200)}`);
     if (problem) console.log(`    problem: ${problem}`);
     if (problem || process.env.STEPS) for (const step of last?.steps ?? []) console.log(`      · ${step}`);
+    if (last?.task) {
+      const all = snap?.tasks ?? [];
+      const tree = (id: string): string[] => [id, ...all.filter(t => t.parentTaskId === id).flatMap(t => tree(t.id))];
+      const usage = await fetch(`http://127.0.0.1:${PORT}/api/usage?ids=${tree(last.task.id).join(",")}`).then(r => r.json() as Promise<{ calls: number; input: number; output: number; cost: number | null }[]>).catch(() => []);
+      const sum = (key: "calls" | "input" | "output") => usage.reduce((n, u) => n + u[key], 0);
+      table.push({ name: scenario.name, seconds: last.seconds, calls: sum("calls"), input: sum("input"), output: sum("output"), cost: usage.some(u => u.cost === null) ? null : usage.reduce((n, u) => n + (u.cost ?? 0), 0) });
+    }
+  }
+  if (table.length) {
+    const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+    const money = (n: number | null) => (n === null ? "?" : `$${n.toFixed(4)}`);
+    console.log("\nCost and speed (model calls, tokens in / out):");
+    for (const row of table) console.log(`  ${row.name.padEnd(16)} ${String(row.seconds).padStart(4)} s  ${String(row.calls).padStart(3)} calls  ${k(row.input).padStart(7)} / ${k(row.output).padEnd(6)}  ${money(row.cost)}`);
+    const total = (key: "seconds" | "calls" | "input" | "output") => table.reduce((n, row) => n + row[key], 0);
+    console.log(`  ${"total".padEnd(16)} ${String(total("seconds")).padStart(4)} s  ${String(total("calls")).padStart(3)} calls  ${k(total("input")).padStart(7)} / ${k(total("output")).padEnd(6)}  ${money(table.some(row => row.cost === null) ? null : table.reduce((n, row) => n + (row.cost ?? 0), 0))}`);
   }
   console.log(failed ? `\n${failed} failed` : "\nAll passed");
   process.exit(failed ? 1 : 0);

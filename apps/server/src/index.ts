@@ -31,7 +31,8 @@ import { handleSetup } from "./setup.js";
 import { acceptVoiceMessage } from "./agents/coordination.js";
 import { serveBuildPreview, upgradeBuildPreview } from "./build-preview.js";
 import { restoreDev } from "./build-host.js";
-import { engineEnabled, engineModel, handleEngineHttp, stopEngine, warmEngine } from "./agents/engine.js";
+import { usageFor } from "./usage.js";
+import { engineEnabled, engineHealth, engineModel, handleEngineHttp, stopEngine, warmEngine } from "./agents/engine.js";
 
 const SERVER_ID = id("srv");
 if (config.deviceToken && !/^[A-Za-z0-9_-]{24,}$/.test(config.deviceToken))
@@ -441,7 +442,11 @@ const server = http.createServer(async (req, res) => {
     if (config.deviceToken) res.setHeader("content-security-policy", "sandbox allow-scripts allow-forms");
     await serveBuildPreview(req, res, url.pathname.slice("/preview/".length));
   } else if (url.pathname === "/health") {
-    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, clients: clients.size, llm: hasLlm(), machines: machines.list().map(m => ({ name: m.name, online: m.online })) }));
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, clients: clients.size, llm: hasLlm(), ...engineHealth(), machines: machines.list().map(m => ({ name: m.name, online: m.online })) }));
+  } else if (url.pathname === "/api/usage") {
+    // Cost and speed per Task (P2.17). Like the snapshot, only without a Device token.
+    if (config.deviceToken) res.writeHead(403).end();
+    else res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(usageFor(url.searchParams.get("ids")?.split(",").filter(Boolean))));
   } else if (url.pathname === "/api/snapshot") {
     if (config.deviceToken) res.writeHead(403).end();
     else res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" }).end(JSON.stringify(snapshot()));

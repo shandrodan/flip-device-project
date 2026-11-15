@@ -11,6 +11,15 @@ import { save, state } from "./store.js";
 
 export const localBuild = () => config.buildHost === "server";
 
+/** The environment for the Build project's commands. Without the npm_* variables a package manager
+ *  sets for the Flip server itself (`pnpm dev` exports its config, e.g. npm_config_allow_scripts,
+ *  which makes npm refuse project installs): those describe the server's run, not the project. */
+export function buildEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) if (!/^npm_(config|package|lifecycle|execpath|node_execpath|command)/i.test(key)) env[key] = value;
+  return { ...env, ...extra };
+}
+
 /** The project folder as an absolute path on this machine. Created with a starter page. */
 export function projectDir(): string {
   const dir = path.resolve(state.build.dir.replace(/^~(?=\/|$)/, os.homedir()));
@@ -31,7 +40,7 @@ export function insideProject(target: string): string | null {
 /** Run a command in the project folder. Output is cut to the last 15 KB. */
 export function runInProject(command: string, timeoutMs = 180_000): Promise<{ ok: boolean; output: string }> {
   return new Promise(resolve => {
-    const child = spawn("bash", ["-lc", command], { cwd: projectDir(), env: { ...process.env, CI: "1", FORCE_COLOR: "0" }, detached: true });
+    const child = spawn("bash", ["-lc", command], { cwd: projectDir(), env: buildEnv({ CI: "1", FORCE_COLOR: "0" }), detached: true });
     let output = "";
     const add = (chunk: Buffer) => { output = (output + chunk.toString()).slice(-15000); };
     child.stdout.on("data", add);
@@ -51,6 +60,15 @@ export function runInProject(command: string, timeoutMs = 180_000): Promise<{ ok
 /* ------------------------------- Dev server ------------------------------- */
 
 let dev: { child: ChildProcess; port: number; command: string; log: string } | null = null;
+/** Characters the dev server has written since the server started, to find what is new (P1.7). */
+let logTotal = 0;
+export const devLogMark = () => logTotal;
+/** What the dev server wrote after `mark` (as much as is still kept). */
+export function devLogSince(mark: number): string {
+  if (!dev) return "";
+  const fresh = logTotal - mark;
+  return fresh <= 0 ? "" : dev.log.slice(-Math.min(fresh, dev.log.length));
+}
 
 export function devServer() {
   return dev ? { port: dev.port, command: dev.command, running: dev.child.exitCode === null } : null;
@@ -81,10 +99,10 @@ export function stopDev() {
 export async function startDev(command: string, port: number): Promise<{ ok: boolean; output: string }> {
   stopDev();
   if (await portOpen(port)) return { ok: false, output: `Port ${port} is already in use. Pick another port.` };
-  const child = spawn("bash", ["-lc", command], { cwd: projectDir(), env: { ...process.env, PORT: String(port), BROWSER: "none", FORCE_COLOR: "0" }, detached: true });
+  const child = spawn("bash", ["-lc", command], { cwd: projectDir(), env: buildEnv({ PORT: String(port), BROWSER: "none", FORCE_COLOR: "0" }), detached: true });
   const current = { child, port, command, log: "" };
   dev = current;
-  const add = (chunk: Buffer) => { current.log = (current.log + chunk.toString()).slice(-8000); };
+  const add = (chunk: Buffer) => { const text = chunk.toString(); logTotal += text.length; current.log = (current.log + text).slice(-8000); };
   child.stdout!.on("data", add);
   child.stderr!.on("data", add);
   for (let i = 0; i < 120; i++) {

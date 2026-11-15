@@ -11,7 +11,8 @@ import { config } from "../config.js";
 import { TOOLS, toolsFor, toApiTool, ToolError, WEB_SEARCH_PURPOSES, type Ctx } from "./tools.js";
 import { runPlanner } from "./planner.js";
 import { engineEnabled, EngineUnavailable, runOnEngine } from "./engine.js";
-import { projectDir } from "../build-host.js";
+import { localBuild, projectDir } from "../build-host.js";
+import { commitBuild, ensureRepo } from "../build-git.js";
 
 /** build_* tools that OpenCode's own read, write, edit and bash replace in a Build Task on the server. */
 const NATIVE_REPLACES = ["build_list", "build_read", "build_write", "build_run"];
@@ -177,6 +178,8 @@ export function startTask(task: Task) {
   (async () => {
     try {
       const useModel = hasLlm() || (engineEnabled() && !!config.engineModel);
+      // The project as it was before this Task is the first saved change, so the Task can be undone.
+      if (localBuild() && !task.appRequest && (task.app === "build" || servesBuild(agent.id))) await ensureRepo().catch(() => false);
       if (!task.appRequest && !useModel && !config.demoPlanner)
         throw new ToolError("Add an OpenRouter or Anthropic key in Settings to use Task agents.");
       const final = task.appRequest ? await runAppRequest(ctx) : useModel ? await runAgent(ctx, ctl) : await runPlanner(ctx);
@@ -209,6 +212,11 @@ export function startTask(task: Task) {
         console.warn(`[task] ${task.title} failed:`, msg);
       }
     } finally {
+      // Every Build Task on the server is one saved change, so it can be undone by voice (P1.5).
+      if (localBuild() && !task.appRequest && (task.app === "build" || servesBuild(agent.id))) {
+        const request = state.messages.find(message => message.id === task.requestMessageId)?.text ?? task.title;
+        await commitBuild(request).catch(err => console.warn(`[build] ${(err as Error).message}`));
+      }
       // A Build task may have changed the project: the Device reloads its preview.
       if (task.app === "build") state.build.rev++;
       running.delete(task.id);
@@ -259,8 +267,12 @@ function buildBrief(fromBuild: boolean, native: boolean) {
       native
         ? "Work like a coding agent in that folder: read, glob and grep to look, edit to change part of a file, write for new files, bash for commands such as npm install or a build. Paths are relative to the project."
         : "Use the build_* tools: paths are relative to that folder. build_run runs commands there.",
+      "To start a new app, use build_new with a starter (static, vite-vanilla or vite-react): it is ready in seconds, with the dev server running. Then edit it.",
       "The Device preview shows the project's files directly, so plain HTML, CSS and JavaScript need no server and appear after the task. A framework app needs its dev server: install with a command, then start it with build_serve on a port from 5300 to 5399 with base path /preview/ (Vite: `npx vite --host 127.0.0.1 --port 5300 --strictPort --base /preview/`). Never start a long-running server with a plain command: it would block. build_logs shows its output.",
-      `Verify before you answer: curl -s http://127.0.0.1:${config.port}/preview/ shows what the Device sees.`,
+      "The Device shows the preview in a sandboxed frame with no same-origin access: localStorage, sessionStorage, cookies and IndexedDB throw there. Keep state in memory, or wrap storage in try/catch.",
+      "Every finished Build request is saved as one change. For \"undo that\" or \"go back\", use build_undo (build_history lists the changes). Never use git reset.",
+      "After each edit, its result says whether the dev server or the page shows new errors. Fix them before you answer.",
+      "Check your work the way the user sees it: after a visible change, call build_screenshot, look at the screenshot and its element list, and fix what does not match the request before you answer.",
     );
   } else {
     lines.push(
@@ -344,7 +356,7 @@ function agentBrief(ctx: Ctx, opts: { webTool: boolean; native?: boolean }) {
     ...(task.app === "build" || servesBuild(agent.id) ? [buildBrief(task.app === "build", !!opts.native)] : []),
     "A task or todo refers to an item in the To-Do app. Read To-Do to resolve existing items and use todo_update to move them to another date or project. Create a new To-Do only for new work. Create a Task agent only when explicitly requested.",
     ownedApp ? `You are assigned to the ${ownedApp} app. Your app tools can act on its live state.` : "",
-    "Each Device app has its own tools: notes_* for Notes, todo_* for To-Do, and read_app and change_app for the others. Read the app first, even on the very first request or when the request comes from an assigned Task, then act with the IDs you read. The server forwards a call to the app's assigned agent when needed, so use the app tools directly for app work.",
+    "Each Device app has its own tools: notes_* for Notes, todo_* for To-Do, focus_start and focus_stop for Focus, agents_create for Agents, settings_permission for Settings, and read_app to read Focus, Agents, Settings, Build or the Dock. Read the app first, even on the very first request or when the request comes from an assigned Task, then act with the IDs you read. The server forwards a call to the app's assigned agent when needed, so use the app tools directly for app work.",
     opts.webTool ? "Use web search or fetch for facts you need from the web." : "",
     "",
     `Machines:\n${machineLines}`,
@@ -456,7 +468,11 @@ async function runModel(ctx: Ctx, ctl: { cancelled: boolean }): Promise<string> 
       ctx.step(String(input.say || def.name));
       try {
         const out = await def.run(ctx, input, use.id);
-        results.push({ type: "tool_result", tool_use_id: use.id, content: out.text.slice(0, 15000) });
+        const text = out.text.slice(0, 15000);
+        // A Build screenshot goes in as an image where the API takes one in a tool result (Anthropic).
+        results.push({ type: "tool_result", tool_use_id: use.id, content: out.image && !model.openRouter
+          ? [{ type: "text", text }, { type: "image", source: { type: "base64", media_type: out.image.mime as "image/png", data: out.image.base64 } }]
+          : text });
       } catch (err) {
         if (err instanceof Cancelled || err instanceof MachineOffline) throw err;
         results.push({ type: "tool_result", tool_use_id: use.id, content: (err as Error).message, is_error: true });

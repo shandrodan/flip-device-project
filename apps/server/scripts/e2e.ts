@@ -528,7 +528,7 @@ async function modelFlow(here: string, pcEnv: Record<string, string>, serverEnv:
     if (system.includes("Decide the action")) return json({ action: "add", title: "Unused", day: "", time: "", clearDate: false, projectId: "", agentId: "", complete: false, why: "Unused" });
     const turn = calls.filter(call => !/Decide (what their words are|where it goes|the action)/.test(String(call.system ?? ""))).length;
     const turns = [
-      () => tool("change_app", { action: "notes.create", text: "Weekly Summary", say: "Save the title in Notes" }),
+      () => tool("notes_create", { texts: ["Weekly Summary"], say: "Save the title in Notes" }),
       () => reply("I saved Weekly Summary in Notes."),
       () => tool("run_shell", { command, cwd: root, machine: "Test laptop", say: "Write and verify the result" }),
       () => reply("I wrote and verified model-result.txt."),
@@ -537,21 +537,21 @@ async function modelFlow(here: string, pcEnv: Record<string, string>, serverEnv:
         const messages = calls.at(-1)!.messages as { content: unknown }[];
         const [result] = messages.at(-1)!.content as { content: string }[];
         const data = JSON.parse(result.content) as { projects: { id: string; name: string }[]; tasks: { id: string; title: string }[] };
-        return tool("change_app", {
-          action: "todo.update", id: data.tasks.find(task => task.title === existingTodo.title)?.id,
+        return tool("todo_update", {
+          ids: [data.tasks.find(task => task.title === existingTodo.title)?.id],
           projectId: data.projects.find(project => project.name === "Pitch deck")?.id, due: "2026-12-18T14:30", say: "Move and reschedule the To-Do",
         });
       },
       () => reply("I moved the To-Do to Pitch deck for December 18."),
-      () => tool("change_app", { action: "focus.start", minutes: 12, say: "Start a twelve-minute Focus timer" }),
+      () => tool("focus_start", { minutes: 12, say: "Start a twelve-minute Focus timer" }),
       () => reply("I started a twelve-minute Focus timer."),
       () => tool("read_app", { app: "notes", say: "Find Weekly Summary" }),
       () => {
         const messages = calls.at(-1)!.messages as { content: unknown }[];
         const [result] = messages.at(-1)!.content as { content: string }[];
         const { notes } = JSON.parse(result.content) as { notes: { id: string; text: string }[] };
-        return tool("change_app", {
-          action: "notes.replace", id: notes.find(note => note.text === "Weekly Summary")?.id,
+        return tool("notes_replace", {
+          id: notes.find(note => note.text === "Weekly Summary")?.id,
           text: "Weekly Build Summary", say: "Replace the Note text",
         });
       },
@@ -562,11 +562,11 @@ async function modelFlow(here: string, pcEnv: Record<string, string>, serverEnv:
         const messages = calls.at(-1)!.messages as { content: unknown }[];
         const [result] = messages.at(-1)!.content as { content: string }[];
         const { notes } = JSON.parse(result.content) as { notes: { id: string }[] };
-        return tool("change_app", { action: "notes.delete", ids: notes.map(note => note.id), say: "Delete all Notes" });
+        return tool("notes_delete", { ids: notes.map(note => note.id), say: "Delete all Notes" });
       },
       () => reply("I deleted your Note."),
       // "Move this one to today" spoken in To-Do acts on the selected To-Do.
-      () => tool("change_app", { action: "todo.update", ids: [existingTodo.id], due: today, projectId: null, say: "Move it to today in Inbox" }),
+      () => tool("todo_update", { ids: [existingTodo.id], due: today, projectId: null, say: "Move it to today in Inbox" }),
       () => reply("I moved it to today."),
     ];
     const content = turns[turn - 1]?.() ?? reply("Unexpected model request.");

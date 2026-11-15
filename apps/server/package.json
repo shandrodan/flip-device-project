@@ -8,7 +8,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p .",
     "test:e2e": "tsx scripts/e2e.ts",
-    "test:agents": "tsx scripts/agent-e2e.ts"
+    "test:agents": "tsx scripts/agent-e2e.ts",
+    "test:tools": "tsx scripts/tools-e2e.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",
@@ -16,6 +17,7 @@
     "@opencode-ai/plugin": "1.19.5",
     "nodemailer": "6.9.16",
     "opencode-ai": "1.19.5",
+    "playwright-core": "1.56.1",
     "ws": "8.18.0"
   },
   "devDependencies": {
